@@ -1,12 +1,21 @@
 {
   "name": "@featherduster/cli",
   "version": "0.1.0",
+  "description": "CLI and local server for Featherduster — local-first career intelligence and evidence ledger",
+  "license": "MIT",
   "type": "module",
-  "bin": "dist/bin.js",
+  "bin": {
+    "featherduster": "dist/bin.js"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"fs.cpSync('src/templates', 'dist/templates', { recursive: true, force: true })\"",
     "test": "vitest run"
   },
   "dependencies": {

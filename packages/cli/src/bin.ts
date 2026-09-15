@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import fs from 'node:fs';
+import path from 'node:path';
 import { cac } from 'cac';
 import pc from 'picocolors';
 import { startServer } from './server.js';
@@ -45,7 +47,8 @@ cli
 
 // 3. Build command: headless resume and brag doc compiler
 cli
-  .command('build [variant]', 'Compile tailored resume or performance brag doc')
+  .command('build [target]', 'Compile tailored resume or performance brag doc')
+  .option('-w, --workspace <dir>', 'Path to workspace directory')
   .option('-f, --format <format>', 'Export format: markdown | html | brag | typst | latex', {
     default: 'markdown',
   })
@@ -53,11 +56,41 @@ cli
   .option('-r, --rubric <id>', 'Rubric ID for brag doc compilation')
   .option('-o, --output <file>', 'Output destination path')
   .option('--stdout', 'Stream compiled output directly to stdout')
-  .action(async (_variant?: string, options: any = {}) => {
+  .action(async (target?: string, options: any = {}) => {
+    let workspace = options.workspace || process.cwd();
+    let spec = options.spec;
+
+    if (target) {
+      const resolved = path.resolve(target);
+      if (fs.existsSync(resolved)) {
+        if (fs.statSync(resolved).isDirectory()) {
+          workspace = resolved;
+        } else if (fs.statSync(resolved).isFile()) {
+          spec = resolved;
+          if (!options.workspace) {
+            const candidate = path.dirname(path.dirname(resolved));
+            if (fs.existsSync(path.join(candidate, '.featherduster'))) {
+              workspace = candidate;
+            } else {
+              workspace = path.dirname(resolved);
+            }
+          }
+        }
+      } else {
+        const candidateSpecYaml = path.join(workspace, 'resumes', 'tailored', `${target}.yaml`);
+        const candidateSpecJson = path.join(workspace, 'resumes', 'tailored', `${target}.json`);
+        if (fs.existsSync(candidateSpecYaml)) {
+          spec = candidateSpecYaml;
+        } else if (fs.existsSync(candidateSpecJson)) {
+          spec = candidateSpecJson;
+        }
+      }
+    }
+
     await runBuildCommand({
-      workspace: process.cwd(),
+      workspace,
       format: options.format,
-      spec: options.spec,
+      spec,
       rubric: options.rubric,
       output: options.output,
       stdout: options.stdout,

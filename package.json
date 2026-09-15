@@ -1,13 +1,18 @@
 {
   "name": "featherduster-app",
   "version": "0.1.0",
+  "description": "Local-First Career Intelligence & Evidence Ledger for Engineers",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build:core": "npm run build --workspace=@featherduster/core",
+    "build:ui": "npm run build --workspace=@featherduster/ui",
+    "build:cli": "npm run build --workspace=@featherduster/cli",
+    "build": "npm run build:core && npm run build:ui && npm run build:cli",
     "test": "vitest run"
   },
   "devDependencies": {

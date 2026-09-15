@@ -377,6 +377,63 @@ Staff Software Engineer with 10+ years specializing in distributed systems, high
     content: starterResume,
   });
 
+  // resumes/tailored/starter.yaml
+  const starterSpec = {
+    profile: {
+      name: 'Morgan Blake',
+      title: 'Staff Software Engineer',
+      email: 'morgan.blake@example.com',
+      phone: '+1 (555) 019-2834',
+      location: 'San Francisco, CA',
+      links: {
+        github: 'https://github.com/mblake',
+        linkedin: 'https://linkedin.com/in/mblake',
+      },
+    },
+    summary:
+      'Staff Software Engineer with 10+ years specializing in distributed systems, high-throughput cloud infrastructure, and technical leadership across high-growth engineering teams.',
+    experiences: [
+      {
+        company: 'Sample Company',
+        role: 'Staff Software Engineer',
+        location: 'Remote',
+        startDate: '2024-01',
+        endDate: 'Present',
+        bullets: [
+          {
+            text: 'Led architectural migration from monolithic backend to distributed microservices, reducing p99 latency by 45% (ev-001).',
+            citations: ['ev-001'],
+          },
+          {
+            text: 'Maintained 99.99% system availability while establishing automated blue-green deployment pipelines (ev-001).',
+            citations: ['ev-001'],
+          },
+        ],
+      },
+    ],
+    education: [
+      {
+        institution: 'University of California, Berkeley',
+        degree: 'B.S. Computer Science',
+        year: '2018',
+      },
+    ],
+    skills: [
+      {
+        category: 'Languages',
+        skills: ['Go', 'TypeScript', 'Python', 'Rust', 'SQL'],
+      },
+      {
+        category: 'Systems & Cloud',
+        skills: ['AWS', 'Kubernetes', 'Docker', 'PostgreSQL', 'Redis', 'gRPC', 'OpenTelemetry'],
+      },
+    ],
+  };
+  filesToScaffold.push({
+    relativePath: path.join('resumes', 'tailored', 'starter.yaml'),
+    content: yaml.dump(starterSpec, { indent: 2 }),
+  });
+
   // companies/sample-company/profile.yaml
   const companyProfile = {
     company: profile,

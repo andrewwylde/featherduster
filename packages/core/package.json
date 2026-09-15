@@ -1,6 +1,8 @@
 {
   "name": "@featherduster/core",
   "version": "0.1.0",
+  "description": "Core schemas, evidence store, compilers, and integrity linters for Featherduster",
+  "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,6 +12,9 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run"
