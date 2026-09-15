@@ -318,6 +318,125 @@ describe('Local Hono Server Integration Tests', () => {
     });
   });
 
+  describe('POST /api/rubrics', () => {
+    it('parses markdown rawTable, validates with schema, writes to disk, and returns rubric', async () => {
+      const app = createApp(tmpWorkspace);
+
+      const rawTable = `
+| Competency | L3 (Junior) | L4 (Senior) | L5 (Staff) |
+|---|---|---|---|
+| Architecture & Scope | Works within single service | Designs services end-to-end | Sets multi-system architecture |
+| Execution & Speed | Delivers small PRs | Drives multi-week milestones | Leads multi-quarter programs |
+`;
+
+      const res = await app.request('/api/rubrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawTable,
+          id: 'staff-ladder',
+          title: 'Staff Engineering Ladder',
+          target_level: 'L5',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.rubric).toBeDefined();
+      expect(body.rubric.id).toBe('staff-ladder');
+      expect(body.rubric.title).toBe('Staff Engineering Ladder');
+      expect(body.rubric.target_level).toBe('L5');
+      expect(body.rubric.levels).toHaveLength(3);
+      expect(body.rubric.competencies).toHaveLength(2);
+
+      // Verify file written to disk
+      const targetFile = path.join(tmpWorkspace, 'rubrics', 'staff-ladder.yaml');
+      expect(fs.existsSync(targetFile)).toBe(true);
+
+      const fileContent = fs.readFileSync(targetFile, 'utf-8');
+      const loaded = yaml.load(fileContent) as any;
+      expect(loaded.id).toBe('staff-ladder');
+      expect(loaded.competencies[0].name).toBe('Architecture & Scope');
+
+      // Verify it appears in GET /api/rubrics
+      const listRes = await app.request('/api/rubrics');
+      const rubrics = await listRes.json();
+      expect(rubrics.some((r: any) => r.id === 'staff-ladder')).toBe(true);
+    });
+
+    it('saves rubric directly from rubric object payload', async () => {
+      const app = createApp(tmpWorkspace);
+
+      const customRubric: LevelingRubric = {
+        id: 'principal-ladder',
+        title: 'Principal Engineer Rubric',
+        target_level: 'L6',
+        levels: [
+          { id: 'L5', name: 'Staff' },
+          { id: 'L6', name: 'Principal' },
+        ],
+        competencies: [
+          {
+            id: 'strategy',
+            name: 'Org Strategy',
+            levels: {
+              L5: 'Influences team strategy',
+              L6: 'Defines org-wide tech direction',
+            },
+          },
+        ],
+      };
+
+      const res = await app.request('/api/rubrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rubric: customRubric,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.rubric.id).toBe('principal-ladder');
+
+      const targetFile = path.join(tmpWorkspace, 'rubrics', 'principal-ladder.yaml');
+      expect(fs.existsSync(targetFile)).toBe(true);
+    });
+
+    it('returns 400 when rawTable is invalid or cannot be parsed', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/rubrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rawTable: 'not a valid table without columns',
+          id: 'bad-rubric',
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBeDefined();
+    });
+
+    it('returns 400 when neither rubric nor rawTable is provided', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/rubrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toContain('Missing rubric or rawTable');
+    });
+  });
+
   describe('GET /api/rubrics/gap-analysis', () => {
     it('computes and returns gap analysis metrics for a rubric and target level', async () => {
       const app = createApp(tmpWorkspace);

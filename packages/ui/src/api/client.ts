@@ -54,6 +54,20 @@ export interface CompileResumeResponse {
   isClean: boolean;
 }
 
+export interface ImportRubricPayload {
+  rawTable?: string;
+  rubric?: LevelingRubric | any;
+  id?: string;
+  title?: string;
+  target_level?: string;
+}
+
+export interface ImportRubricResponse {
+  success: boolean;
+  rubric: LevelingRubric;
+  error?: string;
+}
+
 export class ApiClient {
   private baseUrl: string;
 
@@ -140,6 +154,17 @@ export class ApiClient {
    */
   async getRubrics(): Promise<LevelingRubric[]> {
     return this.fetchJson<LevelingRubric[]>('/api/rubrics');
+  }
+
+  /**
+   * Import or save a leveling rubric
+   */
+  async importRubric(data: ImportRubricPayload): Promise<ImportRubricResponse> {
+    return this.fetchJson<ImportRubricResponse>('/api/rubrics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
   }
 
   /**

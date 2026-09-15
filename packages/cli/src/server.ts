@@ -287,6 +287,52 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     return c.json(rubrics);
   });
 
+  // 4b. Rubric import / save
+  app.post('/api/rubrics', async (c) => {
+    try {
+      const body = await c.req.json();
+      let rubricData: any;
+
+      if (body && typeof body.rawTable === 'string') {
+        const { rawTable, id, title, target_level } = body;
+        rubricData = parseRubricTable(rawTable, { id, title, target_level });
+      } else if (body && body.rubric) {
+        rubricData = body.rubric;
+      } else if (body && body.id && body.levels && body.competencies) {
+        rubricData = body;
+      } else {
+        return c.json(
+          {
+            success: false,
+            error: 'Missing rubric or rawTable in request body',
+          },
+          400
+        );
+      }
+
+      const validatedRubric = LevelingRubricSchema.parse(rubricData);
+
+      const rubricsDir = path.join(resolvedWorkspaceDir, 'rubrics');
+      fs.mkdirSync(rubricsDir, { recursive: true });
+      const targetFile = path.join(rubricsDir, `${validatedRubric.id}.yaml`);
+      fs.writeFileSync(targetFile, yaml.dump(validatedRubric), 'utf-8');
+
+      return c.json({
+        success: true,
+        rubric: validatedRubric,
+      });
+    } catch (err: any) {
+      return c.json(
+        {
+          success: false,
+          error: err.message || 'Failed to parse or save rubric',
+          issues: err.issues,
+        },
+        400
+      );
+    }
+  });
+
   // 5. Rubric gap analysis
   app.get('/api/rubrics/gap-analysis', (c) => {
     const rubricId = c.req.query('rubricId');
@@ -318,21 +364,23 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         return c.json({ error: 'Missing spec or format in request body' }, 400);
       }
 
+      const shouldRedact = spec.redact !== false;
       const privacyRules = loadPrivacyRules(resolvedWorkspaceDir);
+      const activeRules = shouldRedact ? privacyRules : undefined;
       let output = '';
 
       switch (format) {
         case 'markdown':
-          output = compileMarkdownResume(spec, privacyRules);
+          output = compileMarkdownResume(spec, activeRules);
           break;
         case 'html':
-          output = compileHtmlPrintResume(spec, privacyRules);
+          output = compileHtmlPrintResume(spec, activeRules);
           break;
         case 'typst':
-          output = compileTypstResume(spec, privacyRules);
+          output = compileTypstResume(spec, activeRules);
           break;
         case 'latex':
-          output = compileLatexResume(spec, privacyRules);
+          output = compileLatexResume(spec, activeRules);
           break;
         case 'brag': {
           const rubric = spec.rubric ?? spec;
@@ -340,7 +388,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
           output = compileBragDoc(rubric, store, {
             candidateName: spec.candidateName,
             period: spec.period,
-            rules: privacyRules,
+            rules: activeRules,
             ...spec.options,
           });
           break;
@@ -349,7 +397,9 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
           return c.json({ error: `Unsupported format: ${format}` }, 400);
       }
 
-      const check = redactText(output, privacyRules);
+      const check = shouldRedact
+        ? redactText(output, privacyRules)
+        : { violations: [], isClean: true, redactedText: output };
       return c.json({
         output,
         violations: check.violations,
