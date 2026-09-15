@@ -7,3 +7,6 @@ export * from './parsers/index-store.js';
 export * from './integrity/citation-linter.js';
 export * from './integrity/metric-validator.js';
 export * from './integrity/redaction-engine.js';
+export * from './parsers/rubric-table-parser.js';
+export * from './rubric/gap-analyzer.js';
+export * from './rubric/presets/swe-ic.js';
