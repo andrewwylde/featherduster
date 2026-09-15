@@ -4,3 +4,6 @@ export * from './schemas/privacy.js';
 export * from './schemas/config.js';
 export * from './parsers/evidence-parser.js';
 export * from './parsers/index-store.js';
+export * from './integrity/citation-linter.js';
+export * from './integrity/metric-validator.js';
+export * from './integrity/redaction-engine.js';
