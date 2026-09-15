@@ -68,6 +68,31 @@ export interface ImportRubricResponse {
   error?: string;
 }
 
+export interface ResumeRecord {
+  id: string;
+  name: string;
+  type: 'template' | 'tailored' | string;
+  filePath: string;
+  spec: ResumeSpec;
+}
+
+export interface SaveResumeResponse {
+  success: boolean;
+  name: string;
+  filePath?: string;
+  error?: string;
+}
+
+export interface PreflightResult {
+  isClean: boolean;
+  validCitations: string[];
+  danglingCitations: string[];
+  metricIssues: Array<{ type: string; message: string; line?: number }>;
+  violations: string[];
+  redactedText: string;
+  error?: string;
+}
+
 export class ApiClient {
   private baseUrl: string;
 
@@ -195,6 +220,39 @@ export class ApiClient {
    */
   async getIntegrityCheck(): Promise<IntegrityCheckResponse> {
     return this.fetchJson<IntegrityCheckResponse>('/api/integrity/check');
+  }
+
+  /**
+   * List resume specs (templates & tailored variants)
+   */
+  async getResumes(): Promise<ResumeRecord[]> {
+    return this.fetchJson<ResumeRecord[]>('/api/resumes');
+  }
+
+  /**
+   * Save a tailored variant or template resume spec
+   */
+  async saveResume(
+    name: string,
+    spec: ResumeSpec,
+    type: 'tailored' | 'template' | string = 'tailored'
+  ): Promise<SaveResumeResponse> {
+    return this.fetchJson<SaveResumeResponse>('/api/resumes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, spec, type }),
+    });
+  }
+
+  /**
+   * Run comprehensive pre-flight integrity audit on spec or text
+   */
+  async runPreflight(payload: { spec?: ResumeSpec; text?: string }): Promise<PreflightResult> {
+    return this.fetchJson<PreflightResult>('/api/integrity/preflight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
   }
 }
 

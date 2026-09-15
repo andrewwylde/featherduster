@@ -721,4 +721,178 @@ describe('Local Hono Server Integration Tests', () => {
       expect(text).toContain('Featherduster Web UI is not built');
     });
   });
+
+  describe('Resume Specs & Pre-Flight Gate Endpoints', () => {
+    it('GET /api/resumes returns default starter template when no templates exist in workspace', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/resumes');
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(Array.isArray(data)).toBe(true);
+      expect(data.length).toBe(1);
+      expect(data[0].type).toBe('template');
+      expect(data[0].spec.profile.name).toBe('Andrew Wylde');
+      expect(data[0].spec.experiences.length).toBeGreaterThan(0);
+    });
+
+    it('POST /api/resumes saves a tailored resume spec to resumes/tailored/ as YAML', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/resumes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'netflix-agent-platform',
+          spec: sampleResumeSpec,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.name).toBe('netflix-agent-platform');
+      expect(data.filePath).toContain('tailored');
+
+      const expectedFile = path.join(
+        tmpWorkspace,
+        'resumes',
+        'tailored',
+        'netflix-agent-platform.yaml'
+      );
+      expect(fs.existsSync(expectedFile)).toBe(true);
+      const content = yaml.load(fs.readFileSync(expectedFile, 'utf-8')) as any;
+      expect(content.profile.name).toBe('Alex Mercer');
+    });
+
+    it('POST /api/resumes saves a template resume when type is template', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/resumes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'master-systems-template',
+          type: 'template',
+          spec: sampleResumeSpec,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.filePath).toContain('templates');
+
+      const expectedFile = path.join(
+        tmpWorkspace,
+        'resumes',
+        'templates',
+        'master-systems-template.yaml'
+      );
+      expect(fs.existsSync(expectedFile)).toBe(true);
+
+      // Now GET /api/resumes should list this template
+      const listRes = await app.request('/api/resumes');
+      const list = await listRes.json();
+      const found = list.find((r: any) => r.name === 'master-systems-template');
+      expect(found).toBeDefined();
+      expect(found.type).toBe('template');
+    });
+
+    it('POST /api/resumes returns 400 when name is missing or spec is invalid', async () => {
+      const app = createApp(tmpWorkspace);
+      const resMissingName = await app.request('/api/resumes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ spec: sampleResumeSpec }),
+      });
+      expect(resMissingName.status).toBe(400);
+
+      const resInvalidSpec = await app.request('/api/resumes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'bad-resume',
+          spec: { profile: { name: '' } }, // missing title, email
+        }),
+      });
+      expect(resInvalidSpec.status).toBe(400);
+    });
+
+    it('POST /api/integrity/preflight passes clean when citations and metrics are valid', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/integrity/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: sampleResumeSpec,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.isClean).toBe(true);
+      expect(data.validCitations).toContain('ev-042');
+      expect(data.danglingCitations).toHaveLength(0);
+      expect(data.metricIssues).toHaveLength(0);
+      expect(data.violations).toHaveLength(0);
+      // Redacted text should have stripped citation (ev-042) and ticket AUTH-892
+      expect(data.redactedText).not.toContain('(ev-042)');
+      expect(data.redactedText).not.toContain('AUTH-892');
+    });
+
+    it('POST /api/integrity/preflight detects dangling citations and missing metric tokens', async () => {
+      const app = createApp(tmpWorkspace);
+      const flawedSpec: ResumeSpec = {
+        ...sampleResumeSpec,
+        experiences: [
+          {
+            company: 'Test Corp',
+            role: 'Senior Engineer',
+            startDate: '2025',
+            endDate: '2026',
+            bullets: [
+              {
+                text: 'Designed cache layer achieving [METRIC NEEDED] latency (ev-999).',
+                citations: ['ev-999'],
+              },
+            ],
+          },
+        ],
+      };
+
+      const res = await app.request('/api/integrity/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: flawedSpec,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.isClean).toBe(false);
+      expect(data.danglingCitations).toContain('ev-999');
+      expect(data.metricIssues.length).toBeGreaterThan(0);
+      expect(data.metricIssues[0].type).toBe('missing_metric');
+    });
+
+    it('POST /api/integrity/preflight detects banned keyword privacy violations', async () => {
+      const app = createApp(tmpWorkspace);
+      const confidentialSpec: ResumeSpec = {
+        ...sampleResumeSpec,
+        summary: 'Lead engineer on CLASSIFIED_PROJECT initiative.',
+      };
+
+      const res = await app.request('/api/integrity/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: confidentialSpec,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.isClean).toBe(false);
+      expect(data.violations).toContain('CLASSIFIED_PROJECT');
+    });
+  });
 });

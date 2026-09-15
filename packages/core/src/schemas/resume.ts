@@ -57,3 +57,72 @@ export const ResumeSpecSchema = z.object({
   skills: z.array(ResumeSkillGroupSchema).default([]),
 });
 export type ResumeSpec = z.infer<typeof ResumeSpecSchema>;
+
+export const DEFAULT_STARTER_RESUME: ResumeSpec = {
+  profile: {
+    name: 'Andrew Wylde',
+    title: 'Staff Software Engineer / Distributed Systems',
+    email: 'andrew@wylde.dev',
+    phone: '+1 (555) 019-2834',
+    location: 'San Francisco, CA',
+    links: {
+      github: 'https://github.com/wylde',
+      linkedin: 'https://linkedin.com/in/wylde',
+      website: 'https://wylde.dev',
+    },
+  },
+  summary:
+    'Staff Software Engineer specializing in distributed consensus, high-throughput edge data planes, and high-reliability cloud architecture.',
+  experiences: [
+    {
+      company: 'Parable Systems',
+      role: 'Staff Software Engineer',
+      location: 'San Francisco, CA',
+      startDate: '2023-01',
+      endDate: 'Present',
+      bullets: [
+        {
+          text: 'Architected distributed token issuance mesh maintaining p99 under 8ms globally (ev-001).',
+          citations: ['ev-001'],
+        },
+        {
+          text: 'Engineered dynamic sharding controller eliminating hot-spot partition stalls across 12M tenant accounts.',
+        },
+      ],
+    },
+    {
+      company: 'Apex Cloud Platforms',
+      role: 'Senior Software Engineer',
+      location: 'Seattle, WA',
+      startDate: '2020-03',
+      endDate: '2022-12',
+      bullets: [
+        {
+          text: 'Designed multi-region Raft replication engine processing 450k op/s with zero data loss.',
+        },
+        {
+          text: 'Led cross-functional performance guild reducing p95 database query latency by 42%.',
+        },
+      ],
+    },
+  ],
+  education: [
+    {
+      institution: 'University of California, Berkeley',
+      degree: 'B.S. in Electrical Engineering and Computer Science',
+      year: '2016',
+      details: 'Focus on Distributed Systems and Computer Architecture',
+    },
+  ],
+  skills: [
+    {
+      category: 'Languages',
+      skills: ['TypeScript', 'Go', 'Rust', 'Python', 'C++'],
+    },
+    {
+      category: 'Distributed Systems & Cloud',
+      skills: ['Kubernetes', 'Raft / Paxos', 'gRPC', 'PostgreSQL', 'AWS', 'Redis', 'Docker'],
+    },
+  ],
+};
+

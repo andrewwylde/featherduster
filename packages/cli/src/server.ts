@@ -48,12 +48,15 @@ import { serve } from '@hono/node-server';
 import yaml from 'js-yaml';
 import open from 'open';
 import {
+  DEFAULT_STARTER_RESUME,
   EvidenceEntrySchema,
   EvidenceStore,
   LevelingRubric,
   LevelingRubricSchema,
   PrivacyRulesConfig,
   PrivacyRulesConfigSchema,
+  ResumeSpec,
+  ResumeSpecSchema,
   analyzeCompetencyGaps,
   compileBragDoc,
   compileHtmlPrintResume,
@@ -195,6 +198,73 @@ export function loadRubrics(workspaceDir: string): LevelingRubric[] {
   }
 
   return rubrics;
+}
+
+export interface ResumeRecord {
+  id: string;
+  name: string;
+  type: 'template' | 'tailored';
+  filePath: string;
+  spec: ResumeSpec;
+}
+
+export function loadResumeSpecs(workspaceDir: string): ResumeRecord[] {
+  const records: ResumeRecord[] = [];
+  const directories: Array<{ dir: string; type: 'template' | 'tailored' }> = [
+    { dir: path.join(workspaceDir, 'resumes', 'templates'), type: 'template' },
+    { dir: path.join(workspaceDir, 'resumes', 'tailored'), type: 'tailored' },
+  ];
+
+  for (const { dir, type } of directories) {
+    if (!fs.existsSync(dir)) continue;
+    const files = findFiles(dir, ['.yaml', '.yml', '.json', '.md']);
+    for (const file of files) {
+      try {
+        const raw = fs.readFileSync(file, 'utf-8');
+        const ext = path.extname(file).toLowerCase();
+        let parsed: any;
+        if (ext === '.json') {
+          parsed = JSON.parse(raw);
+        } else if (ext === '.yaml' || ext === '.yml') {
+          parsed = yaml.load(raw);
+        } else if (ext === '.md') {
+          const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+          if (match) {
+            parsed = yaml.load(match[1]);
+          } else {
+            parsed = yaml.load(raw);
+          }
+        }
+        const validated = ResumeSpecSchema.safeParse(parsed);
+        if (validated.success) {
+          const baseName = path.basename(file, ext);
+          const rel = path.relative(workspaceDir, file).replace(/\\/g, '/');
+          records.push({
+            id: `${type}-${baseName}`,
+            name: baseName,
+            type,
+            filePath: rel,
+            spec: validated.data,
+          });
+        }
+      } catch {
+        // Skip files that fail to parse
+      }
+    }
+  }
+
+  // If no templates exist, provide a default starter template conforming to ResumeSpec
+  if (records.filter((r) => r.type === 'template').length === 0) {
+    records.unshift({
+      id: 'template-starter',
+      name: 'Starter Template',
+      type: 'template',
+      filePath: 'resumes/templates/starter.yaml',
+      spec: DEFAULT_STARTER_RESUME,
+    });
+  }
+
+  return records;
 }
 
 /**
@@ -407,6 +477,112 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       });
     } catch (err: any) {
       return c.json({ error: err.message || 'Failed to compile resume' }, 400);
+    }
+  });
+
+  // 6b. Integrity Pre-Flight Gate
+  app.post('/api/integrity/preflight', async (c) => {
+    try {
+      const body = await c.req.json();
+      const store = loadEvidenceStore(resolvedWorkspaceDir);
+      const privacyRules = loadPrivacyRules(resolvedWorkspaceDir);
+
+      let text = '';
+      if (body.spec) {
+        const validatedSpec = ResumeSpecSchema.parse(body.spec);
+        // Compile to markdown text without privacy rules so linters audit raw content
+        text = compileMarkdownResume(validatedSpec);
+        // Ensure any bullet citations are evaluated even if not in bullet text
+        for (const exp of validatedSpec.experiences || []) {
+          for (const b of exp.bullets || []) {
+            if (b.citations) {
+              for (const cit of b.citations) {
+                if (!text.includes(cit)) {
+                  text += `\n(${cit})`;
+                }
+              }
+            }
+          }
+        }
+      } else if (typeof body.text === 'string') {
+        text = body.text;
+      } else {
+        return c.json({ error: 'Missing spec or text in request body' }, 400);
+      }
+
+      const citationResult = lintCitations(text, store);
+      const metricResult = validateMetrics(text, store);
+      const redactResult = redactText(text, privacyRules);
+
+      const isClean =
+        citationResult.isClean && metricResult.isClean && redactResult.isClean;
+
+      return c.json({
+        isClean,
+        validCitations: citationResult.validCitations,
+        danglingCitations: citationResult.danglingCitations,
+        metricIssues: metricResult.issues,
+        violations: redactResult.violations,
+        redactedText: redactResult.redactedText,
+      });
+    } catch (err: any) {
+      return c.json(
+        {
+          isClean: false,
+          error: err.message || 'Preflight check failed',
+          issues: err.issues,
+        },
+        400
+      );
+    }
+  });
+
+  // 6c. Resume Specs list
+  app.get('/api/resumes', (c) => {
+    const resumes = loadResumeSpecs(resolvedWorkspaceDir);
+    return c.json(resumes);
+  });
+
+  // 6d. Save resume spec
+  app.post('/api/resumes', async (c) => {
+    try {
+      const body = await c.req.json();
+      let rawName = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!rawName) {
+        return c.json({ success: false, error: 'Resume name is required' }, 400);
+      }
+      rawName = rawName.replace(/\.(ya?ml|json|md)$/i, '');
+      const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const type: 'template' | 'tailored' = body.type === 'template' ? 'template' : 'tailored';
+      const validatedSpec = ResumeSpecSchema.parse(body.spec);
+
+      const targetDir = path.join(
+        resolvedWorkspaceDir,
+        'resumes',
+        type === 'template' ? 'templates' : 'tailored'
+      );
+      fs.mkdirSync(targetDir, { recursive: true });
+      const targetFile = path.join(targetDir, `${safeName}.yaml`);
+      fs.writeFileSync(targetFile, yaml.dump(validatedSpec), 'utf-8');
+
+      const relativePath = path
+        .relative(resolvedWorkspaceDir, targetFile)
+        .replace(/\\/g, '/');
+
+      return c.json({
+        success: true,
+        name: safeName,
+        filePath: relativePath,
+      });
+    } catch (err: any) {
+      return c.json(
+        {
+          success: false,
+          error: err.message || 'Failed to save resume spec',
+          issues: err.issues,
+        },
+        400
+      );
     }
   });
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Layout, type NavTab } from './components/Layout';
 import { EvidenceExplorer } from './views/EvidenceExplorer';
 import { RubricGapMatrix } from './views/RubricGapMatrix';
-import { ResumeTailorPlaceholder } from './views/ResumeTailorPlaceholder';
+import { ResumeTailor } from './views/ResumeTailor';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>('evidence');
@@ -11,7 +11,7 @@ export function App() {
     <Layout currentTab={currentTab} onSelectTab={setCurrentTab}>
       {currentTab === 'evidence' && <EvidenceExplorer />}
       {currentTab === 'rubrics' && <RubricGapMatrix />}
-      {currentTab === 'tailor' && <ResumeTailorPlaceholder />}
+      {currentTab === 'tailor' && <ResumeTailor />}
     </Layout>
   );
 }
