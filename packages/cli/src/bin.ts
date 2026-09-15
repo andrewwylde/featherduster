@@ -4,6 +4,7 @@ import pc from 'picocolors';
 import { startServer } from './server.js';
 import { runCheckCommand } from './commands/check.js';
 import { runBuildCommand } from './commands/build.js';
+import { runInitCommand } from './commands/init.js';
 
 const cli = cac('featherduster');
 
@@ -60,6 +61,19 @@ cli
       rubric: options.rubric,
       output: options.output,
       stdout: options.stdout,
+    });
+  });
+
+// 4. Init command: scaffold new career workspace
+cli
+  .command('init [root]', 'Initialize a new Featherduster career corpus workspace')
+  .option('-f, --force', 'Overwrite existing files if present')
+  .option('--block-push', 'Configure pre-push hook to unconditionally block remote pushes')
+  .action(async (root?: string, options: { force?: boolean; blockPush?: boolean } = {}) => {
+    await runInitCommand({
+      workspace: root || process.cwd(),
+      force: options.force,
+      blockPush: options.blockPush,
     });
   });
 

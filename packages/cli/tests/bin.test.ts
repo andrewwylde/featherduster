@@ -13,6 +13,7 @@ describe('CLI bin executable end-to-end', () => {
     expect(stdout).toContain('featherduster');
     expect(stdout).toContain('check');
     expect(stdout).toContain('build');
+    expect(stdout).toContain('init');
   });
 
   it('prints version number with -v', async () => {
