@@ -1,6 +1,48 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export function getMimeType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.html':
+    case '.htm':
+      return 'text/html; charset=utf-8';
+    case '.js':
+    case '.mjs':
+      return 'application/javascript; charset=utf-8';
+    case '.css':
+      return 'text/css; charset=utf-8';
+    case '.json':
+      return 'application/json; charset=utf-8';
+    case '.svg':
+      return 'image/svg+xml';
+    case '.png':
+      return 'image/png';
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg';
+    case '.gif':
+      return 'image/gif';
+    case '.webp':
+      return 'image/webp';
+    case '.ico':
+      return 'image/x-icon';
+    case '.woff':
+      return 'font/woff';
+    case '.woff2':
+      return 'font/woff2';
+    case '.ttf':
+      return 'font/ttf';
+    case '.map':
+      return 'application/json';
+    default:
+      return 'application/octet-stream';
+  }
+}
 import { streamSSE } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import yaml from 'js-yaml';
@@ -422,6 +464,52 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     });
   });
 
+  // 9. Static assets & SPA fallback
+  const defaultUiDir = fs.existsSync(path.resolve(__dirname, 'ui'))
+    ? path.resolve(__dirname, 'ui')
+    : fs.existsSync(path.resolve(__dirname, '../dist/ui'))
+    ? path.resolve(__dirname, '../dist/ui')
+    : path.resolve(__dirname, 'ui');
+
+  const uiDir = options?.uiDir ?? defaultUiDir;
+
+  app.get('*', async (c) => {
+    // If request is under /api, do not fallback to index.html
+    if (c.req.path.startsWith('/api')) {
+      return c.json({ error: 'Endpoint not found' }, 404);
+    }
+
+    if (!fs.existsSync(uiDir)) {
+      return c.text('Featherduster Web UI is not built. Run "npm run build" in packages/ui.', 404);
+    }
+
+    // Try finding requested static file
+    const relPath = c.req.path === '/' ? 'index.html' : c.req.path.replace(/^\/+/, '');
+    const resolvedPath = path.resolve(uiDir, relPath);
+
+    // Prevent directory traversal
+    if (
+      resolvedPath.startsWith(path.resolve(uiDir)) &&
+      fs.existsSync(resolvedPath) &&
+      fs.statSync(resolvedPath).isFile()
+    ) {
+      const mime = getMimeType(resolvedPath);
+      c.header('Content-Type', mime);
+      const content = fs.readFileSync(resolvedPath);
+      return c.body(content);
+    }
+
+    // Fallback to index.html for SPA client-side routes
+    const indexPath = path.resolve(uiDir, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      c.header('Content-Type', 'text/html; charset=utf-8');
+      const indexContent = fs.readFileSync(indexPath, 'utf-8');
+      return c.html(indexContent);
+    }
+
+    return c.text('Featherduster Web UI is not built. Run "npm run build" in packages/ui.', 404);
+  });
+
   return app;
 }
 
@@ -429,6 +517,7 @@ export interface StartServerOptions {
   workspaceDir?: string;
   port?: number;
   openBrowser?: boolean;
+  uiDir?: string;
 }
 
 export interface ServerInstance {
@@ -447,7 +536,7 @@ export async function startServer(options?: StartServerOptions): Promise<ServerI
   const watcher = new WorkspaceWatcher(workspaceDir);
   watcher.start();
 
-  const app = createApp(workspaceDir, { watcher });
+  const app = createApp(workspaceDir, { watcher, uiDir: options?.uiDir });
 
   const server = serve({
     fetch: app.fetch,

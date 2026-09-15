@@ -518,4 +518,88 @@ describe('Local Hono Server Integration Tests', () => {
       expect(res.body).toBeDefined();
     });
   });
+
+  describe('Static File & SPA Fallback Serving', () => {
+    let tmpUiDir: string;
+
+    beforeEach(() => {
+      tmpUiDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-ui-test-'));
+      fs.mkdirSync(path.join(tmpUiDir, 'assets'), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpUiDir, 'index.html'),
+        '<!DOCTYPE html><html><head><title>Featherduster</title></head><body><div id="root"></div></body></html>',
+        'utf-8'
+      );
+      fs.writeFileSync(
+        path.join(tmpUiDir, 'assets', 'index.js'),
+        'console.log("Featherduster UI bundle");',
+        'utf-8'
+      );
+      fs.writeFileSync(
+        path.join(tmpUiDir, 'assets', 'style.css'),
+        'body { background: #000; }',
+        'utf-8'
+      );
+    });
+
+    afterEach(() => {
+      try {
+        fs.rmSync(tmpUiDir, { recursive: true, force: true });
+      } catch {
+        // ignore
+      }
+    });
+
+    it('serves index.html at root route / with text/html', async () => {
+      const app = createApp(tmpWorkspace, { uiDir: tmpUiDir });
+      const res = await app.request('/');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
+      const html = await res.text();
+      expect(html).toContain('<title>Featherduster</title>');
+    });
+
+    it('serves static assets with appropriate content-type headers', async () => {
+      const app = createApp(tmpWorkspace, { uiDir: tmpUiDir });
+
+      const resJs = await app.request('/assets/index.js');
+      expect(resJs.status).toBe(200);
+      expect(resJs.headers.get('content-type')).toContain('application/javascript');
+      const js = await resJs.text();
+      expect(js).toContain('Featherduster UI bundle');
+
+      const resCss = await app.request('/assets/style.css');
+      expect(resCss.status).toBe(200);
+      expect(resCss.headers.get('content-type')).toContain('text/css');
+      const css = await resCss.text();
+      expect(css).toContain('background: #000');
+    });
+
+    it('falls back to index.html for non-API client-side SPA navigation routes', async () => {
+      const app = createApp(tmpWorkspace, { uiDir: tmpUiDir });
+      const res = await app.request('/rubrics/engineer-ic');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/html');
+      const html = await res.text();
+      expect(html).toContain('<title>Featherduster</title>');
+    });
+
+    it('returns 404 for unknown /api routes without falling back to index.html', async () => {
+      const app = createApp(tmpWorkspace, { uiDir: tmpUiDir });
+      const res = await app.request('/api/unknown-endpoint');
+      expect(res.status).toBe(404);
+      expect(res.headers.get('content-type')).toContain('application/json');
+      const json = await res.json();
+      expect(json.error).toBeDefined();
+    });
+
+    it('returns 404 with helpful message when UI directory is not built', async () => {
+      const nonExistentDir = path.join(tmpWorkspace, 'does-not-exist-ui');
+      const app = createApp(tmpWorkspace, { uiDir: nonExistentDir });
+      const res = await app.request('/');
+      expect(res.status).toBe(404);
+      const text = await res.text();
+      expect(text).toContain('Featherduster Web UI is not built');
+    });
+  });
 });
