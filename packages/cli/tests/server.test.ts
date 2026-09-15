@@ -1,0 +1,521 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import yaml from 'js-yaml';
+import { createApp } from '../src/server.js';
+import {
+  EvidenceEntry,
+  LevelingRubric,
+  PrivacyRulesConfig,
+  ResumeSpec,
+  serializeEvidenceMarkdown,
+} from '@featherduster/core';
+
+describe('Local Hono Server Integration Tests', () => {
+  let tmpWorkspace: string;
+
+  const sampleEvidence: EvidenceEntry = {
+    id: 'ev-042',
+    date: '2026-04-12',
+    company: 'parable',
+    title: 'Zero-Downtime Session Migration',
+    summary: 'Architected token rotation protocol eliminating session invalidations during DB switch.',
+    impact: 'Reduced user re-auth events by 99.4% across 140k active daily sessions.',
+    themes: ['distributed-systems', 'reliability', 'auth'],
+    confidence: 'verified',
+    in_flight: false,
+    metrics: [
+      {
+        name: 're-auth reduction',
+        value: '99.4%',
+        status: 'verified',
+      },
+    ],
+    internal_references: [
+      {
+        type: 'linear',
+        ref: 'AUTH-892',
+      },
+    ],
+  };
+
+  const sampleRubric: LevelingRubric = {
+    id: 'eng-ic-ladder',
+    title: 'Engineering IC Competency Framework',
+    target_level: 'L5',
+    levels: [
+      { id: 'L4', name: 'Senior Software Engineer' },
+      { id: 'L5', name: 'Staff / Tech Lead' },
+      { id: 'L6', name: 'Principal Engineer' },
+    ],
+    competencies: [
+      {
+        id: 'architecture-scope',
+        name: 'System Architecture & Scope',
+        levels: {
+          L4: 'Designs single-service modules with minimal guidance.',
+          L5: 'Leads multi-service system designs; resolves ambiguous trade-offs.',
+          L6: 'Defines cross-organization architectural strategy and standards.',
+        },
+        evidence_mapped: [
+          {
+            ev_id: 'ev-042',
+            relevance: 'primary',
+            narrative: 'Cross-system token protocol spanning auth-service and web-app.',
+          },
+        ],
+      },
+      {
+        id: 'mentorship',
+        name: 'Mentorship & Sponsorship',
+        levels: {
+          L4: 'Mentors interns and new hires.',
+          L5: 'Sponsors L4s toward promotion and leads guilds.',
+          L6: 'Sets engineering culture and multipliers.',
+        },
+        evidence_mapped: [], // Intentionally empty to test gaps
+      },
+    ],
+  };
+
+  const samplePrivacyRules: PrivacyRulesConfig = {
+    strip_patterns: ['AUTH-\\d+'],
+    replacements: [
+      { search: 'parable', replace: 'Acme Health Systems' },
+      { search: 'ApolloSecret', replace: 'RedactedProject' },
+    ],
+    banned_keywords: ['ApolloSecret', 'CLASSIFIED_PROJECT'],
+  };
+
+  const sampleResumeSpec: ResumeSpec = {
+    profile: {
+      name: 'Alex Mercer',
+      title: 'Staff Software Engineer',
+      email: 'alex@example.com',
+      location: 'San Francisco, CA',
+    },
+    summary: 'Distributed systems architect specialized in zero-downtime migrations.',
+    experiences: [
+      {
+        company: 'parable',
+        role: 'Staff Engineer',
+        startDate: '2023-01',
+        endDate: 'Present',
+        bullets: [
+          {
+            text: 'Architected token rotation protocol eliminating session invalidations (ev-042).',
+            citations: ['ev-042'],
+          },
+        ],
+      },
+    ],
+    education: [
+      {
+        institution: 'UC Berkeley',
+        degree: 'B.S. EECS',
+        year: '2016',
+      },
+    ],
+    skills: [
+      {
+        category: 'Backend',
+        skills: ['TypeScript', 'Go', 'Distributed Systems'],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-cli-test-'));
+
+    // Create directories
+    fs.mkdirSync(path.join(tmpWorkspace, 'evidence', 'parable'), { recursive: true });
+    fs.mkdirSync(path.join(tmpWorkspace, 'rubrics'), { recursive: true });
+    fs.mkdirSync(path.join(tmpWorkspace, '.featherduster'), { recursive: true });
+    fs.mkdirSync(path.join(tmpWorkspace, 'resumes', 'tailored'), { recursive: true });
+
+    // Seed sample evidence
+    const mdContent = serializeEvidenceMarkdown(
+      sampleEvidence,
+      'During the tenant database migration, auth tokens were being invalidated.'
+    );
+    fs.writeFileSync(
+      path.join(tmpWorkspace, 'evidence', 'parable', 'ev-042-auth.md'),
+      mdContent,
+      'utf-8'
+    );
+
+    // Seed sample rubric
+    fs.writeFileSync(
+      path.join(tmpWorkspace, 'rubrics', 'eng-ic-ladder.yaml'),
+      yaml.dump(sampleRubric),
+      'utf-8'
+    );
+
+    // Seed sample privacy rules
+    fs.writeFileSync(
+      path.join(tmpWorkspace, '.featherduster', 'privacy-rules.yaml'),
+      yaml.dump({ rules: samplePrivacyRules }),
+      'utf-8'
+    );
+
+    // Seed sample resume file in resumes/
+    fs.writeFileSync(
+      path.join(tmpWorkspace, 'resumes', 'tailored', 'staff-resume.md'),
+      '## Accomplishments\n- Led session rotation protocol (ev-042).\n',
+      'utf-8'
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fs.rmSync(tmpWorkspace, { recursive: true, force: true });
+    } catch {
+      // ignore
+    }
+  });
+
+  describe('createApp factory', () => {
+    it('returns a Hono app configured for the workspace directory', () => {
+      const app = createApp(tmpWorkspace);
+      expect(app).toBeDefined();
+      expect(typeof app.request).toBe('function');
+    });
+  });
+
+  describe('GET /api/health', () => {
+    it('returns status ok and the workspace directory', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/health');
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body).toEqual({
+        status: 'ok',
+        workspaceDir: tmpWorkspace,
+      });
+    });
+  });
+
+  describe('GET /api/evidence', () => {
+    it('returns list of all evidence entries loaded from workspaceDir/evidence/ via EvidenceStore', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/evidence');
+      expect(res.status).toBe(200);
+
+      const entries = await res.json();
+      expect(Array.isArray(entries)).toBe(true);
+      expect(entries.length).toBe(1);
+
+      const first = entries[0];
+      expect(first.id).toBe('ev-042');
+      expect(first.company).toBe('parable');
+      expect(first.title).toBe('Zero-Downtime Session Migration');
+      expect(first.narrative).toContain('During the tenant database migration');
+    });
+
+    it('filters evidence entries by query parameters', async () => {
+      const app = createApp(tmpWorkspace);
+
+      const resMatched = await app.request('/api/evidence?company=parable');
+      expect(resMatched.status).toBe(200);
+      const matched = await resMatched.json();
+      expect(matched.length).toBe(1);
+
+      const resUnmatched = await app.request('/api/evidence?company=othercorp');
+      expect(resUnmatched.status).toBe(200);
+      const unmatched = await resUnmatched.json();
+      expect(unmatched.length).toBe(0);
+    });
+  });
+
+  describe('POST /api/evidence', () => {
+    it('creates a new evidence markdown file on disk with valid frontmatter and returns success', async () => {
+      const app = createApp(tmpWorkspace);
+
+      const newEntry: EvidenceEntry = {
+        id: 'ev-043',
+        date: '2026-05-01',
+        company: 'parable',
+        title: 'Cache Layer Optimization',
+        summary: 'Introduced Redis read-through caching for high-frequency user metadata.',
+        impact: 'Reduced p99 query latency from 180ms to 12ms across 2M daily read requests.',
+        themes: ['performance', 'caching'],
+        confidence: 'verified',
+        in_flight: false,
+        metrics: [
+          {
+            name: 'p99 latency',
+            value: '12ms',
+            status: 'verified',
+          },
+        ],
+        internal_references: [],
+      };
+
+      const res = await app.request('/api/evidence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entry: newEntry,
+          narrative: 'Deployed Redis cluster with cluster-mode enabled.',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.success).toBe(true);
+      expect(body.entry.id).toBe('ev-043');
+
+      // Check file was created on disk
+      const targetFile = path.join(tmpWorkspace, 'evidence', 'parable', 'ev-043.md');
+      expect(fs.existsSync(targetFile)).toBe(true);
+
+      const content = fs.readFileSync(targetFile, 'utf-8');
+      expect(content).toContain('id: ev-043');
+      expect(content).toContain('Cache Layer Optimization');
+      expect(content).toContain('Deployed Redis cluster with cluster-mode enabled.');
+
+      // Check it is immediately reflected in GET /api/evidence
+      const listRes = await app.request('/api/evidence');
+      const entries = await listRes.json();
+      expect(entries.length).toBe(2);
+      expect(entries.some((e: any) => e.id === 'ev-043')).toBe(true);
+    });
+
+    it('returns 400 when evidence payload is invalid', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/evidence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entry: {
+            id: 'invalid-id',
+            // Missing required fields like date, company, title, summary, etc.
+          },
+        }),
+      });
+
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.success).toBe(false);
+      expect(body.error).toBeDefined();
+    });
+  });
+
+  describe('GET /api/rubrics', () => {
+    it('returns rubrics loaded from workspaceDir/rubrics/', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/rubrics');
+      expect(res.status).toBe(200);
+
+      const rubrics = await res.json();
+      expect(Array.isArray(rubrics)).toBe(true);
+      expect(rubrics.length).toBe(1);
+      expect(rubrics[0].id).toBe('eng-ic-ladder');
+      expect(rubrics[0].title).toBe('Engineering IC Competency Framework');
+      expect(rubrics[0].competencies.length).toBe(2);
+    });
+  });
+
+  describe('GET /api/rubrics/gap-analysis', () => {
+    it('computes and returns gap analysis metrics for a rubric and target level', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request(
+        '/api/rubrics/gap-analysis?rubricId=eng-ic-ladder&targetLevel=L5'
+      );
+      expect(res.status).toBe(200);
+
+      const analysis = await res.json();
+      expect(analysis.targetLevel).toBe('L5');
+      expect(analysis.totalCompetencies).toBe(2);
+      // 'architecture-scope' is met (ev-042 is verified), 'mentorship' has no evidence (gap)
+      expect(analysis.coveredCompetencies).toBe(1);
+      expect(analysis.gapPercentage).toBe(50);
+      expect(analysis.competencies).toHaveLength(2);
+
+      const archComp = analysis.competencies.find((c: any) => c.id === 'architecture-scope');
+      expect(archComp?.status).toBe('met');
+
+      const mentorComp = analysis.competencies.find((c: any) => c.id === 'mentorship');
+      expect(mentorComp?.status).toBe('gap');
+    });
+
+    it('returns 404 when rubricId is not found', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request(
+        '/api/rubrics/gap-analysis?rubricId=non-existent&targetLevel=L5'
+      );
+      expect(res.status).toBe(404);
+      const body = await res.json();
+      expect(body.error).toBeDefined();
+    });
+  });
+
+  describe('POST /api/resumes/compile', () => {
+    it('compiles clean ATS markdown with privacy rules applied', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: sampleResumeSpec,
+          format: 'markdown',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.output).toBeDefined();
+      expect(body.output).toContain('Alex Mercer');
+      // Redaction engine should replace 'parable' with 'Acme Health Systems'
+      expect(body.output).toContain('Acme Health Systems');
+      expect(body.output).not.toContain('parable');
+      // Should strip citation (ev-042)
+      expect(body.output).not.toContain('ev-042');
+      expect(body.isClean).toBe(true);
+      expect(body.violations).toEqual([]);
+    });
+
+    it('compiles HTML print format', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: sampleResumeSpec,
+          format: 'html',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.output).toContain('<!DOCTYPE html>');
+      expect(body.output).toContain('Alex Mercer');
+      expect(body.isClean).toBe(true);
+    });
+
+    it('compiles Typst and LaTeX formats', async () => {
+      const app = createApp(tmpWorkspace);
+
+      const resTypst = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: sampleResumeSpec,
+          format: 'typst',
+        }),
+      });
+      expect(resTypst.status).toBe(200);
+      const typstBody = await resTypst.json();
+      expect(typstBody.output).toContain('#set page');
+
+      const resLatex = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: sampleResumeSpec,
+          format: 'latex',
+        }),
+      });
+      expect(resLatex.status).toBe(200);
+      const latexBody = await resLatex.json();
+      expect(latexBody.output).toContain('\\documentclass');
+    });
+
+    it('compiles Brag Doc format with evidence grouped by rubric', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: {
+            rubric: sampleRubric,
+            candidateName: 'Alex Mercer',
+            period: '2026-H1',
+          },
+          format: 'brag',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.output).toContain('# Performance Brag Document: Alex Mercer');
+      expect(body.output).toContain('Engineering IC Competency Framework');
+      expect(body.output).toContain('System Architecture & Scope');
+      expect(body.isClean).toBe(true);
+    });
+
+    it('flags violations and sets isClean=false when banned keywords appear in compiled output', async () => {
+      const app = createApp(tmpWorkspace);
+
+      const specWithBanned: ResumeSpec = {
+        ...sampleResumeSpec,
+        summary: 'Architected ApolloSecret core distributed infrastructure for CLASSIFIED_PROJECT.',
+      };
+
+      const res = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: specWithBanned,
+          format: 'markdown',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.isClean).toBe(false);
+      expect(body.violations).toContain('CLASSIFIED_PROJECT');
+    });
+  });
+
+  describe('GET /api/integrity/check', () => {
+    it('returns clean report when workspace citations and metrics are valid', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/integrity/check');
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.isClean).toBe(true);
+      expect(body.issues).toEqual([]);
+    });
+
+    it('flags dangling citations and missing metrics across workspace files', async () => {
+      // Add a file citing non-existent evidence
+      fs.writeFileSync(
+        path.join(tmpWorkspace, 'resumes', 'tailored', 'bad-resume.md'),
+        '## Experience\n- Delivered breakthrough AI compiler (ev-999).\n- Boosted throughput by [METRIC NEEDED].\n',
+        'utf-8'
+      );
+
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/integrity/check');
+      expect(res.status).toBe(200);
+
+      const body = await res.json();
+      expect(body.isClean).toBe(false);
+      expect(body.issues.length).toBeGreaterThanOrEqual(2);
+
+      const dangling = body.issues.find(
+        (i: any) => i.type === 'dangling_citation' || i.message.includes('ev-999')
+      );
+      expect(dangling).toBeDefined();
+
+      const missingMetric = body.issues.find(
+        (i: any) => i.type === 'missing_metric' || i.message.includes('METRIC NEEDED')
+      );
+      expect(missingMetric).toBeDefined();
+    });
+  });
+
+  describe('GET /api/events', () => {
+    it('returns an SSE stream with proper text/event-stream headers', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/events');
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('text/event-stream');
+      expect(res.body).toBeDefined();
+    });
+  });
+});
