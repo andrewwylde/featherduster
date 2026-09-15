@@ -74,11 +74,29 @@ Before any resume or brag document is exported, Featherduster runs an automated 
 - **Banned Keyword Gate**: Fails compilation if classified terms (e.g. `CONFIDENTIAL`, `PROPRIETARY_ALGO`) are detected.
 - **Dangling Citation Detection**: Ensures no bullet points cite nonexistent evidence IDs.
 
-### 🔒 Git Push Defense
-`featherduster init --block-push` configures `.githooks/pre-push` to guarantee your private evidence ledger can **never be pushed to a public or remote git repository**. Even without unconditional blocking, the hook runs `featherduster check` before any push, halting if unverified metrics or banned keywords are found.
+### 🧹 Native De-Slop Engine & Anti-Slop Linter
+AI-generated resume bullets often suffer from "ChatGPT slop"—hollow corporate buzzwords, empty hedging, and manufactured stakes. Featherduster features a native, deterministic anti-slop engine directly in `@featherduster/core`:
+- **Buzzword & Fluff Detection**: Flags empty corporate buzzwords (`spearheaded cross-functional synergies`, `fostered synergistic alignment`), LLM filler lexicon (`delve`, `tapestry`, `realm of`, `testament to`), manufactured stakes (`in today's fast-paced digital landscape`), and empty hedging (`it's worth noting that`, `needless to say`).
+- **Deterministic 1-Click Cleaner**: Strips filler phrases and throat-clearing while preserving 100% of technical facts, engineering mechanisms, and quantitative metrics.
+- **Pre-Flight & Headless Integration**: Integrated directly into `featherduster check`, the UI Pre-Flight Gate modal, and the Resume Canvas toolbar.
+
+### 📦 Bundled Career Skills & Agent Integration
+`featherduster init` automatically installs specialized agent skills into `.featherduster/skills/` and `.claude/skills/`, plus locked-down `.claude/settings.json` permissions:
+- `career-growth-tailor-resume`: Surgical job description matching, enforcing the Ledger Ceiling Rule and transferable vs. fabricated checks.
+- `career-growth-evidence`: Ingests work signals from GitHub PRs, Linear issues, and local notes into the evidence ledger.
+- `career-growth-accomplishments`: Builds and maintains structured accomplishment journals and brag docs.
+- `career-growth-competency`: Maps verified evidence to leveling ladders (L3–L6).
+- `career-growth-self-review` & `promotion-packet`: Prepares audit-proof self-assessments and promotion packets backed strictly by cited evidence.
+- `de-slop`: Evaluates candidate prose against an editorial rubric to ensure it reads like an authoritative senior engineer, not generic machine slop.
+
+### 🔒 Git Push Defense & Claude Safety Permissions
+`featherduster init --block-push` configures `.githooks/pre-push` and `.claude/settings.json` to guarantee your private evidence ledger can **never be pushed to a public or remote git repository**. Dangerous git operations (`git push`, `git remote add`, `gh repo create`) are denied in Claude Code permissions by default. Even in standard mode, pre-push hooks halt if unverified metrics or banned keywords are detected.
 
 ### 🤖 AI Agent Operating Protocol (`AGENT.md`)
-Every Featherduster workspace includes an authoritative `AGENT.md` contract. External coding agents (Claude Code, Cursor, Antigravity) can safely edit resumes and analyze leveling gaps while being strictly bound to never invent numbers, never promote unverified work, and never leak confidential data.
+Every Featherduster workspace includes an authoritative `AGENT.md` contract. External coding agents (Claude Code, Cursor, Antigravity) can safely edit resumes and analyze leveling gaps while being strictly bound to three non-negotiable prime directives:
+1. **Zero Hallucinated Metrics**: Missing numbers must use `[METRIC NEEDED]`.
+2. **Strict Citation Contract**: Every accomplishment must cite a valid `ev-###`.
+3. **Zero AI Slop**: Banning ungrounded buzzwords, empty hedging, and manufactured stakes.
 
 ---
 
@@ -95,6 +113,8 @@ npx featherduster init --block-push
 
 This scaffolds:
 - `.featherduster/config.yaml` & `privacy-rules.yaml`
+- `.featherduster/skills/` & `.claude/skills/` (Bundled career growth & de-slop skills)
+- `.claude/settings.json` (Push-denied safety permissions)
 - `evidence/sample-company/ev-001-starter.md`
 - `rubrics/engineering-ic.yaml` (Standard Software Engineering IC ladder)
 - `resumes/tailored/starter.yaml` & `resumes/templates/starter.md`
