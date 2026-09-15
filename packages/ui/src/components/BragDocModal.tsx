@@ -9,8 +9,9 @@ import {
   ShieldAlert,
   AlertTriangle,
   RefreshCw,
+  Sparkles,
 } from 'lucide-react';
-import type { LevelingRubric } from '@featherduster/core';
+import { cleanSlop, type LevelingRubric } from '@featherduster/core';
 import { apiClient } from '../api/client';
 
 export interface BragDocModalProps {
@@ -42,6 +43,39 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
   const [isCompiling, setIsCompiling] = useState(false);
   const [compileError, setCompileError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [isDeslopping, setIsDeslopping] = useState(false);
+  const [deslopMessage, setDeslopMessage] = useState<string | null>(null);
+
+  const handleDeSlop = async () => {
+    if (!markdownOutput) return;
+    try {
+      setIsDeslopping(true);
+      const res = await apiClient.deslopText(markdownOutput);
+      if (res.cleanedText) {
+        setMarkdownOutput(res.cleanedText);
+        const count = res.fixesApplied?.length ?? 0;
+        setDeslopMessage(
+          count > 0
+            ? `De-slopped: Removed ${count} buzzword/hedging pattern${count === 1 ? '' : 's'}`
+            : 'De-slop: 0 buzzwords or empty hedging detected'
+        );
+        setTimeout(() => setDeslopMessage(null), 4000);
+      }
+    } catch {
+      // Fallback
+      const fallback = cleanSlop(markdownOutput);
+      setMarkdownOutput(fallback.cleanedText);
+      const count = fallback.fixesApplied?.length ?? 0;
+      setDeslopMessage(
+        count > 0
+          ? `De-slopped: Removed ${count} buzzword/hedging pattern${count === 1 ? '' : 's'}`
+          : 'De-slop: 0 buzzwords or empty hedging detected'
+      );
+      setTimeout(() => setDeslopMessage(null), 4000);
+    } finally {
+      setIsDeslopping(false);
+    }
+  };
 
   // Synchronize initial selections when modal opens or rubrics change
   useEffect(() => {
@@ -253,16 +287,37 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
             </span>
           </label>
 
-          <button
-            type="button"
-            onClick={handleCompile}
-            disabled={isCompiling}
-            className="text-slate-400 hover:text-teal-400 flex items-center space-x-1 transition-colors"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isCompiling ? 'animate-spin text-teal-400' : ''}`} />
-            <span>Re-compile</span>
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={handleDeSlop}
+              disabled={isDeslopping || !markdownOutput}
+              className="px-3 py-1 bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5 disabled:opacity-40 shadow-sm"
+              title="Clean AI buzzwords and empty hedging from brag document"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${isDeslopping ? 'animate-spin text-purple-400' : 'text-purple-400'}`} />
+              <span>{isDeslopping ? 'De-Slopping...' : 'De-Slop Brag Doc'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCompile}
+              disabled={isCompiling}
+              className="text-slate-400 hover:text-teal-400 flex items-center space-x-1 transition-colors px-2 py-1"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCompiling ? 'animate-spin text-teal-400' : ''}`} />
+              <span>Re-compile</span>
+            </button>
+          </div>
         </div>
+
+        {/* De-Slop Feedback Banner */}
+        {deslopMessage && (
+          <div className="px-6 py-2 bg-purple-950/40 border-b border-purple-500/30 text-xs text-purple-300 flex items-center space-x-2 animate-fadeIn">
+            <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+            <span>{deslopMessage}</span>
+          </div>
+        )}
 
         {/* Audit Warning Banner if applicable */}
         {hasWarnings && (

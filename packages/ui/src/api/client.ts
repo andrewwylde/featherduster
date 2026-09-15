@@ -90,6 +90,24 @@ export interface PreflightResult {
   metricIssues: Array<{ type: string; message: string; line?: number }>;
   violations: string[];
   redactedText: string;
+  slop?: {
+    isClean: boolean;
+    score: number;
+    slopBand: 'clean' | 'low' | 'moderate' | 'high';
+    matches: Array<{
+      type: string;
+      patternName: string;
+      matchedText: string;
+      line?: number;
+    }>;
+    summary: string;
+  };
+  slopIssues?: Array<{
+    type: string;
+    patternName: string;
+    matchedText: string;
+    line?: number;
+  }>;
   error?: string;
 }
 
@@ -253,6 +271,22 @@ export class ApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
+  }
+
+  /**
+   * Automatically de-slop text by stripping buzzwords, empty hedging stems, and passive throat-clearing
+   */
+  async deslopText(
+    text: string
+  ): Promise<{ success: boolean; cleanedText: string; fixesApplied: string[] }> {
+    return this.fetchJson<{ success: boolean; cleanedText: string; fixesApplied: string[] }>(
+      '/api/integrity/deslop',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      }
+    );
   }
 }
 

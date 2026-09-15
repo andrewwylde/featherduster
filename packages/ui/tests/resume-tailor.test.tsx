@@ -359,6 +359,10 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
         expect(screen.getByText('Pre-Flight Export Gate')).toBeInTheDocument();
         expect(screen.getByText('READY FOR EXPORT')).toBeInTheDocument();
         expect(screen.getByText('ev-001')).toBeInTheDocument();
+        expect(screen.getByText('Anti-Slop Audit')).toBeInTheDocument();
+        expect(
+          screen.getByText(/Anti-Slop: Clean \(0 buzzwords or empty hedging detected\)/i)
+        ).toBeInTheDocument();
       });
 
       // Verify Redact & Download button executes

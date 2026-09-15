@@ -12,6 +12,7 @@ import {
   Tag,
   Hash,
   EyeOff,
+  Sparkles,
 } from 'lucide-react';
 import { apiClient, type PreflightResult } from '../api/client';
 import type { ResumeSpec } from '@featherduster/core';
@@ -22,6 +23,7 @@ export interface PreFlightModalProps {
   spec?: ResumeSpec;
   text?: string;
   onRedactAndDownload?: (redactedText: string) => void;
+  onTextCleaned?: (cleanedText: string) => void;
 }
 
 export const PreFlightModal: React.FC<PreFlightModalProps> = ({
@@ -30,11 +32,15 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
   spec,
   text,
   onRedactAndDownload,
+  onTextCleaned,
 }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PreflightResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [deslopping, setDeslopping] = useState(false);
+  const [fixesApplied, setFixesApplied] = useState<string[]>([]);
+  const [cleanedPreviewText, setCleanedPreviewText] = useState<string | null>(null);
 
   const runCheck = useCallback(async () => {
     if (!isOpen) return;
@@ -57,20 +63,60 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
       setResult(null);
       setError(null);
       setCopied(false);
+      setDeslopping(false);
+      setFixesApplied([]);
+      setCleanedPreviewText(null);
     }
   }, [isOpen, runCheck]);
 
+  const handleCleanSlop = async () => {
+    const rawToClean = cleanedPreviewText || text || result?.redactedText || '';
+    if (!rawToClean) return;
+
+    setDeslopping(true);
+    setError(null);
+    try {
+      const deslopRes = await apiClient.deslopText(rawToClean);
+      setCleanedPreviewText(deslopRes.cleanedText);
+      setFixesApplied(deslopRes.fixesApplied);
+
+      if (onTextCleaned) {
+        onTextCleaned(deslopRes.cleanedText);
+      }
+
+      // Re-trigger preflight with cleaned text
+      const newResult = await apiClient.runPreflight({ text: deslopRes.cleanedText });
+      setResult(newResult);
+    } catch (err: any) {
+      setError(err.message || 'Failed to clean AI slop');
+    } finally {
+      setDeslopping(false);
+    }
+  };
+
   if (!isOpen) return null;
+
+  const isSlopClean =
+    result?.slop !== undefined
+      ? result.slop.isClean
+      : (result?.slopIssues?.length ?? 0) === 0;
+
+  const slopMatches = result?.slop?.matches ?? result?.slopIssues ?? [];
+
+  const slopIssuesCount = isSlopClean ? 0 : slopMatches.length;
 
   const totalIssues =
     (result?.danglingCitations.length ?? 0) +
     (result?.metricIssues.length ?? 0) +
-    (result?.violations.length ?? 0);
+    (result?.violations.length ?? 0) +
+    slopIssuesCount;
+
+  const previewText = result?.redactedText || cleanedPreviewText || '';
 
   const handleCopy = async () => {
-    if (!result?.redactedText) return;
+    if (!previewText) return;
     try {
-      await navigator.clipboard.writeText(result.redactedText);
+      await navigator.clipboard.writeText(previewText);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -79,8 +125,8 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
   };
 
   const handleDownload = () => {
-    if (!result?.redactedText) return;
-    const blob = new Blob([result.redactedText], { type: 'text/markdown;charset=utf-8' });
+    if (!previewText) return;
+    const blob = new Blob([previewText], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -90,7 +136,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     if (onRedactAndDownload) {
-      onRedactAndDownload(result.redactedText);
+      onRedactAndDownload(previewText);
     }
   };
 
@@ -346,10 +392,107 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
                     </div>
                   )}
                 </div>
+
+                {/* 4. Anti-Slop Audit */}
+                <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center space-x-2 text-sm font-semibold text-white">
+                      <Sparkles className="w-4 h-4 text-purple-400" />
+                      <span>Anti-Slop Audit</span>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {isSlopClean ? (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Anti-Slop: Clean (0 buzzwords or empty hedging detected)
+                        </span>
+                      ) : (
+                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          Anti-Slop: Issues Detected (score: {result.slop?.score ?? slopMatches.length * 2}, band: {result.slop?.slopBand ?? 'moderate'})
+                        </span>
+                      )}
+
+                      <button
+                        onClick={handleCleanSlop}
+                        disabled={deslopping}
+                        className={`px-3 py-1 text-xs font-semibold rounded-lg transition-all inline-flex items-center gap-1.5 shadow-md ${
+                          !isSlopClean
+                            ? 'text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 shadow-purple-900/30'
+                            : 'text-purple-200 bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/30'
+                        } disabled:opacity-50`}
+                        title="Automatically clean buzzwords, empty hedging stems, and passive throat-clearing"
+                      >
+                        <Sparkles className={`w-3.5 h-3.5 ${deslopping ? 'animate-spin' : ''}`} />
+                        <span>{deslopping ? 'Cleaning Slop...' : 'Clean AI Slop'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Fixes applied notification */}
+                  {fixesApplied.length > 0 && (
+                    <div className="p-2.5 rounded-lg bg-purple-950/30 border border-purple-500/30 text-xs text-purple-200 space-y-1 animate-fadeIn">
+                      <div className="flex items-center gap-1.5 font-semibold text-purple-300 text-[11px]">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>De-Slop Applied ({fixesApplied.length} fix{fixesApplied.length === 1 ? '' : 'es'}):</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {fixesApplied.map((fix, idx) => (
+                          <span
+                            key={idx}
+                            className="text-[10px] px-2 py-0.5 rounded bg-purple-900/40 text-purple-200 font-mono"
+                          >
+                            {fix}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {isSlopClean ? (
+                    <p className="text-xs text-slate-400">
+                      0 buzzwords or empty hedging detected. Writing is concise, active, and metric-grounded.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-xs text-amber-400 font-medium">
+                        Flagged buzzword patterns &amp; empty hedging stems:
+                      </p>
+                      <div className="space-y-1.5">
+                        {slopMatches.map((match, idx) => (
+                          <div
+                            key={idx}
+                            className="text-xs p-2 rounded-lg bg-amber-950/20 border border-amber-500/20 text-amber-300 flex items-start justify-between gap-2"
+                          >
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                              <div>
+                                <span className="font-semibold uppercase text-[10px] tracking-wider px-1 py-0.5 rounded bg-amber-900/40 mr-1.5">
+                                  [{match.type}]
+                                </span>
+                                <span className="font-mono text-slate-200">
+                                  &ldquo;{match.matchedText}&rdquo;
+                                </span>
+                                <span className="text-slate-400 ml-1.5 text-[11px]">
+                                  ({match.patternName})
+                                </span>
+                              </div>
+                            </div>
+                            {match.line !== undefined && (
+                              <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                                Line {match.line}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Redacted Preview Snippet */}
-              {result.redactedText && (
+              {previewText && (
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs text-slate-400">
                     <span className="font-semibold uppercase tracking-wider text-slate-300">
@@ -373,7 +516,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
                     </button>
                   </div>
                   <pre className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-[11px] font-mono text-slate-300 max-h-36 overflow-y-auto whitespace-pre-wrap">
-                    {result.redactedText}
+                    {previewText}
                   </pre>
                 </div>
               )}
@@ -393,7 +536,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
           <div className="flex items-center space-x-3">
             <button
               onClick={handleCopy}
-              disabled={!result?.redactedText}
+              disabled={!previewText}
               className="px-4 py-2 text-sm font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 rounded-xl transition-colors inline-flex items-center gap-2"
             >
               {copied ? (
@@ -411,7 +554,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
 
             <button
               onClick={handleDownload}
-              disabled={!result?.redactedText}
+              disabled={!previewText}
               className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 rounded-xl shadow-lg shadow-emerald-900/30 transition-all inline-flex items-center gap-2"
             >
               <Download className="w-4 h-4" />

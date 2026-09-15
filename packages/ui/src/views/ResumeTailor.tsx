@@ -26,11 +26,12 @@ import {
 } from '../api/client';
 import { PreFlightModal } from '../components/PreFlightModal';
 import { EvidencePickerModal } from '../components/EvidencePickerModal';
-import type {
-  EvidenceRecord,
-  ResumeSpec,
-  ResumeEducation,
-  ResumeSkillGroup,
+import {
+  cleanSlop,
+  type EvidenceRecord,
+  type ResumeSpec,
+  type ResumeEducation,
+  type ResumeSkillGroup,
 } from '@featherduster/core';
 
 interface ModularBullet {
@@ -95,6 +96,10 @@ export const ResumeTailor: React.FC = () => {
   const [saveVariantName, setSaveVariantName] = useState('');
   const [saveVariantType, setSaveVariantType] = useState<'tailored' | 'template'>('tailored');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+
+  // De-Slop Feedback State
+  const [deslopBanner, setDeslopBanner] = useState<string | null>(null);
+  const [deslopping, setDeslopping] = useState(false);
 
   // Collapsible UI sections
   const [showProfileEditor, setShowProfileEditor] = useState(false);
@@ -374,6 +379,61 @@ export const ResumeTailor: React.FC = () => {
     }
   };
 
+  // De-Slop active resume bullets and summary
+  const handleDeSlop = useCallback(() => {
+    setDeslopping(true);
+    let totalFixes = 0;
+    const allFixes: string[] = [];
+
+    // Clean summary if present
+    let newSummary = summary;
+    if (summary) {
+      const summaryClean = cleanSlop(summary);
+      if (summaryClean.cleanedText !== summary) {
+        newSummary = summaryClean.cleanedText;
+        totalFixes += summaryClean.fixesApplied.length;
+        allFixes.push(...summaryClean.fixesApplied);
+      }
+    }
+
+    // Clean experience bullets
+    let bulletsModified = 0;
+    const newExperiences = experiences.map((exp) => {
+      const newBullets = exp.bullets.map((bullet) => {
+        const cleaned = cleanSlop(bullet.text);
+        if (cleaned.cleanedText !== bullet.text) {
+          bulletsModified++;
+          totalFixes += cleaned.fixesApplied.length;
+          allFixes.push(...cleaned.fixesApplied);
+          return {
+            ...bullet,
+            text: cleaned.cleanedText,
+          };
+        }
+        return bullet;
+      });
+      return {
+        ...exp,
+        bullets: newBullets,
+      };
+    });
+
+    if (totalFixes > 0) {
+      setSummary(newSummary);
+      setExperiences(newExperiences);
+      const msg = `De-slopped: Removed ${totalFixes} empty hedge${totalFixes === 1 ? '' : 's'}, preserved all metrics`;
+      setDeslopBanner(msg);
+    } else {
+      setDeslopBanner('De-slopped: Removed 0 empty hedges, preserved all metrics');
+    }
+
+    setTimeout(() => {
+      setDeslopBanner(null);
+    }, 5000);
+
+    setDeslopping(false);
+  }, [summary, experiences]);
+
   // Copy compiled output
   const handleCopyCompiled = async () => {
     if (!compiledOutput) return;
@@ -451,12 +511,21 @@ export const ResumeTailor: React.FC = () => {
           </p>
         </div>
 
-        {saveSuccessMessage && (
-          <div className="px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-1.5 animate-fadeIn">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            <span>{saveSuccessMessage}</span>
-          </div>
-        )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {deslopBanner && (
+            <div className="px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-purple-200 text-xs font-medium flex items-center gap-2 animate-fadeIn shadow-lg shadow-purple-950/50">
+              <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
+              <span>{deslopBanner}</span>
+            </div>
+          )}
+
+          {saveSuccessMessage && (
+            <div className="px-3 py-1.5 rounded-xl bg-emerald-950/50 border border-emerald-500/30 text-emerald-300 text-xs font-medium flex items-center gap-1.5 animate-fadeIn">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+              <span>{saveSuccessMessage}</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 3-Pane Split-Screen Grid */}
@@ -1102,8 +1171,18 @@ export const ResumeTailor: React.FC = () => {
               </button>
             </div>
 
-            {/* Pre-Flight Quick Status & Action */}
+            {/* Pre-Flight & De-Slop Actions */}
             <div className="flex items-center gap-2">
+              <button
+                onClick={handleDeSlop}
+                disabled={deslopping}
+                className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 transition-all inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                title="Run De-Slop cleaner on resume bullets"
+              >
+                <Sparkles className={`w-3.5 h-3.5 ${deslopping ? 'animate-spin text-purple-400' : 'text-purple-400'}`} />
+                <span>De-Slop</span>
+              </button>
+
               <button
                 onClick={() => setIsPreflightModalOpen(true)}
                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all inline-flex items-center gap-1.5 ${
@@ -1111,7 +1190,7 @@ export const ResumeTailor: React.FC = () => {
                     ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
                     : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
                 }`}
-                title="Open Pre-Flight Gate Audit Modal"
+                title="Run Pre-Flight Check"
               >
                 {preflightLoading ? (
                   <>
@@ -1219,6 +1298,7 @@ export const ResumeTailor: React.FC = () => {
         onClose={() => setIsPreflightModalOpen(false)}
         spec={currentSpec}
         text={compiledOutput}
+        onTextCleaned={handleDeSlop}
         onRedactAndDownload={(cleanText) => {
           console.log('Downloaded clean redacted resume:', cleanText.length);
         }}
