@@ -16,3 +16,5 @@ export * from './compilers/html-print-compiler.js';
 export * from './compilers/brag-doc-compiler.js';
 export * from './compilers/typst-compiler.js';
 export * from './compilers/latex-compiler.js';
+export * from './integrity/deslop-engine.js';
+
