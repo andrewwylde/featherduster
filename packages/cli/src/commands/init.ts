@@ -121,16 +121,22 @@ Any violation of these gates represents an immediate failure of the task:
    - If a claim cannot be verified against an existing entry in \`evidence/**/*.md\`, it cannot be asserted.
    - Run \`featherduster check\` to verify citation validity before committing.
 
-3. **Traceability ID Stripping:**
+3. **Zero AI Slop:**
+   - Strictly bans buzzwords without metrics ("synergy", "spearheaded cross-functional paradigms", "cutting-edge"), empty hedging ("it is worth noting that", "needless to say", "at the end of the day"), and manufactured stakes ("in today's fast-paced digital world").
+   - Ban formulaic triadic triplets ("fast, reliable, and scalable") unless backed by verifiable evidence.
+   - All bullets and accomplishment narratives must be concise, active, evidence-backed statements without corporate fluff.
+   - Run \`featherduster check\` to detect and eliminate slop patterns.
+
+4. **Traceability ID Stripping:**
    - Citation tags (\`ev-###\`) are internal-only metadata for auditability.
    - When generating or compiling external-facing artifacts (\`.md\`, \`.html\`, \`.typ\`, \`.tex\`), all citation tags must be cleanly removed via the redaction engine.
 
-4. **Absolute Privacy Boundary:**
+5. **Absolute Privacy Boundary:**
    - Never promote internal-only identifiers into public resumes or external summaries:
      - **Banned from public text:** Internal customer names, ticket IDs (e.g. \`JIRA-123\`, \`CONF-99\`), unannounced project codenames, raw Slack/chat quotes, work email addresses, and system credentials.
      - **Allowed in public text:** Approved company aliases (defined in \`.featherduster/privacy-rules.yaml\`), public project descriptions, and standard technology stacks.
 
-5. **In-Flight Work Separation:**
+6. **In-Flight Work Separation:**
    - Unreleased, in-progress, or RFC-stage initiatives must be flagged with \`in_flight: true\` or \`confidence: provisional\`.
    - Never format in-flight work as shipped, past-tense achievements.
 
@@ -144,7 +150,7 @@ Featherduster provides CLI commands to validate, compile, and manage career work
   \`\`\`bash
   featherduster check
   \`\`\`
-  Runs headless verification across all workspace files for dangling citations, missing metrics, or banned keywords.
+  Runs headless verification across all workspace files for dangling citations, missing metrics, privacy leaks, and AI slop.
 
 - **Compile Resume / Brag Doc:**
   \`\`\`bash
@@ -161,12 +167,112 @@ Featherduster provides CLI commands to validate, compile, and manage career work
 ## 3. Workspace Directory Structure
 
 - \`.featherduster/\`: Workspace configuration and privacy rules.
+  - \`skills/\`: Bundled local agent skills (\`de-slop\`, \`career-growth\`).
+- \`.claude/\`:
+  - \`settings.json\`: Safety permissions denying remote git push commands.
+  - \`skills/\`: Mirrored agent skills for Claude Code.
 - \`evidence/<company>/\`: Structured accomplishment entries (\`ev-###-slug.md\`).
 - \`rubrics/\`: Engineering leveling ladders (e.g. \`engineering-ic.yaml\`).
 - \`companies/<company>/\`: Company profiles and public/ledger naming rules.
 - \`resumes/\`: Templates, tailored variants, and exports.
 - \`.githooks/\`: Git pre-push hook for local evidence protection.
+
+---
+
+## 4. Local Agent Skills in \`.featherduster/skills/\`
+
+Featherduster bundles local-first agent skills in \`.featherduster/skills/\` (and mirrored in \`.claude/skills/\`). Agents must inspect and follow these skill specifications when executing career workflows:
+
+- **\`de-slop\` (\`.featherduster/skills/de-slop/SKILL.md\`):**
+  - Two hard rules: fidelity over flair, flag don't fabricate.
+  - 6-step loop: scope, pre-flag, judge, triage, rewrite, self-score, report.
+  - Strips empty hedging, filler, manufactured stakes, and buzzword inflation while preserving verified facts and metrics.
+
+- **\`career-growth\` (\`.featherduster/skills/career-growth/SKILL.md\`):**
+  - Index skill routing career development, performance reviews, and resume workflows.
+
+- **\`career-growth-tailor-resume\` (\`.featherduster/skills/career-growth/career-growth-tailor-resume/SKILL.md\`):**
+  - Surgical job description matching adhering strictly to the **Ledger Ceiling Rule** (never add unbacked skills or keywords).
+  - 4 gates: Ingest JD, Alignment Matrix, Strategic Re-weighting / Terminology Harmonization, Interview Defensibility Brief.
+  - Transferable vs fabricated discipline: keep truthful tools on the resume, bridge adjacent patterns in the interview brief.
+
+- **\`career-growth-evidence\` (\`.featherduster/skills/career-growth/career-growth-evidence/SKILL.md\`):**
+  - Ingests work signals from GitHub, Linear, Slack, and local notes into structured evidence entries.
+
+- **\`career-growth-accomplishments\` (\`.featherduster/skills/career-growth/career-growth-accomplishments/SKILL.md\`):**
+  - Builds and maintains the accomplishment journal / brag doc grouped by strategic themes and impact.
+
+- **\`career-growth-competency\` (\`.featherduster/skills/career-growth/career-growth-competency/SKILL.md\`):**
+  - Maps verified evidence to engineering leveling ladders (L3–L6) for gap analysis.
+
+- **\`career-growth-self-review\` (\`.featherduster/skills/career-growth/career-growth-self-review/SKILL.md\`):**
+  - Drafts structured, first-person self-assessments backed strictly by cited evidence.
+
+- **\`career-growth-promotion-packet\` (\`.featherduster/skills/career-growth/career-growth-promotion-packet/SKILL.md\`):**
+  - Assembles promotion cases with leveling worksheet sections and gap identification.
+
+### How Agents Should Use Local Skills
+When asked to tailor a resume, collect evidence, audit prose, or prepare a performance review, agents must read the relevant local \`SKILL.md\` in \`.featherduster/skills/\` before taking action. Always execute the defined gates and preserve the Core Principles.
 `;
+
+const DEFAULT_CLAUDE_SETTINGS_JSON = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "deny": [
+      "Bash(git push)",
+      "Bash(git push:*)",
+      "Bash(git remote add:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git remote rename:*)",
+      "Bash(git config remote.*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh repo sync:*)",
+      "Bash(gh repo clone:*)"
+    ]
+  }
+}
+`;
+
+function getTemplatesDir(): string {
+  try {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url));
+    const candidate1 = path.resolve(currentDir, '../templates');
+    if (fs.existsSync(candidate1)) {
+      return candidate1;
+    }
+    const candidate2 = path.resolve(currentDir, '../../src/templates');
+    if (fs.existsSync(candidate2)) {
+      return candidate2;
+    }
+  } catch {
+    // URL/path resolution fallback
+  }
+  return '';
+}
+
+function collectSkillFiles(
+  skillsDir: string,
+  baseDir: string = skillsDir
+): Array<{ relativeSubPath: string; content: string }> {
+  if (!skillsDir || !fs.existsSync(skillsDir)) return [];
+  const files: Array<{ relativeSubPath: string; content: string }> = [];
+  try {
+    const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      const fullPath = path.join(skillsDir, entry.name);
+      if (entry.isDirectory()) {
+        files.push(...collectSkillFiles(fullPath, baseDir));
+      } else if (entry.isFile()) {
+        const rel = path.relative(baseDir, fullPath).replace(/\\/g, '/');
+        const content = fs.readFileSync(fullPath, 'utf-8');
+        files.push({ relativeSubPath: rel, content });
+      }
+    }
+  } catch {
+    // ignore filesystem read error
+  }
+  return files;
+}
 
 function loadTemplate(filename: string): string {
   try {
@@ -185,6 +291,7 @@ function loadTemplate(filename: string): string {
 
   if (filename === 'pre-push.sh') return DEFAULT_PRE_PUSH_SH;
   if (filename === 'AGENT.md') return DEFAULT_AGENT_MD;
+  if (filename === 'claude-settings.json') return DEFAULT_CLAUDE_SETTINGS_JSON;
   throw new Error(`Template '${filename}' could not be loaded.`);
 }
 
@@ -244,6 +351,9 @@ export async function initWorkspace(
   // 1. Ensure primary directory tree
   const directoriesToEnsure = [
     path.join(workspaceDir, '.featherduster'),
+    path.join(workspaceDir, '.featherduster', 'skills'),
+    path.join(workspaceDir, '.claude'),
+    path.join(workspaceDir, '.claude', 'skills'),
     path.join(workspaceDir, 'evidence', profile),
     path.join(workspaceDir, 'rubrics'),
     path.join(workspaceDir, 'resumes', 'templates'),
@@ -471,6 +581,28 @@ Staff Software Engineer with 10+ years specializing in distributed systems, high
     content: loadTemplate('pre-push.sh'),
     mode: 0o755,
   });
+
+  // .claude/settings.json (Git push defense permissions)
+  filesToScaffold.push({
+    relativePath: path.join('.claude', 'settings.json'),
+    content: loadTemplate('claude-settings.json'),
+  });
+
+  // Bundled skills in .featherduster/skills and .claude/skills
+  const templatesDir = getTemplatesDir();
+  const skillsTemplateDir = templatesDir ? path.join(templatesDir, 'skills') : '';
+  const skillFiles = collectSkillFiles(skillsTemplateDir);
+
+  for (const skillFile of skillFiles) {
+    filesToScaffold.push({
+      relativePath: path.join('.featherduster', 'skills', skillFile.relativeSubPath),
+      content: skillFile.content,
+    });
+    filesToScaffold.push({
+      relativePath: path.join('.claude', 'skills', skillFile.relativeSubPath),
+      content: skillFile.content,
+    });
+  }
 
   // 3. Write files with idempotency
   const createdFiles: string[] = [];

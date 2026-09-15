@@ -833,9 +833,68 @@ describe('Local Hono Server Integration Tests', () => {
       expect(data.danglingCitations).toHaveLength(0);
       expect(data.metricIssues).toHaveLength(0);
       expect(data.violations).toHaveLength(0);
+      expect(data.slop).toBeDefined();
+      expect(data.slop.isClean).toBe(true);
+      expect(data.slopIssues).toHaveLength(0);
       // Redacted text should have stripped citation (ev-042) and ticket AUTH-892
       expect(data.redactedText).not.toContain('(ev-042)');
       expect(data.redactedText).not.toContain('AUTH-892');
+    });
+
+    it('POST /api/integrity/preflight returns slop audit information and detects AI slop', async () => {
+      const app = createApp(tmpWorkspace);
+      const slopText =
+        "It is worth noting that we spearheaded cross-functional synergies in today's fast-paced digital world (ev-042).";
+
+      const res = await app.request('/api/integrity/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: slopText,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.isClean).toBe(false);
+      expect(data.slop).toBeDefined();
+      expect(data.slop.isClean).toBe(false);
+      expect(data.slop.matches.length).toBeGreaterThan(0);
+      expect(data.slop.slopBand).toBe('high');
+      expect(data.slopIssues.length).toBeGreaterThan(0);
+      expect(data.validCitations).toContain('ev-042');
+    });
+
+    it('POST /api/integrity/deslop strips empty hedges and returns cleaned text', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/integrity/deslop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text: 'It is worth noting that we reduced API latency by 45%.',
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.cleanedText).toBe('We reduced API latency by 45%.');
+      expect(data.fixesApplied.length).toBeGreaterThan(0);
+      expect(data.fixesApplied[0]).toContain('Stripped empty hedge');
+    });
+
+    it('POST /api/integrity/deslop returns 400 when text is missing', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/integrity/deslop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toBe('Missing text in request body');
     });
 
     it('POST /api/integrity/preflight detects dangling citations and missing metric tokens', async () => {

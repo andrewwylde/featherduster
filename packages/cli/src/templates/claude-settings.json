@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "permissions": {
+    "deny": [
+      "Bash(git push)",
+      "Bash(git push:*)",
+      "Bash(git remote add:*)",
+      "Bash(git remote set-url:*)",
+      "Bash(git remote rename:*)",
+      "Bash(git config remote.*)",
+      "Bash(gh repo create:*)",
+      "Bash(gh repo sync:*)",
+      "Bash(gh repo clone:*)"
+    ]
+  }
+}

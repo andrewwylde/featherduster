@@ -69,6 +69,10 @@ import {
   redactText,
   serializeEvidenceMarkdown,
   validateMetrics,
+  auditSlop,
+  cleanSlop,
+  SlopAuditResult,
+  SLOP_WEIGHTS,
 } from '@featherduster/core';
 import { WorkspaceWatcher } from './watcher.js';
 
@@ -513,9 +517,15 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       const citationResult = lintCitations(text, store);
       const metricResult = validateMetrics(text, store);
       const redactResult = redactText(text, privacyRules);
+      const slopResult: SlopAuditResult = auditSlop(text);
+
+      const hasSlop = slopResult.matches.length > 0 && slopResult.slopBand !== 'clean';
 
       const isClean =
-        citationResult.isClean && metricResult.isClean && redactResult.isClean;
+        citationResult.isClean &&
+        metricResult.isClean &&
+        redactResult.isClean &&
+        !hasSlop;
 
       return c.json({
         isClean,
@@ -524,6 +534,8 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         metricIssues: metricResult.issues,
         violations: redactResult.violations,
         redactedText: redactResult.redactedText,
+        slop: slopResult,
+        slopIssues: slopResult.matches,
       });
     } catch (err: any) {
       return c.json(
@@ -531,6 +543,37 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
           isClean: false,
           error: err.message || 'Preflight check failed',
           issues: err.issues,
+        },
+        400
+      );
+    }
+  });
+
+  // 6b2. Integrity De-Slop endpoint
+  app.post('/api/integrity/deslop', async (c) => {
+    try {
+      const body = await c.req.json();
+      if (!body || typeof body.text !== 'string') {
+        return c.json(
+          {
+            success: false,
+            error: 'Missing text in request body',
+          },
+          400
+        );
+      }
+
+      const result = cleanSlop(body.text);
+      return c.json({
+        success: true,
+        cleanedText: result.cleanedText,
+        fixesApplied: result.fixesApplied,
+      });
+    } catch (err: any) {
+      return c.json(
+        {
+          success: false,
+          error: err.message || 'Failed to deslop text',
         },
         400
       );
@@ -638,6 +681,32 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
               type: 'banned_keyword',
               message: `Banned keyword '${violation}' in ${relativePath}`,
               keyword: violation,
+            });
+          }
+        }
+
+        // AI Slop audit across markdown files in evidence/ and resumes/
+        const isEvidenceOrResume =
+          (relativePath.startsWith('evidence/') ||
+            relativePath.startsWith('resumes/') ||
+            relativePath.includes('/evidence/') ||
+            relativePath.includes('/resumes/')) &&
+          (file.endsWith('.md') || file.endsWith('.markdown'));
+
+        if (isEvidenceOrResume) {
+          const slopResult = auditSlop(content);
+          const severeMatches = slopResult.matches.filter(
+            (m) =>
+              (SLOP_WEIGHTS[m.type] ?? 1) >= 2 ||
+              slopResult.slopBand === 'moderate' ||
+              slopResult.slopBand === 'high'
+          );
+          for (const match of severeMatches) {
+            issues.push({
+              file: relativePath,
+              type: 'ai_slop',
+              message: `AI slop / buzzword pattern '${match.matchedText}' (${match.patternName}) in ${relativePath}`,
+              line: match.line,
             });
           }
         }

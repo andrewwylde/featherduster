@@ -146,6 +146,22 @@ describe('CLI Commands & Watcher Tests', () => {
       expect(result.isClean).toBe(true);
       expect(result.issues).toEqual([]);
       expect(result.validCitationsCount).toBeGreaterThanOrEqual(1);
+      expect(result.slopMatchesCount).toBe(0);
+    });
+
+    it('detects AI slop and buzzword filler patterns in markdown files', () => {
+      fs.writeFileSync(
+        path.join(tmpWorkspace, 'resumes', 'tailored', 'slop-resume.md'),
+        "It is worth noting that we spearheaded cross-functional synergies in today's fast-paced digital world (ev-001).\n",
+        'utf-8'
+      );
+
+      const result = checkWorkspace(tmpWorkspace);
+      expect(result.isClean).toBe(false);
+      expect(result.slopMatchesCount).toBeGreaterThan(0);
+      const slopIssues = result.issues.filter((i) => i.type === 'ai_slop' || i.type === 'slop');
+      expect(slopIssues.length).toBeGreaterThan(0);
+      expect(slopIssues[0].file).toContain('slop-resume.md');
     });
 
     it('detects dangling citations, unverified metrics, and banned keywords', () => {

@@ -114,6 +114,10 @@ describe('Featherduster Workspace Init & Git Push Defense', () => {
       const agentContent = fs.readFileSync(agentMdPath, 'utf-8');
       expect(agentContent).toContain('[METRIC NEEDED]');
       expect(agentContent).toContain('ev-###');
+      expect(agentContent).toContain('Zero AI Slop');
+      expect(agentContent).toContain('.featherduster/skills/');
+      expect(agentContent).toContain('de-slop');
+      expect(agentContent).toContain('career-growth');
       expect(agentContent).toContain('Privacy');
       expect(agentContent).toContain('featherduster');
 
@@ -124,11 +128,32 @@ describe('Featherduster Workspace Init & Git Push Defense', () => {
       expect(prePushContent).toContain('#!/bin/sh');
       expect(prePushContent).toContain('featherduster check');
 
-      // 10. Integrity check on clean workspace should pass 100%
+      // 10. .featherduster/skills/ and .claude/skills/
+      const deSlopSkillPath = path.join(tmpWorkspace, '.featherduster', 'skills', 'de-slop', 'SKILL.md');
+      expect(fs.existsSync(deSlopSkillPath)).toBe(true);
+      const deSlopContent = fs.readFileSync(deSlopSkillPath, 'utf-8');
+      expect(deSlopContent).toContain('Fidelity over flair');
+
+      const careerGrowthSkillPath = path.join(tmpWorkspace, '.featherduster', 'skills', 'career-growth', 'SKILL.md');
+      expect(fs.existsSync(careerGrowthSkillPath)).toBe(true);
+      const careerGrowthContent = fs.readFileSync(careerGrowthSkillPath, 'utf-8');
+      expect(careerGrowthContent).toContain('career-growth');
+
+      const claudeSkillsPath = path.join(tmpWorkspace, '.claude', 'skills', 'de-slop', 'SKILL.md');
+      expect(fs.existsSync(claudeSkillsPath)).toBe(true);
+
+      // 11. .claude/settings.json
+      const claudeSettingsPath = path.join(tmpWorkspace, '.claude', 'settings.json');
+      expect(fs.existsSync(claudeSettingsPath)).toBe(true);
+      const claudeSettings = JSON.parse(fs.readFileSync(claudeSettingsPath, 'utf-8'));
+      expect(claudeSettings.permissions?.deny).toContain('Bash(git push)');
+
+      // 12. Integrity check on clean workspace should pass 100%
       const checkResult = checkWorkspace(tmpWorkspace);
       expect(checkResult.isClean).toBe(true);
       expect(checkResult.issues).toEqual([]);
       expect(checkResult.validCitationsCount).toBeGreaterThanOrEqual(1);
+      expect(checkResult.slopMatchesCount).toBe(0);
     });
 
     it('configures git hooks when git repository is initialized', async () => {
