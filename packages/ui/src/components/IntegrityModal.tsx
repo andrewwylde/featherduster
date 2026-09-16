@@ -71,6 +71,7 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
             </button>
             <button
               onClick={onClose}
+              aria-label="Close integrity audit modal"
               className="p-2 text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-lg transition-colors"
             >
               <X className="w-5 h-5" />

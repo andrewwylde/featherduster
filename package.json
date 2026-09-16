@@ -14,9 +14,11 @@
     "build:ui": "npm run build --workspace=@featherduster/ui",
     "build:cli": "npm run build --workspace=@featherduster/cli",
     "build": "npm run build:core && npm run build:ui && npm run build:cli",
-    "test": "vitest run"
+    "test": "vitest run",
+    "walkthrough": "node scripts/run-walkthrough.mjs"
   },
   "devDependencies": {
+    "playwright": "^1.63.0",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }

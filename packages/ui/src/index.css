@@ -3,9 +3,25 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    color-scheme: light dark;
+  }
+
   body {
-    @apply bg-slate-950 text-slate-100 font-sans;
+    @apply bg-[#fbfbfb] text-slate-900 dark:bg-[#0c0f17] dark:text-slate-100 font-sans antialiased transition-colors duration-150;
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* Accessible motion override */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 
   /* Custom subtle scrollbar */
@@ -17,9 +33,9 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply bg-slate-800 rounded-full;
+    @apply bg-slate-300 dark:bg-slate-800 rounded-full;
   }
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-700;
+    @apply bg-slate-400 dark:bg-slate-700;
   }
 }
