@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   X,
   Calendar,
@@ -25,7 +25,8 @@ export const EvidenceDetailModal: React.FC<EvidenceDetailModalProps> = ({
   isOpen,
   onClose,
 }) => {
-  useModalA11y({ isOpen, onClose });
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: modalRef });
   const [copiedCitation, setCopiedCitation] = useState(false);
 
   if (!isOpen || !evidence) return null;
@@ -71,6 +72,10 @@ export const EvidenceDetailModal: React.FC<EvidenceDetailModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="evidence-detail-title"
         className="relative w-full max-w-4xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -88,7 +93,7 @@ export const EvidenceDetailModal: React.FC<EvidenceDetailModalProps> = ({
                 </span>
               )}
             </div>
-            <h2 className="text-xl font-bold text-white tracking-tight">{evidence.title}</h2>
+            <h2 id="evidence-detail-title" className="text-xl font-bold text-white tracking-tight">{evidence.title}</h2>
             <div className="flex items-center space-x-4 text-xs text-slate-400">
               <span className="flex items-center gap-1.5">
                 <Building2 className="w-3.5 h-3.5 text-slate-500" />

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
@@ -40,7 +40,8 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   existingIds,
   existingCompanies,
 }) => {
-  useModalA11y({ isOpen, onClose });
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: modalRef });
   const [id, setId] = useState('');
   const [title, setTitle] = useState('');
   const [company, setCompany] = useState('');
@@ -201,6 +202,10 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="quick-capture-title"
         className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -211,7 +216,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <h2 id="quick-capture-title" className="text-lg font-bold text-white flex items-center gap-2">
                 Capture Evidence Card
                 <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700">
                   {id}

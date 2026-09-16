@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { X, Search, Plus, ShieldCheck, Clock, Tag } from 'lucide-react';
 import type { EvidenceRecord } from '@featherduster/core';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -16,7 +16,8 @@ export const EvidencePickerModal: React.FC<EvidencePickerModalProps> = ({
   onSelectEvidence,
   evidenceList,
 }) => {
-  useModalA11y({ isOpen, onClose });
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: modalRef });
   const [search, setSearch] = useState('');
   const [selectedCompany, setSelectedCompany] = useState<string>('all');
 
@@ -49,18 +50,20 @@ export const EvidencePickerModal: React.FC<EvidencePickerModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
-      role="dialog"
-      aria-modal="true"
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="evidence-picker-title"
         className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70">
           <div>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+            <h2 id="evidence-picker-title" className="text-lg font-bold text-white flex items-center gap-2">
               Insert Accomplishment from Evidence Store
             </h2>
             <p className="text-xs text-slate-400">

@@ -138,6 +138,12 @@ export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
 
   const check = redactText(output, privacyRules);
 
+  if (options?.strict && !check.isClean) {
+    throw new Error(
+      `Strict build failure: Banned keywords detected in output: ${check.violations.join(', ')}`
+    );
+  }
+
   let outputPath: string | undefined;
   if (options?.stdout) {
     process.stdout.write(output);
@@ -163,12 +169,6 @@ export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
 
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, output, 'utf-8');
-  }
-
-  if (options?.strict && !check.isClean) {
-    throw new Error(
-      `Strict build failure: Banned keywords detected in output: ${check.violations.join(', ')}`
-    );
   }
 
   return {

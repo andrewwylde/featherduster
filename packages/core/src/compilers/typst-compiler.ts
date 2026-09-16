@@ -19,7 +19,18 @@ function redact(text: string, rules?: PrivacyRulesConfig): string {
 export function escapeTypst(str: string): string {
   return str
     .replace(/\\/g, '\\\\')
-    .replace(/([#$\[\]])/g, '\\$1');
+    .replace(/([#$\[\]*_`<>"])/g, '\\$1');
+}
+
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (/^(?:javascript|vbscript|data|file|run):/i.test(trimmed)) {
+    return '#';
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
 }
 
 function redactAndEscape(text: string, rules?: PrivacyRulesConfig): string {
@@ -46,8 +57,9 @@ export function compileTypstResume(spec: ResumeSpec, rules?: PrivacyRulesConfig)
     for (const [, url] of Object.entries(spec.profile.links)) {
       if (url) {
         const cleanUrl = redact(url, rules);
+        const safeUrl = sanitizeUrl(cleanUrl).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
         const escapedUrl = escapeTypst(cleanUrl);
-        contactItems.push(`#link("${cleanUrl}")[${escapedUrl}]`);
+        contactItems.push(`#link("${safeUrl}")[${escapedUrl}]`);
       }
     }
   }

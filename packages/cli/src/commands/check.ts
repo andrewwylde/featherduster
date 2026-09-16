@@ -57,6 +57,25 @@ export function checkWorkspace(workspaceDir: string): CheckResult {
   ];
 
   const filesToCheck: string[] = [];
+  try {
+    const rootEntries = fs.readdirSync(resolvedDir, { withFileTypes: true });
+    for (const entry of rootEntries) {
+      const lower = entry.name.toLowerCase();
+      if (
+        entry.isFile() &&
+        (lower.endsWith('.md') || lower.endsWith('.markdown')) &&
+        !lower.startsWith('agent') &&
+        !lower.startsWith('readme') &&
+        !lower.startsWith('contributing') &&
+        !lower.startsWith('changelog')
+      ) {
+        filesToCheck.push(path.join(resolvedDir, entry.name));
+      }
+    }
+  } catch {
+    // Ignore error reading root directory
+  }
+
   for (const dir of candidateDirs) {
     filesToCheck.push(
       ...findFiles(dir, ['.md', '.markdown', '.txt', '.tex', '.typ', '.yaml', '.yml'])
@@ -186,16 +205,18 @@ export function printCheckReport(result: CheckResult): void {
     console.log('');
 
     for (const issue of result.issues) {
+      const sanitizedFile = issue.file.replace(/\x1b\[[0-9;]*m/g, '');
+      const sanitizedMessage = issue.message.replace(/\x1b\[[0-9;]*m/g, '');
       const location = issue.line
-        ? `${pc.yellow(issue.file)}:${pc.cyan(String(issue.line))}`
-        : pc.yellow(issue.file);
+        ? `${pc.yellow(sanitizedFile)}:${pc.cyan(String(issue.line))}`
+        : pc.yellow(sanitizedFile);
 
       const tag =
         issue.type === 'ai_slop' || issue.type === 'slop'
           ? pc.bgYellow(pc.black(` SLOP `))
           : pc.bgRed(pc.black(` ${issue.type.toUpperCase()} `));
       console.log(`  ${tag} ${location}`);
-      console.log(`    ${pc.red(issue.message)}\n`);
+      console.log(`    ${pc.red(sanitizedMessage)}\n`);
     }
   }
 }

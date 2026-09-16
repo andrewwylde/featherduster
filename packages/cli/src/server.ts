@@ -81,20 +81,38 @@ export interface CreateAppOptions {
   uiDir?: string;
 }
 
-export function findFiles(dir: string, extensions: string[]): string[] {
+export function findFiles(
+  dir: string,
+  extensions: string[],
+  visited: Set<string> = new Set()
+): string[] {
   if (!fs.existsSync(dir)) return [];
+  try {
+    const realDir = fs.realpathSync(dir);
+    if (visited.has(realDir)) return [];
+    visited.add(realDir);
+  } catch {
+    return [];
+  }
+
   const results: string[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name !== 'node_modules' && entry.name !== '.git') {
-        results.push(...findFiles(fullPath, extensions));
+        results.push(...findFiles(fullPath, extensions, visited));
       }
-    } else if (entry.isFile()) {
+    } else if (entry.isFile() || entry.isSymbolicLink()) {
       const ext = path.extname(entry.name).toLowerCase();
       if (extensions.includes(ext)) {
-        results.push(fullPath);
+        try {
+          if (fs.statSync(fullPath).isFile()) {
+            results.push(fullPath);
+          }
+        } catch {
+          // Skip broken symlinks
+        }
       }
     }
   }
@@ -281,6 +299,15 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
 
   // 1. Host and Origin protection for localhost security
   app.use('*', async (c, next) => {
+    c.header('X-Content-Type-Options', 'nosniff');
+    c.header('X-Frame-Options', 'DENY');
+    c.header('Referrer-Policy', 'same-origin');
+
+    const secFetchSite = c.req.header('sec-fetch-site');
+    if (secFetchSite === 'cross-site') {
+      return c.text('Forbidden: Cross-Site Request Blocked', 403);
+    }
+
     const host = c.req.header('host');
     if (host && !/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host)) {
       return c.text('Forbidden: Invalid Host Header', 403);
@@ -361,10 +388,20 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         targetFile = path.resolve(evidenceRootDir, companySlug, `${safeId}.md`);
       }
 
-      // Assert path containment strictly within workspace
-      const relToWorkspace = path.relative(resolvedWorkspaceDir, targetFile);
-      if (relToWorkspace.startsWith('..') || path.isAbsolute(relToWorkspace)) {
-        return c.json({ success: false, error: 'Path traversal detected: File must reside within workspace' }, 403);
+      // Assert path containment strictly within evidence directory
+      const relToEvidence = path.relative(evidenceRootDir, targetFile);
+      if (relToEvidence.startsWith('..') || path.isAbsolute(relToEvidence)) {
+        return c.json({ success: false, error: 'Path traversal detected: Evidence files must reside within evidence directory' }, 403);
+      }
+
+      const ext = path.extname(targetFile).toLowerCase();
+      if (ext !== '.md' && ext !== '.markdown') {
+        return c.json({ success: false, error: 'Evidence files must have .md or .markdown extension' }, 400);
+      }
+
+      // Reject symlink overwrites
+      if (fs.existsSync(targetFile) && fs.lstatSync(targetFile).isSymbolicLink()) {
+        return c.json({ success: false, error: 'Cannot overwrite symbolic links' }, 403);
       }
 
       fs.mkdirSync(path.dirname(targetFile), { recursive: true });
@@ -425,6 +462,9 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       const relToRubrics = path.relative(rubricsDir, targetFile);
       if (relToRubrics.startsWith('..') || path.isAbsolute(relToRubrics)) {
         return c.json({ success: false, error: 'Path traversal detected: Rubric must reside in rubrics directory' }, 403);
+      }
+      if (fs.existsSync(targetFile) && fs.lstatSync(targetFile).isSymbolicLink()) {
+        return c.json({ success: false, error: 'Cannot overwrite symbolic links' }, 403);
       }
       fs.mkdirSync(rubricsDir, { recursive: true });
       fs.writeFileSync(targetFile, yaml.dump(validatedRubric), 'utf-8');
@@ -642,8 +682,15 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         'resumes',
         type === 'template' ? 'templates' : 'tailored'
       );
-      fs.mkdirSync(targetDir, { recursive: true });
       const targetFile = path.join(targetDir, `${safeName}.yaml`);
+      const relToTargetDir = path.relative(targetDir, targetFile);
+      if (relToTargetDir.startsWith('..') || path.isAbsolute(relToTargetDir)) {
+        return c.json({ success: false, error: 'Path traversal detected' }, 403);
+      }
+      if (fs.existsSync(targetFile) && fs.lstatSync(targetFile).isSymbolicLink()) {
+        return c.json({ success: false, error: 'Cannot overwrite symbolic links' }, 403);
+      }
+      fs.mkdirSync(targetDir, { recursive: true });
       fs.writeFileSync(targetFile, yaml.dump(validatedSpec), 'utf-8');
 
       const relativePath = path
@@ -785,7 +832,11 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
           try {
             await stream.writeSSE({
               event: 'change',
-              data: JSON.stringify(evt),
+              data: JSON.stringify({
+                type: evt.type,
+                relativePath: evt.relativePath,
+                timestamp: evt.timestamp,
+              }),
             });
           } catch {
             cleanup();
@@ -838,19 +889,27 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     const resolvedUiDir = path.resolve(uiDir);
     const resolvedPath = path.resolve(resolvedUiDir, relPath);
 
-    // Prevent directory traversal (CWE-23)
+    // Prevent directory traversal & symlink escapes (CWE-23 / CWE-59)
     const relToUi = path.relative(resolvedUiDir, resolvedPath);
     const isInsideUi = !relToUi.startsWith('..') && !path.isAbsolute(relToUi);
 
     if (
       isInsideUi &&
-      fs.existsSync(resolvedPath) &&
-      fs.statSync(resolvedPath).isFile()
+      fs.existsSync(resolvedPath)
     ) {
-      const mime = getMimeType(resolvedPath);
-      c.header('Content-Type', mime);
-      const content = fs.readFileSync(resolvedPath);
-      return c.body(content);
+      try {
+        const realTarget = fs.realpathSync(resolvedPath);
+        const realUiDir = fs.realpathSync(resolvedUiDir);
+        const relReal = path.relative(realUiDir, realTarget);
+        if (!relReal.startsWith('..') && !path.isAbsolute(relReal) && fs.statSync(realTarget).isFile()) {
+          const mime = getMimeType(realTarget);
+          c.header('Content-Type', mime);
+          const content = fs.readFileSync(realTarget);
+          return c.body(content);
+        }
+      } catch {
+        // Fallback
+      }
     }
 
     // Fallback to index.html for SPA client-side routes
@@ -911,6 +970,9 @@ export async function startServer(options?: StartServerOptions): Promise<ServerI
     workspaceDir,
     close: async () => {
       await watcher.close();
+      if (typeof (server as any).closeAllConnections === 'function') {
+        (server as any).closeAllConnections();
+      }
       await new Promise<void>((resolve, reject) => {
         server.close((err) => {
           if (err) reject(err);

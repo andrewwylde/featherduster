@@ -25,12 +25,23 @@ cli
     console.log(pc.gray(`Address:   http://127.0.0.1:${port}`));
 
     try {
-      await startServer({
+      const serverInstance = await startServer({
         workspaceDir,
         port,
         openBrowser,
       });
       console.log(pc.green(`✔ Server listening on http://127.0.0.1:${port}\n`));
+
+      const handleShutdown = async () => {
+        console.log(pc.yellow('\nShutting down Featherduster server...'));
+        try {
+          await serverInstance.close();
+        } catch {}
+        process.exit(0);
+      };
+
+      process.on('SIGINT', handleShutdown);
+      process.on('SIGTERM', handleShutdown);
     } catch (err: any) {
       console.error(pc.red(`Failed to start server: ${err.message}`));
       process.exit(1);

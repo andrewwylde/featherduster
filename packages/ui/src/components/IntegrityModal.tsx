@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { ShieldCheck, AlertTriangle, X, RefreshCw, AlertCircle, FileText } from 'lucide-react';
 import type { IntegrityCheckResponse } from '../api/client';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -18,7 +18,8 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
   loading,
   onRefresh,
 }) => {
-  useModalA11y({ isOpen, onClose });
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: modalRef });
 
   if (!isOpen) return null;
 
@@ -28,6 +29,10 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="integrity-audit-title"
         className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -38,7 +43,7 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
               {report?.isClean ? <ShieldCheck className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
+              <h2 id="integrity-audit-title" className="text-lg font-semibold text-slate-100 flex items-center gap-2">
                 Integrity & Privacy Audit
                 {report && (
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${

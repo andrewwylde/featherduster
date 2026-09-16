@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -35,7 +35,8 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
   onRedactAndDownload,
   onTextCleaned,
 }) => {
-  useModalA11y({ isOpen, onClose });
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: modalRef });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PreflightResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,11 +146,13 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
-      role="dialog"
-      aria-modal="true"
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="preflight-modal-title"
         className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -170,7 +173,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
               )}
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <h2 id="preflight-modal-title" className="text-lg font-bold text-white flex items-center gap-2">
                 Pre-Flight Export Gate
                 {result && (
                   <span

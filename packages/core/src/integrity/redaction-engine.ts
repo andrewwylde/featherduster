@@ -57,10 +57,10 @@ export function redactText(text: string, rules: PrivacyRulesConfig): RedactResul
 
   // 1. Strip internal citation tags (e.g. (ev-042), (ev-001, ev-002), [ev-042], ev-042)
   currentText = currentText.replace(
-    /(?:\s*\(|\s*\[)\s*(?:ev-[0-9]{3})(?:\s*,\s*ev-[0-9]{3})*\s*(?:\)|\s*\])/gi,
+    /(?:\s*\(|\s*\[)\s*(?:ev-[0-9]+)(?:\s*,\s*ev-[0-9]+)*\s*(?:\)|\s*\])/gi,
     ''
   );
-  currentText = currentText.replace(/(?<![a-zA-Z0-9_-])ev-[0-9]{3}(?![a-zA-Z0-9_-])/gi, '');
+  currentText = currentText.replace(/(?<![a-zA-Z0-9_-])ev-[0-9]+(?![a-zA-Z0-9_-])/gi, '');
 
   // 2. Strip internal ticket IDs according to strip_patterns
   const stripPatterns = rules.strip_patterns ?? [];
@@ -71,7 +71,7 @@ export function redactText(text: string, rules: PrivacyRulesConfig): RedactResul
         const parenRegex = new RegExp(`(?:\\s*\\(|\\s*\\[)\\s*(?:${pattern})\\s*(?:\\)|\\s*\\])`, 'gi');
         currentText = currentText.replace(parenRegex, '');
       }
-      const standaloneRegex = new RegExp(`(?<![a-zA-Z0-9_-])(?:${pattern})(?![a-zA-Z0-9_-])`, 'gi');
+      const standaloneRegex = new RegExp(`(?<![a-zA-Z0-9_-])(?:${pattern})(?![a-zA-Z0-9])`, 'gi');
       currentText = currentText.replace(standaloneRegex, '');
     } catch {
       try {

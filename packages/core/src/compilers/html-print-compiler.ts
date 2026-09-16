@@ -24,13 +24,16 @@ function redact(text: string, rules?: PrivacyRulesConfig): string {
 
 function sanitizeUrl(url: string): string {
   const trimmed = url.trim();
-  if (/^(?:javascript|vbscript|data):/i.test(trimmed)) {
+  if (/^(?:javascript|vbscript|data|file|run):/i.test(trimmed)) {
     return '#';
+  }
+  if (/^(?:https?:\/\/|mailto:|tel:)/i.test(trimmed)) {
+    return trimmed;
   }
   if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
     return `https://${trimmed}`;
   }
-  return trimmed;
+  return '#';
 }
 
 function redactAndEscape(text: string, rules?: PrivacyRulesConfig): string {
@@ -215,8 +218,6 @@ export function compileHtmlPrintResume(spec: ResumeSpec, rules?: PrivacyRulesCon
     }
     .section {
       margin-bottom: 8pt;
-      break-inside: avoid;
-      page-break-inside: avoid;
     }
     .section-title {
       font-size: 10pt;

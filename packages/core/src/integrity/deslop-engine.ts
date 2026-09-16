@@ -79,7 +79,7 @@ export const SLOP_RULES: SlopRule[] = [
   {
     type: 'bizjargon',
     patternName: 'business_jargon',
-    regex: /\b(?:circle back|double down|move the needle|low-hanging fruit|boil the ocean|take a step back|on the same page|moving forward|lean into|deep dive)\b/gi,
+    regex: /\b(?:circle back|double down|move the needle|low-hanging fruit|boil the ocean|take a step back|on the same page|moving forward|lean into)\b/gi,
     weight: SLOP_WEIGHTS.bizjargon,
   },
   {
@@ -224,9 +224,35 @@ export function auditSlop(text: string): SlopAuditResult {
   };
 }
 
-function capitalizeFirstChar(str: string): string {
+const PROTECTED_CASING = [
+  'iOS',
+  'eBPF',
+  'p99',
+  'p95',
+  'p90',
+  'npm',
+  'gRPC',
+  'k8s',
+  'kubectl',
+  'eBay',
+  'macOS',
+  'iPhone',
+  'iPad',
+];
+
+function safeCapitalizeFirstWord(str: string): string {
   if (!str) return str;
-  return str.charAt(0).toUpperCase() + str.slice(1);
+  const match = str.match(/^([a-zA-Z0-9_-]+)(.*)$/s);
+  if (!match) return str;
+  const firstWord = match[1];
+  const rest = match[2];
+
+  for (const protectedWord of PROTECTED_CASING) {
+    if (firstWord.toLowerCase() === protectedWord.toLowerCase()) {
+      return protectedWord + rest;
+    }
+  }
+  return firstWord.charAt(0).toUpperCase() + firstWord.slice(1) + rest;
 }
 
 /**
@@ -277,7 +303,7 @@ export function cleanSlop(text: string): { cleanedText: string; fixesApplied: st
         const match = content.match(rule.regex);
         if (match && match[0].length > 0) {
           const stem = match[0];
-          content = capitalizeFirstChar(content.slice(stem.length));
+          content = safeCapitalizeFirstWord(content.slice(stem.length));
           if (rule.type === 'hedge') {
             fixesApplied.push(`Stripped empty hedge: "${stem.trim()}"`);
           } else {
@@ -290,36 +316,36 @@ export function cleanSlop(text: string): { cleanedText: string; fixesApplied: st
     }
 
     // 2. Strip hedge and throat-clearing stems after sentence boundaries (. ! ?)
-    const sentenceStemRegex = /(?<=[.!?]\s+)(?:((?:it'?s|it is) (?:worth noting|important to (?:note|remember|understand))(?: that)?(?:[:,])?\s*)|((?:that said|needless to say|as we all know|at the end of the day)(?:[:,])?\s*)|((?:the uncomfortable truth is(?: that)?|it turns out(?: that|,)?|let me be clear|let that sink in|make no mistake)(?:[:,])?\s*))(\S)/gi;
+    const sentenceStemRegex = /(?<=[.!?]\s+)(?:((?:it'?s|it is) (?:worth noting|important to (?:note|remember|understand))(?: that)?(?:[:,])?\s*)|((?:that said|needless to say|as we all know|at the end of the day)(?:[:,])?\s*)|((?:the uncomfortable truth is(?: that)?|it turns out(?: that|,)?|let me be clear|let that sink in|make no mistake)(?:[:,])?\s*))(\S+)/gi;
     content = content.replace(
       sentenceStemRegex,
-      (_match, hedge1, hedge2, throat, firstChar) => {
+      (_match, hedge1, hedge2, throat, firstWord) => {
         const hedge = hedge1 || hedge2;
         if (hedge) {
           fixesApplied.push(`Stripped empty hedge: "${hedge.trim()}"`);
         } else if (throat) {
           fixesApplied.push(`Stripped throat-clearing: "${throat.trim()}"`);
         }
-        return firstChar.toUpperCase();
+        return safeCapitalizeFirstWord(firstWord);
       }
     );
 
     // 3. Strip leading intensifier fillers at start of line content
     const leadingIntensifierMatch = content.match(
-      /^(truly|genuinely|honestly|literally|simply|basically|essentially|undoubtedly)[,:]?\s*(\S)/i
+      /^(truly|genuinely|honestly|literally|simply|basically|essentially|undoubtedly)[,:]?\s*(\S+)/i
     );
     if (leadingIntensifierMatch) {
       const word = leadingIntensifierMatch[1];
-      const nextChar = leadingIntensifierMatch[2];
+      const nextWord = leadingIntensifierMatch[2];
       fixesApplied.push(`Removed intensifier filler: "${word}"`);
-      content = nextChar.toUpperCase() + content.slice(leadingIntensifierMatch[0].length);
+      content = safeCapitalizeFirstWord(nextWord) + content.slice(leadingIntensifierMatch[0].length);
     }
 
     // 4. Strip intensifiers after sentence boundaries
-    const sentenceIntensifierRegex = /(?<=[.!?]\s+)(truly|genuinely|honestly|literally|simply|basically|essentially|undoubtedly)[,:]?\s*(\S)/gi;
-    content = content.replace(sentenceIntensifierRegex, (_match, word, firstChar) => {
+    const sentenceIntensifierRegex = /(?<=[.!?]\s+)(truly|genuinely|honestly|literally|simply|basically|essentially|undoubtedly)[,:]?\s*(\S+)/gi;
+    content = content.replace(sentenceIntensifierRegex, (_match, word, firstWord) => {
       fixesApplied.push(`Removed intensifier filler: "${word}"`);
-      return firstChar.toUpperCase();
+      return safeCapitalizeFirstWord(firstWord);
     });
 
     // 5. Strip mid-sentence filler intensifier adverbs modifying adjacent words

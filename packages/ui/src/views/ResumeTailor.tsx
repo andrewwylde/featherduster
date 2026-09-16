@@ -99,10 +99,12 @@ export const ResumeTailor: React.FC = () => {
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
   const printIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const saveModalRef = useRef<HTMLDivElement | null>(null);
 
   useModalA11y({
     isOpen: isSaveModalOpen,
     onClose: () => setIsSaveModalOpen(false),
+    containerRef: saveModalRef,
   });
 
   // De-Slop Feedback State
@@ -1329,10 +1331,14 @@ export const ResumeTailor: React.FC = () => {
           onClick={() => setIsSaveModalOpen(false)}
         >
           <div
+            ref={saveModalRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="save-variant-title"
             className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-base font-bold text-white">Save Tailored Resume Variant</h3>
+            <h3 id="save-variant-title" className="text-base font-bold text-white">Save Tailored Resume Variant</h3>
             <p className="text-xs text-slate-400">
               Saves the current modular selection and active bullet configuration to your repository.
             </p>

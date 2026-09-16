@@ -43,6 +43,7 @@ export class WorkspaceWatcher extends EventEmitter {
     this.watcher = chokidar.watch(watchTargets, {
       ignoreInitial: true,
       persistent: true,
+      followSymlinks: false,
       ignored: [
         /(^|[/\\])\.(?!featherduster)/, // dotfiles except .featherduster
         '**/node_modules/**',

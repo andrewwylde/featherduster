@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   X,
   Upload,
@@ -31,7 +31,8 @@ export const RubricImporterModal: React.FC<RubricImporterModalProps> = ({
   onClose,
   onImportSuccess,
 }) => {
-  useModalA11y({ isOpen, onClose });
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: modalRef });
   const [rawTable, setRawTable] = useState('');
   const [rubricId, setRubricId] = useState('');
   const [title, setTitle] = useState('');
@@ -99,6 +100,10 @@ export const RubricImporterModal: React.FC<RubricImporterModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="rubric-importer-title"
         className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleIn"
         onClick={(e) => e.stopPropagation()}
       >
@@ -109,7 +114,7 @@ export const RubricImporterModal: React.FC<RubricImporterModalProps> = ({
               <TableIcon className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Import Leveling Rubric</h2>
+              <h2 id="rubric-importer-title" className="text-lg font-bold text-white">Import Leveling Rubric</h2>
               <p className="text-xs text-slate-400">
                 Paste Markdown tables, Notion tables, or TSV/CSV from Google Sheets or Excel
               </p>

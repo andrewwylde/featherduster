@@ -101,8 +101,8 @@ export function analyzeCompetencyGaps(
     }
 
     // Status evaluation:
-    // 'met': at least 1 verified entry, clean metrics, not in-flight, no missing evidence, level criteria exists
-    // 'partial': has evidence (provisional or verified with issues or missing metrics or in-flight)
+    // 'met': at least 1 clean verified entry (shipped, verified metrics)
+    // 'partial': has evidence (provisional or in-flight or pending metrics) but 0 clean verified
     // 'gap': 0 verified and 0 provisional (or all retracted/missing), or 0 evidence mapped
     let status: 'met' | 'partial' | 'gap' = 'gap';
 

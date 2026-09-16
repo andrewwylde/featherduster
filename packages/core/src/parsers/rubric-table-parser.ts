@@ -13,18 +13,18 @@ export interface ParseRubricOptions {
 
 function parseLevelHeader(header: string): { id: string; name: string } {
   const trimmed = header.trim();
-  // e.g. "L3: Junior / Mid" or "L4 - Senior Engineer" or "L5 – Staff" or "L6 — Principal"
-  const delimMatch = trimmed.match(/^([A-Za-z0-9_.\-]+)\s*[:\-–—]\s*(.+)$/);
+  // e.g. "L3: Junior / Mid" or "L4 - Senior Engineer" or "Level 5 – Staff" or "L6 — Principal"
+  const delimMatch = trimmed.match(/^([A-Za-z0-9_.\-\s]+?)\s*[:\-–—]\s*(.+)$/);
   if (delimMatch) {
     return { id: delimMatch[1].trim(), name: delimMatch[2].trim() || delimMatch[1].trim() };
   }
   // e.g. "L5 (Staff / Tech Lead)"
-  const parenMatch = trimmed.match(/^([A-Za-z0-9_.\-]+)\s*\((.+)\)$/);
+  const parenMatch = trimmed.match(/^([A-Za-z0-9_.\-\s]+?)\s*\((.+)\)$/);
   if (parenMatch) {
     return { id: parenMatch[1].trim(), name: parenMatch[2].trim() || parenMatch[1].trim() };
   }
   // e.g. "Staff / Tech Lead (L5)"
-  const revParenMatch = trimmed.match(/^(.+?)\s*\(([A-Za-z0-9_.\-]+)\)$/);
+  const revParenMatch = trimmed.match(/^(.+?)\s*\(([A-Za-z0-9_.\-\s]+)\)$/);
   if (revParenMatch) {
     return { id: revParenMatch[2].trim(), name: revParenMatch[1].trim() };
   }
@@ -38,28 +38,49 @@ function slugify(text: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function parseCsvLine(line: string): string[] {
-  const result: string[] = [];
-  let cur = '';
+function parseFullCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentCell = '';
   let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+
     if (char === '"') {
-      if (inQuotes && line[i + 1] === '"') {
-        cur += '"';
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
         i++;
       } else {
         inQuotes = !inQuotes;
       }
     } else if (char === ',' && !inQuotes) {
-      result.push(cur.trim());
-      cur = '';
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if ((char === '\r' || char === '\n') && !inQuotes) {
+      if (char === '\r' && nextChar === '\n') {
+        i++;
+      }
+      currentRow.push(currentCell.trim());
+      if (currentRow.some((c) => c.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = '';
     } else {
-      cur += char;
+      currentCell += char;
     }
   }
-  result.push(cur.trim());
-  return result;
+
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    if (currentRow.some((c) => c.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
 }
 
 function parseMarkdownLine(line: string): string[] {
@@ -93,52 +114,59 @@ export function parseRubricTable(
     throw new Error('Cannot parse empty rubric table: input text is empty');
   }
 
-  const lines = rawText
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  if (lines.length === 0) {
-    throw new Error('Cannot parse empty rubric table: no valid lines found');
+  // Detect format: TSV, Markdown, or CSV
+  let pipeCount = 0;
+  let tabCount = 0;
+  for (let i = 0; i < rawText.length; i++) {
+    if (rawText[i] === '|') pipeCount++;
+    else if (rawText[i] === '\t') tabCount++;
   }
 
-  // Detect format: TSV, Markdown, or CSV
-  const hasTabs = lines.some((l) => l.includes('\t'));
-  const hasPipes = lines.some((l) => l.includes('|'));
-
   let format: 'tsv' | 'markdown' | 'csv' = 'markdown';
-  if (hasTabs) {
-    format = 'tsv';
-  } else if (hasPipes) {
+  if (pipeCount >= 2 && pipeCount >= tabCount) {
     format = 'markdown';
+  } else if (tabCount > 0) {
+    format = 'tsv';
   } else {
     format = 'csv';
   }
 
-  const lineParser = (line: string): string[] => {
-    if (format === 'tsv') {
-      return line.split('\t').map((c) => c.trim());
+  let rawRows: string[][];
+  if (format === 'csv') {
+    rawRows = parseFullCsv(rawText);
+  } else {
+    const lines = rawText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length === 0) {
+      throw new Error('Cannot parse empty rubric table: no valid lines found');
     }
-    if (format === 'markdown') {
-      return parseMarkdownLine(line);
+
+    rawRows = lines
+      .filter((line) => !(format === 'markdown' && isMarkdownSeparator(line)))
+      .map((line) => {
+        if (format === 'tsv') {
+          return line.split('\t').map((c) => c.trim());
+        }
+        return parseMarkdownLine(line);
+      });
+  }
+
+  // Filter out trailing empty cells (e.g. from extra pipes like `|||`)
+  for (const cells of rawRows) {
+    while (cells.length > 0 && cells[cells.length - 1] === '') {
+      cells.pop();
     }
-    return parseCsvLine(line);
-  };
+  }
 
   // Find header row and data rows
   let headerCells: string[] = [];
   let headerIndex = -1;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (format === 'markdown' && isMarkdownSeparator(line)) {
-      continue;
-    }
-    const cells = lineParser(line);
-    // Filter out trailing empty cells (e.g. from extra pipes like `|||`)
-    while (cells.length > 0 && cells[cells.length - 1] === '') {
-      cells.pop();
-    }
+  for (let i = 0; i < rawRows.length; i++) {
+    const cells = rawRows[i];
     if (cells.length >= 2) {
       headerCells = cells;
       headerIndex = i;
@@ -159,13 +187,8 @@ export function parseRubricTable(
   const competencies: RubricCompetency[] = [];
   const seenIds = new Set<string>();
 
-  for (let i = headerIndex + 1; i < lines.length; i++) {
-    const line = lines[i];
-    if (format === 'markdown' && isMarkdownSeparator(line)) {
-      continue;
-    }
-
-    const cells = lineParser(line);
+  for (let i = headerIndex + 1; i < rawRows.length; i++) {
+    const cells = rawRows[i];
     const compName = cells[0]?.trim();
     if (!compName) {
       // Empty row or empty competency name, skip

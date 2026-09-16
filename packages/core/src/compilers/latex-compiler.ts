@@ -45,13 +45,33 @@ export function escapeLatex(str: string): string {
   });
 }
 
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (/^(?:javascript|vbscript|data|file|run):/i.test(trimmed)) {
+    return '#';
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
+function escapeLatexUrl(url: string): string {
+  return url
+    .replace(/\\/g, '\\textbackslash ')
+    .replace(/%/g, '\\%')
+    .replace(/#/g, '\\#')
+    .replace(/~/g, '\\~{}')
+    .replace(/&/g, '\\&')
+    .replace(/_/g, '\\_');
+}
+
 function redactAndEscape(text: string, rules?: PrivacyRulesConfig): string {
   return escapeLatex(redact(text, rules));
 }
 
 /**
- * Compiles a ResumeSpec into clean LaTeX source code (.tex)
- * with standard packages (geometry, hyperref, enumitem) and 1-page margins.
+ * Compiles a ResumeSpec into clean LaTeX source code.
  */
 export function compileLatexResume(spec: ResumeSpec, rules?: PrivacyRulesConfig): string {
   const name = redactAndEscape(spec.profile.name, rules);
@@ -69,8 +89,9 @@ export function compileLatexResume(spec: ResumeSpec, rules?: PrivacyRulesConfig)
     for (const [, url] of Object.entries(spec.profile.links)) {
       if (url) {
         const cleanUrl = redact(url, rules);
+        const safeUrl = sanitizeUrl(cleanUrl);
         const displayUrl = cleanUrl.replace(/^https?:\/\//, '');
-        contactItems.push(`\\href{${cleanUrl}}{${escapeLatex(displayUrl)}}`);
+        contactItems.push(`\\href{${escapeLatexUrl(safeUrl)}}{${escapeLatex(displayUrl)}}`);
       }
     }
   }
@@ -85,6 +106,7 @@ export function compileLatexResume(spec: ResumeSpec, rules?: PrivacyRulesConfig)
 \\usepackage[hidelinks]{hyperref}
 \\usepackage{enumitem}
 \\usepackage{titlesec}
+\\usepackage{xcolor}
 
 \\pagestyle{empty}
 

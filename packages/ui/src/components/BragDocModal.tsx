@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   X,
   FileText,
@@ -30,7 +30,8 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
   initialRubricId,
   initialTargetLevel,
 }) => {
-  useModalA11y({ isOpen, onClose });
+  const modalRef = useRef<HTMLDivElement>(null);
+  useModalA11y({ isOpen, onClose, containerRef: modalRef });
   const [selectedRubricId, setSelectedRubricId] = useState<string>(
     initialRubricId || rubrics[0]?.id || ''
   );
@@ -184,6 +185,10 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
       onClick={onClose}
     >
       <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="brag-doc-title"
         className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleIn"
         onClick={(e) => e.stopPropagation()}
       >
@@ -194,7 +199,7 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
               <FileText className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-white">Generate Performance Brag Document</h2>
+              <h2 id="brag-doc-title" className="text-lg font-bold text-white">Generate Performance Brag Document</h2>
               <p className="text-xs text-slate-400">
                 Compile your verified accomplishments and metrics into a promotion-ready packet
               </p>

@@ -420,6 +420,25 @@ export const RubricGapMatrix: React.FC = () => {
             ))}
           </div>
         </div>
+      ) : !currentRubric || !currentRubric.competencies || currentRubric.competencies.length === 0 ? (
+        <div className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4">
+          <div className="flex items-center space-x-3">
+            <Layers className="w-6 h-6 text-slate-500 flex-shrink-0" />
+            <div>
+              <span className="font-bold text-slate-200 text-sm">No Rubric Competencies Loaded</span>
+              <p className="text-slate-400 text-xs mt-0.5">
+                Import an engineering ladder or select a rubric to begin gap analysis and level coverage tracking.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setIsImporterOpen(true)}
+            className="px-3.5 py-2 bg-teal-500 text-slate-950 font-bold rounded-lg text-xs hover:bg-teal-400 transition-colors shadow-sm flex items-center gap-1.5"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Import Rubric
+          </button>
+        </div>
       ) : (
         <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-between text-xs text-emerald-400">
           <div className="flex items-center space-x-2.5">
