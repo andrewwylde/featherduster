@@ -20,15 +20,31 @@ export interface MetricValidationResult {
 export function validateMetrics(text: string, store?: EvidenceStore): MetricValidationResult {
   const issues: MetricIssue[] = [];
   const lines = text.split('\n');
-  const citationRegex = /(?<![a-zA-Z0-9_-])(ev-[0-9]{3})(?![a-zA-Z0-9_-])/gi;
+
+  const prefixes = new Set<string>(['ev']);
+  if (store) {
+    for (const entry of store.getAll()) {
+      const match = entry.id.match(/^([a-z0-9_-]+?)-[0-9]{3}$/i);
+      if (match) {
+        prefixes.add(match[1].toLowerCase());
+      }
+    }
+  }
+  const prefixPattern = Array.from(prefixes).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+  const citationRegex = new RegExp(`(?<![a-zA-Z0-9_-])((?:${prefixPattern})-[0-9]{3})(?![a-zA-Z0-9_-])`, 'gi');
   const metricNeededRegex = /\[METRIC[\s_-]?NEEDED\]/i;
 
   for (let i = 0; i < lines.length; i++) {
     const lineNum = i + 1;
     const line = lines[i];
 
-    // Detect explicit [METRIC NEEDED] tokens
-    if (metricNeededRegex.test(line)) {
+    // Detect explicit [METRIC NEEDED] tokens in claims
+    // Ignore schema configuration lines (e.g. metric_placeholder: "[METRIC NEEDED]")
+    // and rule guidelines that quote the placeholder as an instruction
+    const isConfigLine = /^\s*metric_placeholder\s*:/i.test(line);
+    const isGuidelineMeta = /use the literal (?:placeholder|string)|is the placeholder|replace `?\[METRIC/i.test(line);
+
+    if (!isConfigLine && !isGuidelineMeta && metricNeededRegex.test(line)) {
       issues.push({
         type: 'missing_metric',
         message: `Line ${lineNum}: Explicit [METRIC NEEDED] token detected`,

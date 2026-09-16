@@ -51,9 +51,10 @@ cli
 // 2. Check command: headless integrity linter
 cli
   .command('check [root]', 'Run headless integrity check on citations and metrics')
-  .action(async (root?: string) => {
+  .option('--strict', 'Fail on provisional evidence citations as well as hard violations')
+  .action(async (root?: string, options: { strict?: boolean } = {}) => {
     const workspace = root || process.cwd();
-    await runCheckCommand({ workspace, exitOnError: true });
+    await runCheckCommand({ workspace, exitOnError: true, strict: options.strict });
   });
 
 // 3. Build command: headless resume and brag doc compiler

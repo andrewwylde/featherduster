@@ -35,6 +35,7 @@ export class WorkspaceWatcher extends EventEmitter {
 
     const watchTargets = [
       path.join(this.workspaceDir, 'evidence'),
+      path.join(this.workspaceDir, 'companies'),
       path.join(this.workspaceDir, 'rubrics'),
       path.join(this.workspaceDir, 'resumes'),
       path.join(this.workspaceDir, '.featherduster'),

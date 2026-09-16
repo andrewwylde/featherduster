@@ -12,7 +12,18 @@ export interface CitationLintResult {
  * against the store, and flags any dangling citations.
  */
 export function lintCitations(text: string, store: EvidenceStore): CitationLintResult {
-  const citationRegex = /(?<![a-zA-Z0-9_-])(ev-[0-9]{3})(?![a-zA-Z0-9_-])/gi;
+  // Collect known citation prefixes from store (e.g. ev, kong, dfn)
+  const knownPrefixes = new Set<string>(['ev', 'kong', 'dfn']);
+  if (store && store.getAll) {
+    for (const record of store.getAll()) {
+      const parts = record.id.split('-');
+      if (parts.length >= 2 && isNaN(Number(parts[0]))) {
+        knownPrefixes.add(parts[0].toLowerCase());
+      }
+    }
+  }
+
+  const citationRegex = /(?<![a-zA-Z0-9_-])([a-z]{2,8}-[0-9]{3})(?![a-zA-Z0-9_-])/gi;
   const validCitations: string[] = [];
   const danglingCitations: string[] = [];
   const seenValid = new Set<string>();
@@ -22,6 +33,12 @@ export function lintCitations(text: string, store: EvidenceStore): CitationLintR
   for (const match of matches) {
     const rawId = match[1];
     const normalizedId = rawId.toLowerCase();
+    const prefix = normalizedId.split('-')[0];
+
+    // Only process as evidence citation if prefix matches known evidence prefix
+    if (!knownPrefixes.has(prefix)) {
+      continue;
+    }
 
     if (store.has(normalizedId) || store.has(rawId)) {
       if (!seenValid.has(normalizedId)) {

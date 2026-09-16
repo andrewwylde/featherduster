@@ -55,6 +55,14 @@ describe('De-Slop Engine', () => {
       const delveMatches = matches.filter((m) => m.type === 'delve');
       expect(delveMatches.length).toBeGreaterThanOrEqual(2);
     });
+
+    it('ignores words inside inline code backticks and fenced code blocks', () => {
+      const text = 'Use `delve` to debug Go routines.\n```\nHere is a rich tapestry of code.\n```\nOutside code blocks, we delve into details.';
+      const matches = detectSlop(text);
+      expect(matches.length).toBe(1);
+      expect(matches[0].type).toBe('delve');
+      expect(matches[0].line).toBe(5);
+    });
   });
 
   describe('detectSlop - Corporate Buzzword Salad', () => {

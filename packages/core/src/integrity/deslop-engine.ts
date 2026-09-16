@@ -140,19 +140,35 @@ function getLineNumber(text: string, index: number): number {
 }
 
 /**
+ * Masks code blocks (```...```) and inline code spans (`...`) with spaces
+ * to avoid matching keywords and code identifiers (e.g. `delve`) while
+ * preserving exact string length, character indices, and line numbers.
+ */
+export function maskCodeSpans(text: string): string {
+  let masked = text.replace(/(```[\s\S]*?```)/g, (match) => {
+    return match.replace(/[^\r\n]/g, ' ');
+  });
+  masked = masked.replace(/(`[^`\r\n]+`)/g, (match) => {
+    return match.replace(/[^\r\n]/g, ' ');
+  });
+  return masked;
+}
+
+/**
  * Scans text and returns all slop matches with line numbers and matched spans.
  */
 export function detectSlop(text: string): SlopMatch[] {
   if (!text) return [];
 
   const rawMatches: SlopMatch[] = [];
+  const scannableText = maskCodeSpans(text);
 
   for (const rule of SLOP_RULES) {
     const rx = new RegExp(rule.regex.source, rule.regex.flags);
     let match: RegExpExecArray | null;
 
-    while ((match = rx.exec(text)) !== null) {
-      const matchedText = match[0];
+    while ((match = rx.exec(scannableText)) !== null) {
+      const matchedText = text.slice(match.index, match.index + match[0].length);
       const index = match.index;
       const line = getLineNumber(text, index);
 

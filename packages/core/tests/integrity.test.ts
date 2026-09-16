@@ -279,6 +279,45 @@ describe('Integrity & Redaction Engine', () => {
       expect(result.issues).toHaveLength(1);
       expect(result.issues[0].type).toBe('missing_metric');
     });
+
+    it('ignores schema config lines and rule guideline quotes for [METRIC NEEDED]', () => {
+      const text = [
+        'metric_placeholder: "[METRIC NEEDED]"',
+        '- For unmeasured latency, use the literal placeholder `[METRIC NEEDED]`.',
+        '- No invented metrics — `[METRIC NEEDED]` is the placeholder, not an estimate.',
+        'Production bullet with [METRIC NEEDED] latency reduction.',
+      ].join('\n');
+      const result = validateMetrics(text);
+
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].line).toBe(4);
+    });
+
+    it('validates citations with dynamic company prefixes (e.g. kong-001, dfn-001)', () => {
+      const customStore = new EvidenceStore();
+      customStore.add(
+        {
+          id: 'kong-001',
+          date: '2023-01-01',
+          company: 'Kong',
+          title: 'Kong Gateway',
+          summary: 'Summary',
+          impact: 'Impact',
+          themes: ['api-gateway'],
+          confidence: 'provisional',
+          in_flight: true,
+          metrics: [],
+          internal_references: [],
+        },
+        'Narrative'
+      );
+
+      const text = 'Authored plugin system (kong-001).';
+      const result = validateMetrics(text, customStore);
+      expect(result.issues).toHaveLength(1);
+      expect(result.issues[0].type).toBe('provisional_evidence');
+      expect(result.issues[0].message).toContain('kong-001');
+    });
   });
 
   describe('redactText', () => {

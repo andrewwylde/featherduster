@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   parseEvidenceMarkdown,
+  parseEvidenceLedger,
   serializeEvidenceMarkdown,
   EvidenceStore,
   EvidenceParseError,
@@ -228,6 +229,87 @@ in_flight: false
       const invalidEntry = { ...validEntry, id: '' } as any;
       delete invalidEntry.id;
       expect(() => serializeEvidenceMarkdown(invalidEntry, 'Narrative')).toThrow();
+    });
+  });
+
+  describe('parseEvidenceLedger', () => {
+    const sampleLedgerMarkdown = `# Evidence Ledger — Engineering Career
+
+Some markdown intro paragraph before the YAML block.
+
+\`\`\`yaml
+meta:
+  employer: CloudMatrix Inc.
+  period_start: 2024-01-01
+themes:
+  - id: core-platform
+    label: Core Platform
+entries:
+  - id: ev-001
+    date: 2025-11-22
+    theme_ids:
+      - core-platform
+    summary: "Standardized CI pipeline with automated integration tests."
+    impact: "Reduced build failure rate by 80% across 40 engineers."
+    url: "https://github.com/cloudmatrix/platform/pull/81"
+    confidence: high
+    in_flight: false
+
+  - id: ev-002
+    date: 2026-03-15
+    theme_ids:
+      - core-platform
+    summary: "Built dynamic query caching."
+    impact: "Accelerated dashboard load by [METRIC NEEDED]."
+    confidence: medium
+    in_flight: true
+\`\`\`
+`;
+
+    it('parses embedded YAML ledger block with multiple entries', () => {
+      const records = parseEvidenceLedger(sampleLedgerMarkdown, 'companies/cloudmatrix/evidence/evidence-ledger.md');
+      expect(records).toHaveLength(2);
+
+      const first = records[0];
+      expect(first.entry.id).toBe('ev-001');
+      expect(first.entry.company).toBe('cloudmatrix');
+      expect(first.entry.confidence).toBe('verified');
+      expect(first.entry.themes).toEqual(['core-platform']);
+      expect(first.entry.internal_references).toEqual([
+        { type: 'url', ref: 'https://github.com/cloudmatrix/platform/pull/81' },
+      ]);
+      expect(first.narrative).toContain('Standardized CI pipeline');
+
+      const second = records[1];
+      expect(second.entry.id).toBe('ev-002');
+      expect(second.entry.confidence).toBe('provisional');
+      expect(second.entry.in_flight).toBe(true);
+      expect(second.entry.metrics).toHaveLength(1);
+      expect(second.entry.metrics[0].value).toBe('[METRIC NEEDED]');
+    });
+
+    it('infers company from meta when filePath is not specified', () => {
+      const records = parseEvidenceLedger(sampleLedgerMarkdown);
+      expect(records[0].entry.company).toBe('cloudmatrix-inc-');
+    });
+
+    it('handles raw YAML format without markdown code fence', () => {
+      const rawYaml = `meta:
+  employer: apex-labs
+entries:
+  - id: apex-001
+    summary: "API Gateway modularization."
+    confidence: verified
+`;
+      const records = parseEvidenceLedger(rawYaml);
+      expect(records).toHaveLength(1);
+      expect(records[0].entry.id).toBe('apex-001');
+      expect(records[0].entry.company).toBe('apex-labs');
+    });
+
+    it('returns empty array when content has no entries array', () => {
+      const noEntries = '# Just a markdown note\nNo yaml here.';
+      expect(parseEvidenceLedger(noEntries)).toEqual([]);
     });
   });
 });

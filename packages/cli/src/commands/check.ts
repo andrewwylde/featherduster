@@ -25,6 +25,7 @@ export interface CheckIssue {
     | 'banned_keyword'
     | 'ai_slop'
     | 'slop';
+  severity?: 'error' | 'warning';
   message: string;
   line?: number;
   citation?: string;
@@ -35,16 +36,23 @@ export interface CheckIssue {
 export interface CheckResult {
   isClean: boolean;
   issues: CheckIssue[];
+  errors: CheckIssue[];
+  warnings: CheckIssue[];
   totalFiles: number;
   validCitationsCount: number;
   danglingCitationsCount: number;
   slopMatchesCount: number;
+  provisionalCitationsCount: number;
+}
+
+export interface CheckWorkspaceOptions {
+  strict?: boolean;
 }
 
 /**
  * Checks integrity of citations, metrics, and privacy rules across a workspace.
  */
-export function checkWorkspace(workspaceDir: string): CheckResult {
+export function checkWorkspace(workspaceDir: string, options?: CheckWorkspaceOptions): CheckResult {
   const resolvedDir = path.resolve(workspaceDir);
   const store = loadEvidenceStore(resolvedDir);
   const privacyRules = loadPrivacyRules(resolvedDir);
@@ -89,32 +97,40 @@ export function checkWorkspace(workspaceDir: string): CheckResult {
 
   for (const file of filesToCheck) {
     const relativePath = path.relative(resolvedDir, file).replace(/\\/g, '/');
+    const baseName = path.basename(file).toLowerCase();
+    const isLedgerFile = baseName.startsWith('evidence-ledger');
+
     try {
       const content = fs.readFileSync(file, 'utf-8');
 
-      // 1. Citation verification
-      const citationResult = lintCitations(content, store);
-      validCitationsCount += citationResult.validCitations.length;
-      danglingCitationsCount += citationResult.danglingCitations.length;
+      // 1. Citation & Metric verification (skip self-check on the canonical evidence ledger)
+      if (!isLedgerFile) {
+        const citationResult = lintCitations(content, store);
+        validCitationsCount += citationResult.validCitations.length;
+        danglingCitationsCount += citationResult.danglingCitations.length;
 
-      for (const dangling of citationResult.danglingCitations) {
-        issues.push({
-          file: relativePath,
-          type: 'dangling_citation',
-          message: `Dangling citation '${dangling}' cannot be resolved to any evidence entry`,
-          citation: dangling,
-        });
-      }
+        for (const dangling of citationResult.danglingCitations) {
+          issues.push({
+            file: relativePath,
+            type: 'dangling_citation',
+            severity: 'error',
+            message: `Dangling citation '${dangling}' cannot be resolved to any evidence entry`,
+            citation: dangling,
+          });
+        }
 
-      // 2. Metric verification
-      const metricResult = validateMetrics(content, store);
-      for (const mIssue of metricResult.issues) {
-        issues.push({
-          file: relativePath,
-          type: mIssue.type,
-          message: mIssue.message,
-          line: mIssue.line,
-        });
+        // 2. Metric verification
+        const metricResult = validateMetrics(content, store);
+        for (const mIssue of metricResult.issues) {
+          const isWarning = mIssue.type === 'provisional_evidence' && !options?.strict;
+          issues.push({
+            file: relativePath,
+            type: mIssue.type,
+            severity: isWarning ? 'warning' : 'error',
+            message: mIssue.message,
+            line: mIssue.line,
+          });
+        }
       }
 
       // 3. Privacy / banned keyword verification
@@ -124,6 +140,7 @@ export function checkWorkspace(workspaceDir: string): CheckResult {
           issues.push({
             file: relativePath,
             type: 'banned_keyword',
+            severity: 'error',
             message: `Banned keyword '${violation}' detected in content`,
             keyword: violation,
           });
@@ -154,6 +171,7 @@ export function checkWorkspace(workspaceDir: string): CheckResult {
           issues.push({
             file: relativePath,
             type: 'ai_slop',
+            severity: 'error',
             message: `AI slop / buzzword pattern '${match.matchedText}' (${match.patternName}) detected`,
             line: match.line,
             slopMatch: match,
@@ -165,13 +183,20 @@ export function checkWorkspace(workspaceDir: string): CheckResult {
     }
   }
 
+  const errors = issues.filter((i) => (i.severity ?? 'error') === 'error');
+  const warnings = issues.filter((i) => i.severity === 'warning');
+  const provisionalCitationsCount = warnings.filter((w) => w.type === 'provisional_evidence').length;
+
   return {
-    isClean: issues.length === 0,
+    isClean: errors.length === 0,
     issues,
+    errors,
+    warnings,
     totalFiles: filesToCheck.length,
     validCitationsCount,
     danglingCitationsCount,
     slopMatchesCount,
+    provisionalCitationsCount,
   };
 }
 
@@ -189,11 +214,14 @@ export function printCheckReport(result: CheckResult): void {
     console.log(pc.gray(`  • 0 unverified or missing metric tokens.`));
     console.log(pc.gray(`  • 0 banned keyword leaks detected.`));
     console.log(pc.gray(`  • ${result.slopMatchesCount} AI slop / buzzword filler patterns detected.`));
+    if (result.provisionalCitationsCount > 0) {
+      console.log(pc.gray(`  • ${result.provisionalCitationsCount} provisional citation(s) in flight (advisory).`));
+    }
     console.log('');
   } else {
     console.log(
       pc.red(
-        `✖ [FAIL] Integrity check failed with ${result.issues.length} violation(s) across ${result.totalFiles} files:\n`
+        `✖ [FAIL] Integrity check failed with ${result.errors.length} violation(s) across ${result.totalFiles} files:\n`
       )
     );
     console.log(pc.gray(`  • ${result.validCitationsCount} valid citation(s) verified against evidence store.`));
@@ -202,9 +230,12 @@ export function printCheckReport(result: CheckResult): void {
     }
     const slopText = `  • ${result.slopMatchesCount} AI slop / buzzword filler patterns detected.`;
     console.log(result.slopMatchesCount > 0 ? pc.yellow(slopText) : pc.gray(slopText));
+    if (result.provisionalCitationsCount > 0) {
+      console.log(pc.gray(`  • ${result.provisionalCitationsCount} provisional citation(s) in flight (advisory).`));
+    }
     console.log('');
 
-    for (const issue of result.issues) {
+    for (const issue of result.errors) {
       const sanitizedFile = issue.file.replace(/\x1b\[[0-9;]*m/g, '');
       const sanitizedMessage = issue.message.replace(/\x1b\[[0-9;]*m/g, '');
       const location = issue.line
@@ -224,6 +255,7 @@ export function printCheckReport(result: CheckResult): void {
 export interface RunCheckOptions {
   workspace?: string;
   exitOnError?: boolean;
+  strict?: boolean;
 }
 
 /**
@@ -231,7 +263,7 @@ export interface RunCheckOptions {
  */
 export async function runCheckCommand(options?: RunCheckOptions): Promise<CheckResult> {
   const workspaceDir = options?.workspace || process.cwd();
-  const result = checkWorkspace(workspaceDir);
+  const result = checkWorkspace(workspaceDir, { strict: options?.strict });
   printCheckReport(result);
 
   if (options?.exitOnError !== false) {

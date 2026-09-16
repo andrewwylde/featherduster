@@ -64,6 +64,7 @@ import {
   compileMarkdownResume,
   compileTypstResume,
   lintCitations,
+  parseEvidenceLedger,
   parseEvidenceMarkdown,
   parseRubricTable,
   redactText,
@@ -121,14 +122,40 @@ export function findFiles(
 
 export function loadEvidenceStore(workspaceDir: string): EvidenceStore {
   const store = new EvidenceStore();
-  const evidenceDir = path.join(workspaceDir, 'evidence');
-  const files = findFiles(evidenceDir, ['.md', '.markdown']);
+  const candidateDirs = [
+    path.join(workspaceDir, 'evidence'),
+    path.join(workspaceDir, 'companies'),
+  ];
+
+  const files: string[] = [];
+  for (const dir of candidateDirs) {
+    files.push(...findFiles(dir, ['.md', '.markdown', '.yaml', '.yml']));
+  }
 
   for (const file of files) {
     try {
       const content = fs.readFileSync(file, 'utf-8');
-      const parsed = parseEvidenceMarkdown(content, file);
-      store.add({ entry: parsed.entry, narrative: parsed.narrative, filePath: file });
+      const baseName = path.basename(file).toLowerCase();
+
+      // Check if file is an evidence ledger (e.g. evidence-ledger.md, evidence-ledger.yaml or embeds entries:)
+      if (
+        baseName.startsWith('evidence-ledger') ||
+        content.includes('entries:')
+      ) {
+        const ledgerEntries = parseEvidenceLedger(content, file);
+        for (const item of ledgerEntries) {
+          store.add({ entry: item.entry, narrative: item.narrative, filePath: file });
+        }
+        if (ledgerEntries.length > 0) {
+          continue;
+        }
+      }
+
+      // Fallback: parse as single-entry evidence markdown with frontmatter
+      if (content.trim().startsWith('---')) {
+        const parsed = parseEvidenceMarkdown(content, file);
+        store.add({ entry: parsed.entry, narrative: parsed.narrative, filePath: file });
+      }
     } catch {
       // Skip files that do not conform to evidence schema
     }

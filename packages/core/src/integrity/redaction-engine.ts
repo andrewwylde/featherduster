@@ -55,12 +55,12 @@ function hasKeywordMatch(text: string, keyword: string): boolean {
 export function redactText(text: string, rules: PrivacyRulesConfig): RedactResult {
   let currentText = text;
 
-  // 1. Strip internal citation tags (e.g. (ev-042), (ev-001, ev-002), [ev-042], ev-042)
+  // 1. Strip internal citation tags (e.g. (ev-042), (ev-001, ev-002), [ev-042], ev-042, (kong-001), (dfn-001))
   currentText = currentText.replace(
-    /(?:\s*\(|\s*\[)\s*(?:ev-[0-9]+)(?:\s*,\s*ev-[0-9]+)*\s*(?:\)|\s*\])/gi,
+    /(?:\s*\(|\s*\[)\s*(?:(?:ev|[a-z]{2,8})-[0-9]+)(?:\s*,\s*(?:(?:ev|[a-z]{2,8})-[0-9]+))*\s*(?:\)|\s*\])/gi,
     ''
   );
-  currentText = currentText.replace(/(?<![a-zA-Z0-9_-])ev-[0-9]+(?![a-zA-Z0-9_-])/gi, '');
+  currentText = currentText.replace(/(?<![a-zA-Z0-9_-])(?:ev|kong|dfn)-[0-9]+(?![a-zA-Z0-9_-])/gi, '');
 
   // 2. Strip internal ticket IDs according to strip_patterns
   const stripPatterns = rules.strip_patterns ?? [];
