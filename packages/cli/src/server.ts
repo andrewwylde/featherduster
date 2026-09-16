@@ -66,6 +66,7 @@ import {
   lintCitations,
   parseEvidenceLedger,
   parseEvidenceMarkdown,
+  parseLatexResume,
   parseRubricTable,
   redactText,
   serializeEvidenceMarkdown,
@@ -266,7 +267,7 @@ export function loadResumeSpecs(workspaceDir: string): ResumeRecord[] {
 
   for (const { dir, type } of directories) {
     if (!fs.existsSync(dir)) continue;
-    const files = findFiles(dir, ['.yaml', '.yml', '.json', '.md']);
+    const files = findFiles(dir, ['.yaml', '.yml', '.json', '.md', '.tex']);
     for (const file of files) {
       try {
         const raw = fs.readFileSync(file, 'utf-8');
@@ -276,12 +277,19 @@ export function loadResumeSpecs(workspaceDir: string): ResumeRecord[] {
           parsed = JSON.parse(raw);
         } else if (ext === '.yaml' || ext === '.yml') {
           parsed = yaml.load(raw);
+        } else if (ext === '.tex') {
+          parsed = parseLatexResume(raw);
         } else if (ext === '.md') {
           const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
           if (match) {
             parsed = yaml.load(match[1]);
           } else {
             parsed = yaml.load(raw);
+          }
+        }
+        if (parsed && typeof parsed === 'object') {
+          if (!parsed.profile && parsed.candidate) {
+            parsed.profile = parsed.candidate;
           }
         }
         const validated = ResumeSpecSchema.safeParse(parsed);
@@ -312,6 +320,15 @@ export function loadResumeSpecs(workspaceDir: string): ResumeRecord[] {
       spec: DEFAULT_STARTER_RESUME,
     });
   }
+
+  // Sort: templates first (with master priority 1, main priority 2), then tailored
+  records.sort((a, b) => {
+    if (a.type !== b.type) return a.type === 'template' ? -1 : 1;
+    const aPriority = a.name.toLowerCase() === 'master' ? 1 : a.name.toLowerCase() === 'main' ? 2 : 3;
+    const bPriority = b.name.toLowerCase() === 'master' ? 1 : b.name.toLowerCase() === 'main' ? 2 : 3;
+    if (aPriority !== bPriority) return aPriority - bPriority;
+    return a.name.localeCompare(b.name);
+  });
 
   return records;
 }

@@ -796,6 +796,76 @@ describe('Local Hono Server Integration Tests', () => {
       expect(found.type).toBe('template');
     });
 
+    it('GET /api/resumes loads .tex resumes and normalizes candidate: frontmatter with priority sorting', async () => {
+      const sampleTex = `
+\\begin{document}
+\\begin{center}
+  \\textbf{\\Huge \\scshape Jane Doe} \\\\
+  \\small 555-1234 $|$ \\href{mailto:jane@example.com}{jane@example.com}
+\\end{center}
+\\section{Experience}
+  \\resumeSubHeadingListStart
+    \\resumeSubheading
+      {Principal Engineer}{2020 -- Present}
+      {TechCorp}{Remote, US}
+      \\resumeItemListStart
+        \\resumeItem{Architected core engine (ev-042).}
+      \\resumeItemListEnd
+  \\resumeSubHeadingListEnd
+\\end{document}
+`;
+      fs.mkdirSync(path.join(tmpWorkspace, 'resumes', 'templates'), { recursive: true });
+      fs.mkdirSync(path.join(tmpWorkspace, 'resumes', 'tailored'), { recursive: true });
+
+      fs.writeFileSync(
+        path.join(tmpWorkspace, 'resumes', 'templates', 'main.tex'),
+        sampleTex,
+        'utf-8'
+      );
+
+      const briefContent = `---
+title: "Tailored Staff Role"
+candidate:
+  name: "Jane Doe"
+  title: "Principal Engineer"
+  email: "jane@example.com"
+experiences:
+  - company: "TechCorp"
+    role: "Principal Engineer"
+    startDate: "2020"
+    endDate: "Present"
+    bullets:
+      - text: "Engineered high-throughput platform."
+---
+# Notes
+`;
+      fs.writeFileSync(
+        path.join(tmpWorkspace, 'resumes', 'tailored', 'custom-brief.md'),
+        briefContent,
+        'utf-8'
+      );
+
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/resumes');
+      expect(res.status).toBe(200);
+      const list = await res.json();
+
+      const texResume = list.find((r: any) => r.name === 'main');
+      expect(texResume).toBeDefined();
+      expect(texResume.type).toBe('template');
+      expect(texResume.spec.profile.name).toBe('Jane Doe');
+      expect(texResume.spec.experiences[0].company).toBe('TechCorp');
+
+      const briefResume = list.find((r: any) => r.name === 'custom-brief');
+      expect(briefResume).toBeDefined();
+      expect(briefResume.type).toBe('tailored');
+      expect(briefResume.spec.profile.name).toBe('Jane Doe');
+
+      const mainIdx = list.findIndex((r: any) => r.name === 'main');
+      const briefIdx = list.findIndex((r: any) => r.name === 'custom-brief');
+      expect(mainIdx).toBeLessThan(briefIdx);
+    });
+
     it('POST /api/resumes returns 400 when name is missing or spec is invalid', async () => {
       const app = createApp(tmpWorkspace);
       const resMissingName = await app.request('/api/resumes', {
