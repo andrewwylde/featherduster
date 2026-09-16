@@ -279,7 +279,27 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   const app = new Hono();
   const watcher = options?.watcher ?? new WorkspaceWatcher(resolvedWorkspaceDir);
 
-  // 1. Health check
+  // 1. Host and Origin protection for localhost security
+  app.use('*', async (c, next) => {
+    const host = c.req.header('host');
+    if (host && !/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host)) {
+      return c.text('Forbidden: Invalid Host Header', 403);
+    }
+    const origin = c.req.header('origin');
+    if (origin) {
+      try {
+        const originUrl = new URL(origin);
+        if (!['127.0.0.1', 'localhost'].includes(originUrl.hostname)) {
+          return c.text('Forbidden: Cross-Origin Request Blocked', 403);
+        }
+      } catch {
+        return c.text('Forbidden: Malformed Origin Header', 403);
+      }
+    }
+    await next();
+  });
+
+  // 1b. Health check
   app.get('/api/health', (c) => {
     return c.json({
       status: 'ok',
@@ -327,17 +347,28 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       const validatedEntry = EvidenceEntrySchema.parse(entryData);
       const serialized = serializeEvidenceMarkdown(validatedEntry, narrative);
 
-      const companySlug = validatedEntry.company || 'general';
-      const relativeTarget = body.filePath
-        ? body.filePath
-        : path.join('evidence', companySlug, `${validatedEntry.id}.md`);
+      const companySlug = (validatedEntry.company || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeId = validatedEntry.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const evidenceRootDir = path.resolve(resolvedWorkspaceDir, 'evidence');
 
-      const fullTarget = path.isAbsolute(relativeTarget)
-        ? relativeTarget
-        : path.join(resolvedWorkspaceDir, relativeTarget);
+      let targetFile: string;
+      if (body.filePath) {
+        if (path.isAbsolute(body.filePath)) {
+          return c.json({ success: false, error: 'Absolute file paths are not allowed' }, 400);
+        }
+        targetFile = path.resolve(resolvedWorkspaceDir, body.filePath);
+      } else {
+        targetFile = path.resolve(evidenceRootDir, companySlug, `${safeId}.md`);
+      }
 
-      fs.mkdirSync(path.dirname(fullTarget), { recursive: true });
-      fs.writeFileSync(fullTarget, serialized, 'utf-8');
+      // Assert path containment strictly within workspace
+      const relToWorkspace = path.relative(resolvedWorkspaceDir, targetFile);
+      if (relToWorkspace.startsWith('..') || path.isAbsolute(relToWorkspace)) {
+        return c.json({ success: false, error: 'Path traversal detected: File must reside within workspace' }, 403);
+      }
+
+      fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+      fs.writeFileSync(targetFile, serialized, 'utf-8');
 
       return c.json({
         success: true,
@@ -385,10 +416,17 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       }
 
       const validatedRubric = LevelingRubricSchema.parse(rubricData);
-
-      const rubricsDir = path.join(resolvedWorkspaceDir, 'rubrics');
+      const rubricsDir = path.resolve(resolvedWorkspaceDir, 'rubrics');
+      const safeId = validatedRubric.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+      if (!safeId) {
+        return c.json({ success: false, error: 'Invalid rubric ID' }, 400);
+      }
+      const targetFile = path.resolve(rubricsDir, `${safeId}.yaml`);
+      const relToRubrics = path.relative(rubricsDir, targetFile);
+      if (relToRubrics.startsWith('..') || path.isAbsolute(relToRubrics)) {
+        return c.json({ success: false, error: 'Path traversal detected: Rubric must reside in rubrics directory' }, 403);
+      }
       fs.mkdirSync(rubricsDir, { recursive: true });
-      const targetFile = path.join(rubricsDir, `${validatedRubric.id}.yaml`);
       fs.writeFileSync(targetFile, yaml.dump(validatedRubric), 'utf-8');
 
       return c.json({
@@ -724,37 +762,54 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   // 8. Server-Sent Events (SSE) stream endpoint
   app.get('/api/events', (c) => {
     return streamSSE(c, async (stream) => {
-      await stream.writeSSE({
-        event: 'connected',
-        data: JSON.stringify({ status: 'connected' }),
-      });
+      let isCleanedUp = false;
+      let unsubscribe: (() => void) | null = null;
 
-      const unsubscribe = watcher.subscribe(async (evt) => {
-        try {
-          await stream.writeSSE({
-            event: 'change',
-            data: JSON.stringify(evt),
-          });
-        } catch {
-          // Stream might be closed
+      const cleanup = () => {
+        if (!isCleanedUp) {
+          isCleanedUp = true;
+          if (unsubscribe) {
+            unsubscribe();
+            unsubscribe = null;
+          }
         }
-      });
+      };
 
-      stream.onAbort(() => {
-        unsubscribe();
-      });
+      try {
+        await stream.writeSSE({
+          event: 'connected',
+          data: JSON.stringify({ status: 'connected' }),
+        });
 
-      // Keep stream alive
-      while (!stream.aborted) {
-        await stream.sleep(30000);
-        try {
-          await stream.writeSSE({
-            event: 'ping',
-            data: 'keepalive',
-          });
-        } catch {
-          break;
+        unsubscribe = watcher.subscribe(async (evt) => {
+          try {
+            await stream.writeSSE({
+              event: 'change',
+              data: JSON.stringify(evt),
+            });
+          } catch {
+            cleanup();
+          }
+        });
+
+        stream.onAbort(() => {
+          cleanup();
+        });
+
+        // Keep stream alive
+        while (!stream.aborted && !isCleanedUp) {
+          await stream.sleep(30000);
+          try {
+            await stream.writeSSE({
+              event: 'ping',
+              data: 'keepalive',
+            });
+          } catch {
+            break;
+          }
         }
+      } finally {
+        cleanup();
       }
     });
   });
@@ -780,11 +835,15 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
 
     // Try finding requested static file
     const relPath = c.req.path === '/' ? 'index.html' : c.req.path.replace(/^\/+/, '');
-    const resolvedPath = path.resolve(uiDir, relPath);
+    const resolvedUiDir = path.resolve(uiDir);
+    const resolvedPath = path.resolve(resolvedUiDir, relPath);
 
-    // Prevent directory traversal
+    // Prevent directory traversal (CWE-23)
+    const relToUi = path.relative(resolvedUiDir, resolvedPath);
+    const isInsideUi = !relToUi.startsWith('..') && !path.isAbsolute(relToUi);
+
     if (
-      resolvedPath.startsWith(path.resolve(uiDir)) &&
+      isInsideUi &&
       fs.existsSync(resolvedPath) &&
       fs.statSync(resolvedPath).isFile()
     ) {
@@ -795,7 +854,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     }
 
     // Fallback to index.html for SPA client-side routes
-    const indexPath = path.resolve(uiDir, 'index.html');
+    const indexPath = path.resolve(resolvedUiDir, 'index.html');
     if (fs.existsSync(indexPath)) {
       c.header('Content-Type', 'text/html; charset=utf-8');
       const indexContent = fs.readFileSync(indexPath, 'utf-8');

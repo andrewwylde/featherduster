@@ -22,6 +22,17 @@ function redact(text: string, rules?: PrivacyRulesConfig): string {
   return redactText(text, effectiveRules).redactedText;
 }
 
+function sanitizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (/^(?:javascript|vbscript|data):/i.test(trimmed)) {
+    return '#';
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
 function redactAndEscape(text: string, rules?: PrivacyRulesConfig): string {
   return escapeHtml(redact(text, rules));
 }
@@ -46,8 +57,9 @@ export function compileHtmlPrintResume(spec: ResumeSpec, rules?: PrivacyRulesCon
     for (const [, url] of Object.entries(spec.profile.links)) {
       if (url) {
         const cleanUrl = redact(url, rules);
-        const escapedUrl = escapeHtml(cleanUrl);
-        contactItems.push(`<a href="${escapedUrl}">${escapedUrl}</a>`);
+        const safeHref = escapeHtml(sanitizeUrl(cleanUrl));
+        const safeText = escapeHtml(cleanUrl);
+        contactItems.push(`<a href="${safeHref}">${safeText}</a>`);
       }
     }
   }

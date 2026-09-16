@@ -126,8 +126,10 @@ This scaffolds:
 Start the local server and open the interactive dashboard in your browser:
 
 ```bash
-npx featherduster
+npm start
 ```
+
+This builds the local UI and starts the server. Open `http://127.0.0.1:4173` if your browser does not open automatically. Stop it with `Ctrl+C`.
 
 The web dashboard binds strictly to `http://127.0.0.1:4173` and features:
 - **Evidence Explorer**: Search, filter by theme or company, and review verified metrics.

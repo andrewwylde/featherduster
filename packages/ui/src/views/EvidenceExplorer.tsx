@@ -355,14 +355,36 @@ export const EvidenceExplorer: React.FC = () => {
       </div>
 
       {/* Content Area: Grid of Evidence Cards */}
-      {error && (
+      {error && evidenceList.length > 0 && (
         <div className="p-4 bg-rose-950/30 border border-rose-500/30 rounded-2xl text-rose-300 text-sm flex items-center gap-3">
           <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      {loading && evidenceList.length === 0 ? (
+      {error && evidenceList.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 bg-rose-950/20 border border-dashed border-rose-800/60 rounded-2xl text-center p-6 space-y-4">
+          <div className="p-3 bg-rose-900/40 rounded-2xl text-rose-400">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-base font-semibold text-white">Cannot reach local Featherduster server</h3>
+            <p className="text-sm text-rose-300/80 max-w-sm">
+              {error}. Ensure the local server is running on{' '}
+              <code className="font-mono text-xs bg-slate-900 px-1.5 py-0.5 rounded text-rose-300 border border-rose-900/50">
+                127.0.0.1:4173
+              </code>
+            </p>
+          </div>
+          <button
+            onClick={() => fetchEvidence()}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-sm font-semibold rounded-xl transition-colors inline-flex items-center gap-2"
+          >
+            <RefreshCw className="w-4 h-4" />
+            <span>Retry Connection</span>
+          </button>
+        </div>
+      ) : loading && evidenceList.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-slate-500 space-y-3">
           <RefreshCw className="w-8 h-8 animate-spin text-emerald-500" />
           <p className="text-sm">Loading evidence from disk...</p>

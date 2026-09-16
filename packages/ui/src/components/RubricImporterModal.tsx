@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { parseRubricTable, type LevelingRubric } from '@featherduster/core';
 import { apiClient } from '../api/client';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 export interface RubricImporterModalProps {
   isOpen: boolean;
@@ -30,6 +31,7 @@ export const RubricImporterModal: React.FC<RubricImporterModalProps> = ({
   onClose,
   onImportSuccess,
 }) => {
+  useModalA11y({ isOpen, onClose });
   const [rawTable, setRawTable] = useState('');
   const [rubricId, setRubricId] = useState('');
   const [title, setTitle] = useState('');
@@ -92,8 +94,14 @@ export const RubricImporterModal: React.FC<RubricImporterModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleIn">
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleIn"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
           <div className="flex items-center space-x-3">

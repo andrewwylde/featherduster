@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { cleanSlop, type LevelingRubric } from '@featherduster/core';
 import { apiClient } from '../api/client';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 export interface BragDocModalProps {
   isOpen: boolean;
@@ -29,6 +30,7 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
   initialRubricId,
   initialTargetLevel,
 }) => {
+  useModalA11y({ isOpen, onClose });
   const [selectedRubricId, setSelectedRubricId] = useState<string>(
     initialRubricId || rubrics[0]?.id || ''
   );
@@ -177,8 +179,14 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleIn">
+    <div
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleIn"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
           <div className="flex items-center space-x-3">

@@ -9,6 +9,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "npm run build && node packages/cli/dist/bin.js",
     "build:core": "npm run build --workspace=@featherduster/core",
     "build:ui": "npm run build --workspace=@featherduster/ui",
     "build:cli": "npm run build --workspace=@featherduster/cli",

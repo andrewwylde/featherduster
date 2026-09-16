@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { EvidenceEntry } from '@featherduster/core';
 import { apiClient } from '../api/client';
+import { useModalA11y } from '../hooks/useModalA11y';
 
 interface QuickCaptureModalProps {
   isOpen: boolean;
@@ -39,6 +40,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   existingIds,
   existingCompanies,
 }) => {
+  useModalA11y({ isOpen, onClose });
   const [id, setId] = useState('');
   const [title, setTitle] = useState('');
   const [company, setCompany] = useState('');
@@ -194,8 +196,14 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-      <div className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+      onClick={onClose}
+    >
+      <div
+        className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70">
           <div className="flex items-center space-x-3">

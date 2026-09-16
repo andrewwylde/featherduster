@@ -9,9 +9,15 @@ export function App() {
 
   return (
     <Layout currentTab={currentTab} onSelectTab={setCurrentTab}>
-      {currentTab === 'evidence' && <EvidenceExplorer />}
-      {currentTab === 'rubrics' && <RubricGapMatrix />}
-      {currentTab === 'tailor' && <ResumeTailor />}
+      <div className={currentTab === 'evidence' ? 'block' : 'hidden'}>
+        <EvidenceExplorer />
+      </div>
+      <div className={currentTab === 'rubrics' ? 'block' : 'hidden'}>
+        <RubricGapMatrix />
+      </div>
+      <div className={currentTab === 'tailor' ? 'block' : 'hidden'}>
+        <ResumeTailor />
+      </div>
     </Layout>
   );
 }

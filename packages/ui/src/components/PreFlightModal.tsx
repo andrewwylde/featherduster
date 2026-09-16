@@ -15,6 +15,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { apiClient, type PreflightResult } from '../api/client';
+import { useModalA11y } from '../hooks/useModalA11y';
 import type { ResumeSpec } from '@featherduster/core';
 
 export interface PreFlightModalProps {
@@ -34,6 +35,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
   onRedactAndDownload,
   onTextCleaned,
 }) => {
+  useModalA11y({ isOpen, onClose });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PreflightResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -145,8 +147,12 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
       role="dialog"
       aria-modal="true"
+      onClick={onClose}
     >
-      <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div
+        className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70">
           <div className="flex items-center space-x-3">

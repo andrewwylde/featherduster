@@ -44,11 +44,15 @@ export class WorkspaceWatcher extends EventEmitter {
       ignoreInitial: true,
       persistent: true,
       ignored: [
-        /(^|[/\\])\../, // dotfiles
+        /(^|[/\\])\.(?!featherduster)/, // dotfiles except .featherduster
         '**/node_modules/**',
         '**/.git/**',
         '**/*.tmp',
       ],
+    });
+
+    this.watcher.on('error', (err) => {
+      this.emit('error', err);
     });
 
     const handleEvent = (type: 'add' | 'change' | 'unlink', filePath: string) => {

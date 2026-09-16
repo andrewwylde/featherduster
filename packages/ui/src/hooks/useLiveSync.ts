@@ -36,6 +36,8 @@ export function useLiveSync(onSync?: (event?: any) => void): LiveSyncState {
     let isUnmounted = false;
     let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
+    let retryAttempts = 0;
+
     function connect() {
       if (isUnmounted) return;
 
@@ -43,7 +45,10 @@ export function useLiveSync(onSync?: (event?: any) => void): LiveSyncState {
         eventSource = new EventSource('/api/events');
 
         eventSource.addEventListener('connected', () => {
-          if (!isUnmounted) setIsConnected(true);
+          if (!isUnmounted) {
+            setIsConnected(true);
+            retryAttempts = 0;
+          }
         });
 
         eventSource.addEventListener('change', (e: MessageEvent) => {
@@ -57,11 +62,17 @@ export function useLiveSync(onSync?: (event?: any) => void): LiveSyncState {
 
         eventSource.addEventListener('ping', () => {
           // Keepalive ping received
-          if (!isUnmounted) setIsConnected(true);
+          if (!isUnmounted) {
+            setIsConnected(true);
+            retryAttempts = 0;
+          }
         });
 
         eventSource.onopen = () => {
-          if (!isUnmounted) setIsConnected(true);
+          if (!isUnmounted) {
+            setIsConnected(true);
+            retryAttempts = 0;
+          }
         };
 
         eventSource.onerror = () => {
@@ -71,14 +82,18 @@ export function useLiveSync(onSync?: (event?: any) => void): LiveSyncState {
               eventSource.close();
               eventSource = null;
             }
-            // Schedule reconnect
-            reconnectTimeout = setTimeout(connect, 3000);
+            // Schedule reconnect with exponential backoff (1s to 30s max) + jitter
+            const delay = Math.min(1000 * Math.pow(2, retryAttempts), 30000) + Math.random() * 500;
+            retryAttempts++;
+            reconnectTimeout = setTimeout(connect, delay);
           }
         };
       } catch {
         if (!isUnmounted) {
           setIsConnected(false);
-          reconnectTimeout = setTimeout(connect, 5000);
+          const delay = Math.min(1000 * Math.pow(2, retryAttempts), 30000) + Math.random() * 500;
+          retryAttempts++;
+          reconnectTimeout = setTimeout(connect, delay);
         }
       }
     }

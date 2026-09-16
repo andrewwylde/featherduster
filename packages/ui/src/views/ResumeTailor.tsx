@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Sparkles,
   ShieldCheck,
@@ -26,6 +26,7 @@ import {
 } from '../api/client';
 import { PreFlightModal } from '../components/PreFlightModal';
 import { EvidencePickerModal } from '../components/EvidencePickerModal';
+import { useModalA11y } from '../hooks/useModalA11y';
 import {
   cleanSlop,
   type EvidenceRecord,
@@ -96,6 +97,13 @@ export const ResumeTailor: React.FC = () => {
   const [saveVariantName, setSaveVariantName] = useState('');
   const [saveVariantType, setSaveVariantType] = useState<'tailored' | 'template'>('tailored');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+
+  const printIframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  useModalA11y({
+    isOpen: isSaveModalOpen,
+    onClose: () => setIsSaveModalOpen(false),
+  });
 
   // De-Slop Feedback State
   const [deslopBanner, setDeslopBanner] = useState<string | null>(null);
@@ -477,6 +485,15 @@ export const ResumeTailor: React.FC = () => {
 
   // Browser Print for HTML preview
   const handlePrintHtml = () => {
+    if (printIframeRef.current?.contentWindow) {
+      try {
+        printIframeRef.current.contentWindow.focus();
+        printIframeRef.current.contentWindow.print();
+        return;
+      } catch {
+        // Fallback if iframe print throws
+      }
+    }
     const printWindow = window.open('', '_blank');
     if (printWindow) {
       printWindow.document.write(compiledOutput);
@@ -1270,6 +1287,7 @@ export const ResumeTailor: React.FC = () => {
             <div className="p-3 flex-1 flex flex-col overflow-hidden">
               {activeFormat === 'html' ? (
                 <iframe
+                  ref={printIframeRef}
                   srcDoc={compiledOutput}
                   title="Sandboxed Resume Print Preview"
                   className="w-full flex-1 bg-white rounded-xl shadow-inner border border-slate-700 min-h-[580px]"
@@ -1306,8 +1324,14 @@ export const ResumeTailor: React.FC = () => {
 
       {/* Save Variant Modal */}
       {isSaveModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl">
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+          onClick={() => setIsSaveModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <h3 className="text-base font-bold text-white">Save Tailored Resume Variant</h3>
             <p className="text-xs text-slate-400">
               Saves the current modular selection and active bullet configuration to your repository.

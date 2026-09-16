@@ -30,6 +30,7 @@ export interface BuildOptions {
   period?: string;
   output?: string;
   stdout?: boolean;
+  strict?: boolean;
 }
 
 export interface BuildResult {
@@ -148,14 +149,26 @@ export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
       'exports',
       `resume-${format}.${ext}`
     );
-    outputPath = options?.output
-      ? path.isAbsolute(options.output)
-        ? options.output
-        : path.join(workspaceDir, options.output)
-      : defaultOutput;
+    if (options?.output) {
+      outputPath = path.isAbsolute(options.output)
+        ? path.resolve(options.output)
+        : path.resolve(workspaceDir, options.output);
+      const relToWorkspace = path.relative(workspaceDir, outputPath);
+      if (relToWorkspace.startsWith('..') || path.isAbsolute(relToWorkspace)) {
+        throw new Error('Path traversal detected: Output file must reside within workspace directory');
+      }
+    } else {
+      outputPath = defaultOutput;
+    }
 
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, output, 'utf-8');
+  }
+
+  if (options?.strict && !check.isClean) {
+    throw new Error(
+      `Strict build failure: Banned keywords detected in output: ${check.violations.join(', ')}`
+    );
   }
 
   return {

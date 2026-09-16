@@ -27,8 +27,11 @@ EOF
   exit 1
 fi
 
-if [ -f ".featherduster/config.yaml" ]; then
-  if grep -E "^\s*block_push:\s*true" .featherduster/config.yaml >/dev/null 2>&1; then
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
+CONFIG_FILE="$REPO_ROOT/.featherduster/config.yaml"
+
+if [ -f "$CONFIG_FILE" ]; then
+  if grep -E "^\s*block_push:\s*true" "$CONFIG_FILE" >/dev/null 2>&1; then
     cat >&2 <<'EOF'
 
 [PUSH BLOCKED] Remote push is blocked by .featherduster/config.yaml (block_push: true).
@@ -50,7 +53,7 @@ elif command -v featherduster >/dev/null 2>&1; then
 fi
 
 if [ -n "$CHECK_CMD" ]; then
-  if ! $CHECK_CMD; then
+  if ! (cd "$REPO_ROOT" && $CHECK_CMD); then
     cat >&2 <<'EOF'
 
 [PRE-PUSH REJECTED] Featherduster integrity audit detected violations!
@@ -62,7 +65,14 @@ EOF
   fi
   echo "✔ Featherduster integrity pre-push check passed."
 else
-  echo "Notice: Featherduster CLI not found on PATH or via npx. Skipping automated pre-push audit."
+  cat >&2 <<'EOF'
+
+[PRE-PUSH FAILED] Neither 'npx' nor 'featherduster' CLI was found on PATH.
+Cannot verify privacy and integrity rules. Push aborted to protect confidential career data.
+To bypass if intentional: git push --no-verify
+
+EOF
+  exit 1
 fi
 
 exit 0

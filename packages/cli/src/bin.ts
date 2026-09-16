@@ -56,6 +56,7 @@ cli
   .option('-r, --rubric <id>', 'Rubric ID for brag doc compilation')
   .option('-o, --output <file>', 'Output destination path')
   .option('--stdout', 'Stream compiled output directly to stdout')
+  .option('--strict', 'Fail build with error code if banned keywords are detected')
   .action(async (target?: string, options: any = {}) => {
     let workspace = options.workspace || process.cwd();
     let spec = options.spec;
@@ -94,6 +95,7 @@ cli
       rubric: options.rubric,
       output: options.output,
       stdout: options.stdout,
+      strict: Boolean(options.strict),
     });
   });
 
