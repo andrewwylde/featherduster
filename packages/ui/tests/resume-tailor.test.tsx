@@ -17,21 +17,21 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     filePath: 'resumes/templates/starter.yaml',
     spec: {
       profile: {
-        name: 'Andrew Wylde',
+        name: 'Alex Mercer',
         title: 'Staff Software Engineer / Distributed Systems',
-        email: 'andrew@wylde.dev',
+        email: 'alex.mercer@example.com',
         phone: '+1 (555) 019-2834',
         location: 'San Francisco, CA',
         links: {
-          github: 'github.com/wylde',
-          linkedin: 'linkedin.com/in/wylde',
-          website: 'wylde.dev',
+          github: 'github.com/alexmercer',
+          linkedin: 'linkedin.com/in/alexmercer',
+          website: 'alexmercer.dev',
         },
       },
       summary: 'Staff Software Engineer specializing in distributed consensus and high-throughput edge proxies.',
       experiences: [
         {
-          company: 'Parable Systems',
+          company: 'CloudMatrix Technologies',
           role: 'Staff Software Engineer',
           location: 'San Francisco, CA',
           startDate: '2023-01',
@@ -72,7 +72,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     {
       id: 'ev-001',
       date: '2026-03-01',
-      company: 'Parable Systems',
+      company: 'CloudMatrix Technologies',
       title: 'Global Auth Mesh Architecture',
       summary: 'Architected distributed token issuance mesh maintaining p99 under 8ms globally.',
       impact: 'Eliminated auth latency spikes, maintaining p99 under 8ms globally.',
@@ -84,7 +84,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       entry: {
         id: 'ev-001',
         date: '2026-03-01',
-        company: 'Parable Systems',
+        company: 'CloudMatrix Technologies',
         title: 'Global Auth Mesh Architecture',
         summary: 'Architected distributed token issuance mesh maintaining p99 under 8ms globally.',
         impact: 'Eliminated auth latency spikes, maintaining p99 under 8ms globally.',
@@ -99,7 +99,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     {
       id: 'ev-002',
       date: '2026-05-10',
-      company: 'Parable Systems',
+      company: 'CloudMatrix Technologies',
       title: 'Dynamic Sharding Controller',
       summary: 'Engineered dynamic shard rebalancing controller for 12M tenant accounts.',
       impact: 'Zero partition stalls',
@@ -111,7 +111,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       entry: {
         id: 'ev-002',
         date: '2026-05-10',
-        company: 'Parable Systems',
+        company: 'CloudMatrix Technologies',
         title: 'Dynamic Sharding Controller',
         summary: 'Engineered dynamic shard rebalancing controller for 12M tenant accounts.',
         impact: 'Zero partition stalls',
@@ -131,7 +131,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     danglingCitations: [],
     metricIssues: [],
     violations: [],
-    redactedText: '# Andrew Wylde\nStaff Software Engineer\n\n- Architected distributed token issuance mesh maintaining p99 under 8ms globally.',
+    redactedText: '# Alex Mercer\nStaff Software Engineer\n\n- Architected distributed token issuance mesh maintaining p99 under 8ms globally.',
   };
 
   beforeEach(() => {
@@ -172,7 +172,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
 
       // Middle pane items
       expect(screen.getByText('Modular Experiences & Bullets')).toBeInTheDocument();
-      expect(screen.getByDisplayValue('Parable Systems')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('CloudMatrix Technologies')).toBeInTheDocument();
 
       // Right pane items
       expect(screen.getByText('ATS Markdown')).toBeInTheDocument();
@@ -210,7 +210,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       render(<ResumeTailor />);
 
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Parable Systems')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('CloudMatrix Technologies')).toBeInTheDocument();
       });
 
       // Initially, 2 bullets exist
@@ -250,7 +250,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       render(<ResumeTailor />);
 
       await waitFor(() => {
-        expect(screen.getByDisplayValue('Parable Systems')).toBeInTheDocument();
+        expect(screen.getByDisplayValue('CloudMatrix Technologies')).toBeInTheDocument();
       });
 
       // Click '+ Add Bullet from Evidence'

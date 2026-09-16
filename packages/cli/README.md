@@ -17,7 +17,7 @@ npx featherduster
 - `featherduster check [root]` — Run headless integrity check on citations, metrics, and privacy rules
 - `featherduster build [target] --format <markdown|html|typst|latex|brag>` — Headless compiler for tailored resumes and brag docs
 
-For full documentation and monorepo overview, visit the [Featherduster Repository](https://github.com/drewk/featherduster).
+For full documentation and monorepo overview, visit the [Featherduster Repository](https://github.com/andrewwylde/featherduster).
 
 ## License
 

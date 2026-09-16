@@ -18,7 +18,7 @@ describe('Local Hono Server Integration Tests', () => {
   const sampleEvidence: EvidenceEntry = {
     id: 'ev-042',
     date: '2026-04-12',
-    company: 'parable',
+    company: 'cloudmatrix',
     title: 'Zero-Downtime Session Migration',
     summary: 'Architected token rotation protocol eliminating session invalidations during DB switch.',
     impact: 'Reduced user re-auth events by 99.4% across 140k active daily sessions.',
@@ -82,7 +82,7 @@ describe('Local Hono Server Integration Tests', () => {
   const samplePrivacyRules: PrivacyRulesConfig = {
     strip_patterns: ['AUTH-\\d+'],
     replacements: [
-      { search: 'parable', replace: 'Acme Health Systems' },
+      { search: 'cloudmatrix', replace: 'Acme Health Systems' },
       { search: 'ApolloSecret', replace: 'RedactedProject' },
     ],
     banned_keywords: ['ApolloSecret', 'CLASSIFIED_PROJECT'],
@@ -98,7 +98,7 @@ describe('Local Hono Server Integration Tests', () => {
     summary: 'Distributed systems architect specialized in zero-downtime migrations.',
     experiences: [
       {
-        company: 'parable',
+        company: 'cloudmatrix',
         role: 'Staff Engineer',
         startDate: '2023-01',
         endDate: 'Present',
@@ -129,7 +129,7 @@ describe('Local Hono Server Integration Tests', () => {
     tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-cli-test-'));
 
     // Create directories
-    fs.mkdirSync(path.join(tmpWorkspace, 'evidence', 'parable'), { recursive: true });
+    fs.mkdirSync(path.join(tmpWorkspace, 'evidence', 'cloudmatrix'), { recursive: true });
     fs.mkdirSync(path.join(tmpWorkspace, 'rubrics'), { recursive: true });
     fs.mkdirSync(path.join(tmpWorkspace, '.featherduster'), { recursive: true });
     fs.mkdirSync(path.join(tmpWorkspace, 'resumes', 'tailored'), { recursive: true });
@@ -140,7 +140,7 @@ describe('Local Hono Server Integration Tests', () => {
       'During the tenant database migration, auth tokens were being invalidated.'
     );
     fs.writeFileSync(
-      path.join(tmpWorkspace, 'evidence', 'parable', 'ev-042-auth.md'),
+      path.join(tmpWorkspace, 'evidence', 'cloudmatrix', 'ev-042-auth.md'),
       mdContent,
       'utf-8'
     );
@@ -209,7 +209,7 @@ describe('Local Hono Server Integration Tests', () => {
 
       const first = entries[0];
       expect(first.id).toBe('ev-042');
-      expect(first.company).toBe('parable');
+      expect(first.company).toBe('cloudmatrix');
       expect(first.title).toBe('Zero-Downtime Session Migration');
       expect(first.narrative).toContain('During the tenant database migration');
     });
@@ -217,7 +217,7 @@ describe('Local Hono Server Integration Tests', () => {
     it('filters evidence entries by query parameters', async () => {
       const app = createApp(tmpWorkspace);
 
-      const resMatched = await app.request('/api/evidence?company=parable');
+      const resMatched = await app.request('/api/evidence?company=cloudmatrix');
       expect(resMatched.status).toBe(200);
       const matched = await resMatched.json();
       expect(matched.length).toBe(1);
@@ -236,7 +236,7 @@ describe('Local Hono Server Integration Tests', () => {
       const newEntry: EvidenceEntry = {
         id: 'ev-043',
         date: '2026-05-01',
-        company: 'parable',
+        company: 'cloudmatrix',
         title: 'Cache Layer Optimization',
         summary: 'Introduced Redis read-through caching for high-frequency user metadata.',
         impact: 'Reduced p99 query latency from 180ms to 12ms across 2M daily read requests.',
@@ -268,7 +268,7 @@ describe('Local Hono Server Integration Tests', () => {
       expect(body.entry.id).toBe('ev-043');
 
       // Check file was created on disk
-      const targetFile = path.join(tmpWorkspace, 'evidence', 'parable', 'ev-043.md');
+      const targetFile = path.join(tmpWorkspace, 'evidence', 'cloudmatrix', 'ev-043.md');
       expect(fs.existsSync(targetFile)).toBe(true);
 
       const content = fs.readFileSync(targetFile, 'utf-8');
@@ -487,9 +487,9 @@ describe('Local Hono Server Integration Tests', () => {
       const body = await res.json();
       expect(body.output).toBeDefined();
       expect(body.output).toContain('Alex Mercer');
-      // Redaction engine should replace 'parable' with 'Acme Health Systems'
+      // Redaction engine should replace 'cloudmatrix' with 'Acme Health Systems'
       expect(body.output).toContain('Acme Health Systems');
-      expect(body.output).not.toContain('parable');
+      expect(body.output).not.toContain('cloudmatrix');
       // Should strip citation (ev-042)
       expect(body.output).not.toContain('ev-042');
       expect(body.isClean).toBe(true);
@@ -731,7 +731,7 @@ describe('Local Hono Server Integration Tests', () => {
       expect(Array.isArray(data)).toBe(true);
       expect(data.length).toBe(1);
       expect(data[0].type).toBe('template');
-      expect(data[0].spec.profile.name).toBe('Andrew Wylde');
+      expect(data[0].spec.profile.name).toBe('Alex Mercer');
       expect(data[0].spec.experiences.length).toBeGreaterThan(0);
     });
 

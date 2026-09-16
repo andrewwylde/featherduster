@@ -11,7 +11,7 @@ describe('Evidence Markdown Parser', () => {
   const validEntry: EvidenceEntry = {
     id: 'ev-042',
     date: '2026-04-12',
-    company: 'parable',
+    company: 'cloudmatrix',
     title: 'Zero-Downtime Session Migration',
     summary: 'Architected token rotation protocol eliminating session invalidations during DB switch.',
     impact: 'Reduced user re-auth events by 99.4% across 140k active daily sessions.',
@@ -23,14 +23,14 @@ describe('Evidence Markdown Parser', () => {
     ],
     internal_references: [
       { type: 'linear', ref: 'AUTH-892' },
-      { type: 'datadog', ref: 'wa-au-018' },
+      { type: 'datadog', ref: 'MON-108' },
     ],
   };
 
   const sampleMarkdown = `---
 id: ev-042
 date: "2026-04-12"
-company: parable
+company: cloudmatrix
 title: Zero-Downtime Session Migration
 summary: Architected token rotation protocol eliminating session invalidations during DB switch.
 impact: Reduced user re-auth events by 99.4% across 140k active daily sessions.
@@ -48,7 +48,7 @@ internal_references:
   - type: linear
     ref: AUTH-892
   - type: datadog
-    ref: wa-au-018
+    ref: MON-108
 ---
 
 ### Narrative & Context
@@ -64,7 +64,7 @@ During the tenant database migration, auth tokens were being invalidated when co
       const result = parseEvidenceMarkdown(sampleMarkdown);
 
       expect(result.entry.id).toBe('ev-042');
-      expect(result.entry.company).toBe('parable');
+      expect(result.entry.company).toBe('cloudmatrix');
       expect(result.entry.title).toBe('Zero-Downtime Session Migration');
       expect(result.entry.confidence).toBe('verified');
       expect(result.entry.in_flight).toBe(false);
@@ -91,7 +91,7 @@ During the tenant database migration, auth tokens were being invalidated when co
       const minimalMarkdown = `---
 id: ev-001
 date: "2026-01-01"
-company: kong
+company: apex-labs
 title: Minimal Evidence
 summary: A minimal entry.
 impact: Low impact.
@@ -113,7 +113,7 @@ Minimal narrative.
       const noBodyMarkdown = `---
 id: ev-002
 date: "2026-01-02"
-company: kong
+company: apex-labs
 title: No Body
 summary: No body here.
 impact: None.
@@ -133,7 +133,7 @@ in_flight: false
     it('throws EvidenceParseError when YAML frontmatter is missing required fields', () => {
       const missingId = `---
 date: "2026-04-12"
-company: parable
+company: cloudmatrix
 title: Missing ID
 summary: Summary
 impact: Impact
@@ -184,8 +184,8 @@ confidence: verified
 in_flight: false
 ---
 `;
-      const testPath = 'companies/parable/evidence/ev-003.md';
-      expect(() => parseEvidenceMarkdown(missingCompany, testPath)).toThrow(/companies\/parable\/evidence\/ev-003\.md/);
+      const testPath = 'companies/cloudmatrix/evidence/ev-003.md';
+      expect(() => parseEvidenceMarkdown(missingCompany, testPath)).toThrow(/companies\/cloudmatrix\/evidence\/ev-003\.md/);
     });
   });
 
@@ -196,7 +196,7 @@ in_flight: false
 
       expect(serialized).toMatch(/^---\n/);
       expect(serialized).toContain('id: ev-042');
-      expect(serialized).toContain('company: parable');
+      expect(serialized).toContain('company: cloudmatrix');
       expect(serialized).toContain('confidence: verified');
       expect(serialized).toContain('### Narrative\nImplemented feature.');
     });
@@ -236,7 +236,7 @@ describe('EvidenceStore', () => {
   const entryA: EvidenceEntry = {
     id: 'ev-001',
     date: '2026-01-15',
-    company: 'parable',
+    company: 'cloudmatrix',
     title: 'Authentication Session Hardening',
     summary: 'Prevented session hijacking and improved cookie security.',
     impact: 'Protected 100k active sessions with zero security regressions.',
@@ -252,8 +252,8 @@ describe('EvidenceStore', () => {
   const entryB: EvidenceEntry = {
     id: 'ev-002',
     date: '2026-03-20',
-    company: 'parable',
-    title: 'Team Time Spend Analytics Engine',
+    company: 'cloudmatrix',
+    title: 'High-Throughput Analytics Engine',
     summary: 'Built analytics query path connecting Flight SQL to donut charts.',
     impact: 'Accelerated dashboard load time by [METRIC NEEDED].',
     themes: ['frontend', 'query-layer'],
@@ -262,13 +262,13 @@ describe('EvidenceStore', () => {
     metrics: [
       { name: 'latency improvement', value: '[METRIC NEEDED]', status: 'METRIC NEEDED' },
     ],
-    internal_references: [{ type: 'linear', ref: 'TTS-404' }],
+    internal_references: [{ type: 'linear', ref: 'ANALYTICS-404' }],
   };
 
   const entryC: EvidenceEntry = {
     id: 'ev-003',
     date: '2025-10-10',
-    company: 'kong',
+    company: 'apex-labs',
     title: 'Plugin System Refactor',
     summary: 'Modularized Gateway plugin configuration loading in TypeScript.',
     impact: 'Decreased startup time by 40%.',
@@ -285,9 +285,9 @@ describe('EvidenceStore', () => {
 
   beforeEach(() => {
     store = new EvidenceStore();
-    store.add(entryA, 'Narrative for authentication hardening', 'companies/parable/ev-001.md');
-    store.add(entryB, 'Narrative for analytics engine query path', 'companies/parable/ev-002.md');
-    store.add(entryC, 'Narrative for kong plugin system', 'companies/kong/ev-003.md');
+    store.add(entryA, 'Narrative for authentication hardening', 'companies/cloudmatrix/ev-001.md');
+    store.add(entryB, 'Narrative for analytics engine query path', 'companies/cloudmatrix/ev-002.md');
+    store.add(entryC, 'Narrative for apex plugin system', 'companies/apex-labs/ev-003.md');
   });
 
   describe('basic collection operations', () => {
@@ -297,7 +297,7 @@ describe('EvidenceStore', () => {
       expect(record?.entry.id).toBe('ev-001');
       expect(record?.id).toBe('ev-001');
       expect(record?.narrative).toBe('Narrative for authentication hardening');
-      expect(record?.filePath).toBe('companies/parable/ev-001.md');
+      expect(record?.filePath).toBe('companies/cloudmatrix/ev-001.md');
     });
 
     it('returns undefined for non-existent ID', () => {
@@ -308,7 +308,7 @@ describe('EvidenceStore', () => {
       const entryD: EvidenceEntry = {
         id: 'ev-004',
         date: '2026-05-01',
-        company: 'parable',
+        company: 'cloudmatrix',
         title: 'New Feature',
         summary: 'Feature summary',
         impact: 'Feature impact',
@@ -354,13 +354,13 @@ describe('EvidenceStore', () => {
     });
 
     it('filters by company (case-insensitive)', () => {
-      const parableEntries = store.query({ company: 'parable' });
-      expect(parableEntries).toHaveLength(2);
-      expect(parableEntries.map((e) => e.id)).toEqual(['ev-001', 'ev-002']);
+      const cloudmatrixEntries = store.query({ company: 'cloudmatrix' });
+      expect(cloudmatrixEntries).toHaveLength(2);
+      expect(cloudmatrixEntries.map((e) => e.id)).toEqual(['ev-001', 'ev-002']);
 
-      const kongEntries = store.query({ company: 'KONG' });
-      expect(kongEntries).toHaveLength(1);
-      expect(kongEntries[0].id).toBe('ev-003');
+      const apexEntries = store.query({ company: 'APEX-LABS' });
+      expect(apexEntries).toHaveLength(1);
+      expect(apexEntries[0].id).toBe('ev-003');
     });
 
     it('filters by theme', () => {
@@ -408,7 +408,7 @@ describe('EvidenceStore', () => {
 
     it('combines multiple filters conjunctively', () => {
       const combined = store.query({
-        company: 'parable',
+        company: 'cloudmatrix',
         confidence: 'verified',
         inFlight: false,
       });
@@ -416,7 +416,7 @@ describe('EvidenceStore', () => {
       expect(combined[0].id).toBe('ev-001');
 
       const emptyMatch = store.query({
-        company: 'kong',
+        company: 'apex-labs',
         theme: 'security',
       });
       expect(emptyMatch).toHaveLength(0);
@@ -463,7 +463,7 @@ describe('EvidenceStore', () => {
     it('combines full-text search with structured filters', () => {
       const results = store.query({
         search: 'session',
-        company: 'parable',
+        company: 'cloudmatrix',
         confidence: 'verified',
       });
       expect(results).toHaveLength(1);
@@ -472,7 +472,7 @@ describe('EvidenceStore', () => {
       // Search matches ev-001, but company filter excludes it
       const noResults = store.query({
         search: 'session',
-        company: 'kong',
+        company: 'apex-labs',
       });
       expect(noResults).toHaveLength(0);
     });

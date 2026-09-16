@@ -34,7 +34,7 @@ Store granular accomplishment entries in clean markdown files with structured YA
 ---
 id: ev-042
 date: '2026-03-12'
-company: Parable Systems
+company: CloudMatrix Technologies
 title: Zero-Downtime Distributed Partition Sharding
 summary: Architected dynamic consistent hashing controller eliminating partition hotspots.
 impact: Reduced p99 tail latency from 850ms to 42ms across 14M active tenant accounts.
@@ -265,7 +265,7 @@ featherduster/
 ### Setup
 ```bash
 # Clone repository
-git clone https://github.com/drewk/featherduster.git
+git clone https://github.com/andrewwylde/featherduster.git
 cd featherduster
 
 # Install all dependencies

@@ -66,7 +66,7 @@ describe('Rubric Gap Matrix & Brag Doc Generator Tests', () => {
     {
       id: 'ev-101',
       date: '2026-02-15',
-      company: 'parable',
+      company: 'cloudmatrix',
       title: 'Global Auth Mesh Architecture',
       summary: 'Architected distributed token issuance mesh across 4 edge clusters.',
       impact: 'Eliminated auth latency spikes, maintaining p99 under 8ms globally.',
@@ -78,7 +78,7 @@ describe('Rubric Gap Matrix & Brag Doc Generator Tests', () => {
       entry: {
         id: 'ev-101',
         date: '2026-02-15',
-        company: 'parable',
+        company: 'cloudmatrix',
         title: 'Global Auth Mesh Architecture',
         summary: 'Architected distributed token issuance mesh across 4 edge clusters.',
         impact: 'Eliminated auth latency spikes, maintaining p99 under 8ms globally.',
@@ -93,7 +93,7 @@ describe('Rubric Gap Matrix & Brag Doc Generator Tests', () => {
     {
       id: 'ev-102',
       date: '2026-05-10',
-      company: 'parable',
+      company: 'cloudmatrix',
       title: 'Database Sharding Automation',
       summary: 'Engineered dynamic shard rebalancing controller.',
       impact: 'Prevented hot-spot partition stalls across 12M tenant accounts.',
@@ -105,7 +105,7 @@ describe('Rubric Gap Matrix & Brag Doc Generator Tests', () => {
       entry: {
         id: 'ev-102',
         date: '2026-05-10',
-        company: 'parable',
+        company: 'cloudmatrix',
         title: 'Database Sharding Automation',
         summary: 'Engineered dynamic shard rebalancing controller.',
         impact: 'Prevented hot-spot partition stalls across 12M tenant accounts.',
@@ -383,7 +383,7 @@ describe('Rubric Gap Matrix & Brag Doc Generator Tests', () => {
 > Architects multi-service platforms and distributed systems.
 
 ### Global Auth Mesh Architecture [VERIFIED]
-- **Evidence ID**: ev-101 (2026-02-15) | **Organization**: parable
+- **Evidence ID**: ev-101 (2026-02-15) | **Organization**: cloudmatrix
 - **Accomplishment**: Architected distributed token issuance mesh across 4 edge clusters.
 - **Impact & Outcome**: Eliminated auth latency spikes, maintaining p99 under 8ms globally.
 - **Key Metrics**:
@@ -393,7 +393,7 @@ describe('Rubric Gap Matrix & Brag Doc Generator Tests', () => {
 > Orchestrates cross-team initiatives with sustainable velocity.
 
 ### Database Sharding Automation [PROVISIONAL] [MISSING METRICS]
-- **Evidence ID**: ev-102 (2026-05-10) | **Organization**: parable
+- **Evidence ID**: ev-102 (2026-05-10) | **Organization**: cloudmatrix
 - **Accomplishment**: Engineered dynamic shard rebalancing controller.
 - **Impact & Outcome**: Prevented hot-spot partition stalls across 12M tenant accounts.
 `;

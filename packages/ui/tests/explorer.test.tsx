@@ -24,7 +24,7 @@ describe('Evidence Explorer Tests', () => {
       {
         id: 'ev-001',
         date: '2026-03-01',
-        company: 'parable',
+        company: 'cloudmatrix',
         title: 'Distributed Transaction Coordinator',
         summary: 'Designed 2PC protocol with Raft consensus.',
         impact: 'Prevented data inconsistency across 500k transactions daily.',
@@ -37,13 +37,13 @@ describe('Evidence Explorer Tests', () => {
         internal_references: [{ type: 'linear', ref: 'ENG-101' }],
       },
       'Detailed architectural writeup on 2PC protocol.',
-      'evidence/parable/ev-001.md'
+      'evidence/cloudmatrix/ev-001.md'
     ),
     createRecord(
       {
         id: 'ev-002',
         date: '2026-04-15',
-        company: 'parable',
+        company: 'cloudmatrix',
         title: 'GraphQL Gateway Migration',
         summary: 'Consolidated 12 REST services behind a unified gateway.',
         impact: 'Reduced client round-trips by 65%.',
@@ -56,7 +56,7 @@ describe('Evidence Explorer Tests', () => {
         internal_references: [{ type: 'pr', ref: '#420' }],
       },
       'Migration playbook for GraphQL schema federation.',
-      'evidence/parable/ev-002.md'
+      'evidence/cloudmatrix/ev-002.md'
     ),
     createRecord(
       {
@@ -246,7 +246,7 @@ describe('Evidence Explorer Tests', () => {
         entry: {
           id: 'ev-004',
           date: '2026-06-01',
-          company: 'parable',
+          company: 'cloudmatrix',
           title: 'Memory Leak Investigation',
           summary: 'Identified buffer pool leak in connection manager.',
           impact: 'Eliminated OOM crashes saving 4 hours of daily on-call paging.',
@@ -264,7 +264,7 @@ describe('Evidence Explorer Tests', () => {
           onClose={onClose}
           onSuccess={onSuccess}
           existingIds={['ev-001', 'ev-002', 'ev-003']}
-          existingCompanies={['parable', 'acme']}
+          existingCompanies={['cloudmatrix', 'acme']}
         />
       );
 

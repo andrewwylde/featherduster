@@ -10,7 +10,7 @@ describe('EvidenceEntrySchema', () => {
   const validEvidence = {
     id: 'ev-042',
     date: '2026-04-12',
-    company: 'parable',
+    company: 'cloudmatrix',
     title: 'Zero-Downtime Session Migration',
     summary: 'Architected token rotation protocol eliminating session invalidations during DB switch.',
     impact: 'Reduced user re-auth events by 99.4% across 140k active daily sessions.',
@@ -22,7 +22,7 @@ describe('EvidenceEntrySchema', () => {
     ],
     internal_references: [
       { type: 'linear', ref: 'AUTH-892' },
-      { type: 'datadog', ref: 'wa-au-018' },
+      { type: 'datadog', ref: 'MON-108' },
     ],
   };
 
@@ -163,7 +163,7 @@ describe('PrivacyRulesSchema', () => {
       strip_patterns: ['(ev-[0-9]{3})', '([A-Z]{2,10}-[0-9]{1,5})'],
       replacements: [
         { search: 'Fortune 50 Bank X', replace: 'a global tier-1 financial institution' },
-        { search: 'psgen', replace: 'internal schema code generator' },
+        { search: 'proto-codegen', replace: 'internal schema code generator' },
       ],
       banned_keywords: ['confidential-project-apollo'],
     },
@@ -192,14 +192,14 @@ describe('PrivacyRulesSchema', () => {
 
 describe('WorkspaceConfigSchema', () => {
   const validConfig = {
-    active_profile: 'parable',
+    active_profile: 'cloudmatrix',
     default_export_target: 'markdown',
     port: 4173,
   };
 
   it('validates workspace config', () => {
     const parsed = WorkspaceConfigSchema.parse(validConfig);
-    expect(parsed.active_profile).toBe('parable');
+    expect(parsed.active_profile).toBe('cloudmatrix');
     expect(parsed.default_export_target).toBe('markdown');
     expect(parsed.port).toBe(4173);
   });

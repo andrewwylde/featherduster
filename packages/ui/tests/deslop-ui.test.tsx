@@ -317,7 +317,7 @@ describe('Subagent C: UI Anti-Slop Integration Tests', () => {
           summary: 'High performance engineer.',
           experiences: [
             {
-              company: 'Parable',
+              company: 'CloudMatrix',
               role: 'Engineer',
               startDate: '2024',
               endDate: 'Present',

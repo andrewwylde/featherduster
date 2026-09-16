@@ -206,7 +206,7 @@ describe('analyzeCompetencyGaps', () => {
   const createEvidence = (overrides: Partial<EvidenceEntry>): EvidenceEntry => ({
     id: 'ev-001',
     date: '2026-05-10',
-    company: 'parable',
+    company: 'cloudmatrix',
     title: 'Distributed Session Cache',
     summary: 'Built cache layer.',
     impact: 'Reduced latency by 45%.',

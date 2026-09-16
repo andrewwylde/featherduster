@@ -60,22 +60,22 @@ export type ResumeSpec = z.infer<typeof ResumeSpecSchema>;
 
 export const DEFAULT_STARTER_RESUME: ResumeSpec = {
   profile: {
-    name: 'Andrew Wylde',
+    name: 'Alex Mercer',
     title: 'Staff Software Engineer / Distributed Systems',
-    email: 'andrew@wylde.dev',
+    email: 'alex.mercer@example.com',
     phone: '+1 (555) 019-2834',
     location: 'San Francisco, CA',
     links: {
-      github: 'https://github.com/wylde',
-      linkedin: 'https://linkedin.com/in/wylde',
-      website: 'https://wylde.dev',
+      github: 'https://github.com/alexmercer',
+      linkedin: 'https://linkedin.com/in/alexmercer',
+      website: 'https://alexmercer.dev',
     },
   },
   summary:
     'Staff Software Engineer specializing in distributed consensus, high-throughput edge data planes, and high-reliability cloud architecture.',
   experiences: [
     {
-      company: 'Parable Systems',
+      company: 'CloudMatrix Technologies',
       role: 'Staff Software Engineer',
       location: 'San Francisco, CA',
       startDate: '2023-01',

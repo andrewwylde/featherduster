@@ -34,7 +34,7 @@ describe('Resume Schemas', () => {
     summary: 'Distributed systems engineer with 10+ years architecting high-throughput resilient services.',
     experiences: [
       {
-        company: 'Parable Technologies',
+        company: 'CloudMatrix Technologies',
         role: 'Staff Software Engineer',
         location: 'Remote, US',
         startDate: '2023-01',
@@ -136,7 +136,7 @@ describe('compileMarkdownResume', () => {
     summary: 'Platform architect scaling mission-critical cloud infrastructure and developer tooling.',
     experiences: [
       {
-        company: 'Parable Cloud',
+        company: 'Nimbus Platform',
         role: 'Principal Engineer',
         location: 'Seattle, WA',
         startDate: '2022-03',
@@ -185,7 +185,7 @@ describe('compileMarkdownResume', () => {
     expect(md).toContain(sampleSpec.summary!);
 
     expect(md).toContain('## Experience');
-    expect(md).toContain('Parable Cloud');
+    expect(md).toContain('Nimbus Platform');
     expect(md).toContain('Principal Engineer');
     expect(md).toContain('2022-03');
     expect(md).toContain('Present');
@@ -213,7 +213,7 @@ describe('compileMarkdownResume', () => {
       strip_patterns: ['AUTH-\\d+'],
       replacements: [
         { search: 'Project Falcon', replace: 'Core Identity Platform' },
-        { search: 'Parable Cloud', replace: 'Enterprise SaaS' },
+        { search: 'Nimbus Platform', replace: 'Enterprise SaaS' },
       ],
       banned_keywords: ['Project Falcon'],
     };
@@ -228,7 +228,7 @@ describe('compileMarkdownResume', () => {
     expect(md).not.toContain('Project Falcon');
     expect(md).toContain('Core Identity Platform');
     expect(md).toContain('Enterprise SaaS');
-    expect(md).not.toContain('Parable Cloud');
+    expect(md).not.toContain('Nimbus Platform');
 
     // Spacing normalized around stripped ticket ID
     expect(md).not.toContain('()');

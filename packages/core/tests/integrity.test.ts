@@ -59,7 +59,7 @@ describe('Integrity & Redaction Engine', () => {
     in_flight: false,
     metrics: [],
     internal_references: [
-      { type: 'linear', ref: 'WA-AU-018' },
+      { type: 'linear', ref: 'ALERT-108' },
     ],
   };
 
@@ -283,7 +283,7 @@ describe('Integrity & Redaction Engine', () => {
 
   describe('redactText', () => {
     const defaultRules: PrivacyRulesConfig = {
-      strip_patterns: ['AUTH-\\d+', 'WA-AU-\\d+', 'DB-\\d+'],
+      strip_patterns: ['AUTH-\\d+', 'ALERT-\\d+', 'DB-\\d+'],
       replacements: [
         { search: 'Fortune 50 Bank X', replace: 'a global tier-1 financial institution' },
         { search: 'Acme Corp', replace: 'a high-growth B2B SaaS platform' },
@@ -334,7 +334,7 @@ describe('Integrity & Redaction Engine', () => {
     });
 
     it('strips ticket IDs according to strip_patterns', () => {
-      const text = 'Resolved incident in AUTH-892 and verified via WA-AU-018 in production.';
+      const text = 'Resolved incident in AUTH-892 and verified via ALERT-108 in production.';
       const result = redactText(text, defaultRules);
 
       expect(result.redactedText).toBe('Resolved incident in and verified via in production.');
