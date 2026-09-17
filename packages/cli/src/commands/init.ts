@@ -185,6 +185,7 @@ Featherduster provides CLI commands to validate, compile, and manage career work
 - \`rubrics/\`: Engineering leveling ladders (e.g. \`engineering-ic.yaml\`).
 - \`companies/<company>/\`: Company profiles and public/ledger naming rules.
 - \`resumes/\`: Templates, tailored variants, and exports.
+- \`tailoring/<run>/\`: In-app tailoring runs (job posting, analysis, alignment matrix, proposals, applied resume, defensibility brief). Agents may edit these files; the UI picks up changes live.
 - \`.githooks/\`: Git pre-push hook for local evidence protection.
 
 ---
@@ -369,6 +370,7 @@ export async function initWorkspace(
     path.join(workspaceDir, 'resumes', 'templates'),
     path.join(workspaceDir, 'resumes', 'tailored'),
     path.join(workspaceDir, 'resumes', 'exports'),
+    path.join(workspaceDir, 'tailoring'),
     path.join(workspaceDir, 'companies', profile),
     path.join(workspaceDir, '.githooks'),
   ];
@@ -390,6 +392,16 @@ export async function initWorkspace(
     default_export_target: 'markdown',
     port,
     export_targets: ['markdown', 'html', 'typst', 'latex', 'brag'],
+    // Model runners for in-app, skill-driven tailoring runs (see the Tailor view).
+    runner: {
+      default: 'claude-code',
+      step_timeout_seconds: 180,
+      'claude-code': { model: '' },
+      'anthropic-api': { model: 'claude-opus-5' },
+      ollama: { url: 'http://127.0.0.1:11434', model: '', max_context: 32768 },
+    },
+    runner_consent: {},
+    deslop_warn_band: 'moderate',
   };
   if (blockPush) {
     configObj.block_push = true;

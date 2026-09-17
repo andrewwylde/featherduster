@@ -56,7 +56,7 @@ Generate the tailored output (Markdown, LaTeX, or Typst):
 - Ensure strict page budget discipline.
 
 ### Gate 4: Generate Interview Defensibility Brief
-Emit a companion defensibility brief (`resumes/tailored/briefs/[company]_[role]_brief.md`):
+Emit a companion defensibility brief (`tailoring/<run>/brief.md` for in-app runs; otherwise alongside the tailored resume):
 1. **Primary Anchor Stories:** Top 3 projects answering the hiring manager's biggest challenges (Problem, Ownership, Metric/Proof).
 2. **Bridging Transferable Skills:** Honest framing for adjacent tooling (e.g., RabbitMQ to Kafka).
 3. **Addressing True Gaps:** Honest acknowledgement, parallel mastery, and track record of rapid stack adoption.

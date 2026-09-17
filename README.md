@@ -80,6 +80,13 @@ AI-generated resume bullets often suffer from "ChatGPT slop"—hollow corporate 
 - **Deterministic 1-Click Cleaner**: Strips filler phrases and throat-clearing while preserving 100% of technical facts, engineering mechanisms, and quantitative metrics.
 - **Pre-Flight & Headless Integration**: Integrated directly into `featherduster check`, the UI Pre-Flight Gate modal, and the Resume Canvas toolbar.
 
+### 🪄 Skill-Driven Resume Tailoring (Tailor view)
+Paste a job posting and Featherduster runs the bundled `career-growth-tailor-resume` skill through a model in four reviewed steps: break down the posting, match requirements to your evidence ledger (backed / transferable / gap), propose typed, cited resume edits, and write an Interview Defensibility Brief. Every edit is checked deterministically against the Ledger Ceiling Rule, verified metrics (`[METRIC NEEDED]`), the de-slop linter, and page budget before you accept it.
+- **Runners:** local Claude Code CLI (default; uses your existing login, tools disabled, isolated temp directory), Anthropic API (`ANTHROPIC_API_KEY`), or local Ollama. Configure under `runner:` in `.featherduster/config.yaml`.
+- **Privacy:** cloud runners only ever receive text redacted by `privacy-rules.yaml` (evidence IDs preserved), after a one-time consent that previews the exact payload. Local runners receive raw text.
+- **On disk:** each run lives in `tailoring/<run>/` (posting, analysis, alignment, proposals, applied resume, brief); saving writes `resumes/tailored/<run>.yaml` for the existing canvas and compilers.
+- Try it without a model: `npm run build && npm run walkthrough:tailoring` (deterministic demo runner, throwaway workspace).
+
 ### 📦 Bundled Career Skills & Agent Integration
 `featherduster init` automatically installs specialized agent skills into `.featherduster/skills/` and `.claude/skills/`, plus locked-down `.claude/settings.json` permissions:
 - `career-growth-tailor-resume`: Surgical job description matching, enforcing the Ledger Ceiling Rule and transferable vs. fabricated checks.

@@ -119,10 +119,11 @@ export const RubricGapMatrix: React.FC = () => {
 
     try {
       setAnalyzing(true);
+      setError(null);
       const analysis = await apiClient.getGapAnalysis(currentRubric.id, selectedLevel);
       setGapAnalysis(analysis);
     } catch (err: any) {
-      console.error('Failed to compute gap analysis:', err);
+      setError(err?.message || 'Failed to compute gap analysis');
     } finally {
       setAnalyzing(false);
     }

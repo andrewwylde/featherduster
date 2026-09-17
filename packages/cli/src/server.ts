@@ -77,10 +77,17 @@ import {
   SLOP_WEIGHTS,
 } from '@featherduster/core';
 import { WorkspaceWatcher } from './watcher.js';
+import { defaultRunnerFactory, type RunnerFactory } from './runners/registry.js';
+import { TailoringOrchestrator, type TailoringEvent } from './tailoring/orchestrator.js';
+import { mountTailoringRoutes } from './tailoring/routes.js';
 
 export interface CreateAppOptions {
   watcher?: WorkspaceWatcher;
   uiDir?: string;
+  /** Override model runner construction (tests). */
+  runnerFactory?: RunnerFactory;
+  /** Receives the orchestrator instance (tests). */
+  onOrchestrator?: (orchestrator: TailoringOrchestrator) => void;
 }
 
 export function findFiles(
@@ -340,6 +347,41 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   const resolvedWorkspaceDir = path.resolve(workspaceDir);
   const app = new Hono();
   const watcher = options?.watcher ?? new WorkspaceWatcher(resolvedWorkspaceDir);
+
+  // Tailoring run events fan out to every SSE subscriber. Token events are coalesced (~10/s).
+  const tailoringListeners = new Set<(evt: TailoringEvent) => void>();
+  const pendingTokens = new Map<string, TailoringEvent>();
+  let tokenFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  const broadcast = (evt: TailoringEvent) => {
+    for (const listener of tailoringListeners) listener(evt);
+  };
+  const emitTailoring = (evt: TailoringEvent) => {
+    if (evt.kind !== 'token') {
+      broadcast(evt);
+      return;
+    }
+    const key = `${evt.slug}:${evt.step}`;
+    const existing = pendingTokens.get(key);
+    pendingTokens.set(key, existing ? { ...existing, text: (existing.text ?? '') + (evt.text ?? '') } : { ...evt });
+    if (!tokenFlushTimer) {
+      tokenFlushTimer = setTimeout(() => {
+        tokenFlushTimer = null;
+        const batch = Array.from(pendingTokens.values());
+        pendingTokens.clear();
+        batch.forEach(broadcast);
+      }, 100);
+    }
+  };
+
+  const orchestrator = new TailoringOrchestrator({
+    workspaceDir: resolvedWorkspaceDir,
+    runnerFactory: options?.runnerFactory ?? defaultRunnerFactory,
+    loadEvidence: () => loadEvidenceStore(resolvedWorkspaceDir),
+    loadPrivacyRules: () => loadPrivacyRules(resolvedWorkspaceDir),
+    loadResumes: () => loadResumeSpecs(resolvedWorkspaceDir),
+    emit: emitTailoring,
+  });
+  options?.onOrchestrator?.(orchestrator);
 
   // 1. Host and Origin protection for localhost security
   app.use('*', async (c, next) => {
@@ -758,6 +800,9 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     }
   });
 
+  // 6e. LLM tailoring runs
+  mountTailoringRoutes(app, orchestrator);
+
   // 7. Integrity check
   app.get('/api/integrity/check', (c) => {
     const store = loadEvidenceStore(resolvedWorkspaceDir);
@@ -872,7 +917,13 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
           data: JSON.stringify({ status: 'connected' }),
         });
 
-        unsubscribe = watcher.subscribe(async (evt) => {
+        const tailoringListener = (evt: TailoringEvent) => {
+          stream
+            .writeSSE({ event: 'tailoring', data: JSON.stringify(evt) })
+            .catch(() => cleanup());
+        };
+        tailoringListeners.add(tailoringListener);
+        const unsubscribeWatcher = watcher.subscribe(async (evt) => {
           try {
             await stream.writeSSE({
               event: 'change',
@@ -886,6 +937,10 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
             cleanup();
           }
         });
+        unsubscribe = () => {
+          unsubscribeWatcher();
+          tailoringListeners.delete(tailoringListener);
+        };
 
         stream.onAbort(() => {
           cleanup();

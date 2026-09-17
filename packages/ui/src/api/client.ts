@@ -1,10 +1,81 @@
 import type {
+  AlignmentMatrix,
   EvidenceEntry,
   EvidenceRecord,
+  JobAnalysis,
   LevelingRubric,
+  Proposal,
   RubricGapAnalysis,
   ResumeSpec,
+  RunManifest,
+  RunState,
+  TailoringStep,
 } from '@featherduster/core';
+
+/** Error thrown for non-2xx API responses; keeps the server's machine-readable code. */
+export class ApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+  readonly detail?: unknown;
+  constructor(message: string, status: number, code?: string, detail?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.detail = detail;
+  }
+}
+
+export type RunnerId = 'claude-code' | 'anthropic-api' | 'ollama' | 'fake';
+
+export interface RunnerInfo {
+  id: RunnerId;
+  label: string;
+  locality: 'local' | 'cloud';
+  model: string;
+  isDefault: boolean;
+  available: boolean;
+  detail: string;
+}
+
+export interface RunnersResponse {
+  runners: RunnerInfo[];
+  consent: Partial<Record<RunnerId, string>>;
+}
+
+export type TailoringRunSummary = RunManifest & { needs_review: boolean };
+
+export interface TailoringRunDetail {
+  manifest: RunManifest;
+  posting: string;
+  base_resume: ResumeSpec | null;
+  analysis: JobAnalysis | null;
+  alignment: AlignmentMatrix | null;
+  alignment_summary: { backed: number; transferable: number; gap: number } | null;
+  proposals: Proposal[] | null;
+  page_budget: { overBy: number; proposalIds: string[] } | null;
+  resume: ResumeSpec | null;
+  brief_markdown: string | null;
+}
+
+export interface TailoringEvent {
+  slug: string;
+  step: TailoringStep | null;
+  kind: 'status' | 'token' | 'state';
+  text?: string;
+  state?: RunState;
+}
+
+export interface FinalizeResponse {
+  filePath: string;
+  preflight: {
+    isClean: boolean;
+    danglingCitations: string[];
+    metricIssues: unknown[];
+    violations: string[];
+    slop: { score: number; band: string; summary: string };
+  };
+}
 
 export type GapAnalysisResult = RubricGapAnalysis;
 
@@ -130,6 +201,8 @@ export class ApiClient {
 
     if (!res.ok) {
       let errorMessage = `API Error ${res.status}: ${res.statusText}`;
+      let code: string | undefined;
+      let detail: unknown;
       try {
         const errorData = await res.json();
         if (errorData.error) {
@@ -137,10 +210,12 @@ export class ApiClient {
         } else if (errorData.message) {
           errorMessage = errorData.message;
         }
+        code = typeof errorData.code === 'string' ? errorData.code : undefined;
+        detail = errorData.detail;
       } catch {
         // Fallback to status text
       }
-      throw new Error(errorMessage);
+      throw new ApiError(errorMessage, res.status, code, detail);
     }
 
     return res.json() as Promise<T>;
@@ -287,6 +362,77 @@ export class ApiClient {
         body: JSON.stringify({ text }),
       }
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Skill-driven tailoring runs
+  // ---------------------------------------------------------------------------
+
+  async getRunners(): Promise<RunnersResponse> {
+    return this.fetchJson<RunnersResponse>('/api/runners');
+  }
+
+  async grantRunnerConsent(runner: RunnerId): Promise<{ success: boolean }> {
+    return this.fetchJson('/api/runners/consent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ runner }),
+    });
+  }
+
+  async listTailoringRuns(): Promise<TailoringRunSummary[]> {
+    const res = await this.fetchJson<{ runs: TailoringRunSummary[] }>('/api/tailoring');
+    return res.runs;
+  }
+
+  async createTailoringRun(payload: {
+    posting: string;
+    base_resume: string;
+    runner: RunnerId;
+    label?: string;
+  }): Promise<{ slug: string; manifest: RunManifest }> {
+    return this.fetchJson('/api/tailoring', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async getTailoringRun(slug: string): Promise<TailoringRunDetail> {
+    return this.fetchJson<TailoringRunDetail>(`/api/tailoring/${encodeURIComponent(slug)}`);
+  }
+
+  async runTailoringStep(slug: string, step: TailoringStep): Promise<{ started: boolean }> {
+    return this.fetchJson(`/api/tailoring/${encodeURIComponent(slug)}/steps/${step}/run`, { method: 'POST' });
+  }
+
+  async previewTailoringStep(
+    slug: string,
+    step: TailoringStep
+  ): Promise<{ runner: string; locality: 'local' | 'cloud'; system: string; prompt: string }> {
+    return this.fetchJson(`/api/tailoring/${encodeURIComponent(slug)}/steps/${step}/preview`);
+  }
+
+  async saveTailoringStep(slug: string, step: TailoringStep, data: unknown): Promise<TailoringRunDetail> {
+    return this.fetchJson<TailoringRunDetail>(`/api/tailoring/${encodeURIComponent(slug)}/steps/${step}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  }
+
+  async approveTailoringStep(slug: string, step: TailoringStep): Promise<TailoringRunDetail> {
+    return this.fetchJson<TailoringRunDetail>(`/api/tailoring/${encodeURIComponent(slug)}/steps/${step}/approve`, {
+      method: 'POST',
+    });
+  }
+
+  async cancelTailoringRun(slug: string): Promise<{ cancelled: boolean }> {
+    return this.fetchJson(`/api/tailoring/${encodeURIComponent(slug)}/cancel`, { method: 'POST' });
+  }
+
+  async finalizeTailoringRun(slug: string): Promise<FinalizeResponse> {
+    return this.fetchJson<FinalizeResponse>(`/api/tailoring/${encodeURIComponent(slug)}/finalize`, { method: 'POST' });
   }
 }
 

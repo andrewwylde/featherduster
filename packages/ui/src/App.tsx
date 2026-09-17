@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Layout, type NavTab } from './components/Layout';
 import { ThemeProvider } from './theme/ThemeContext';
 import { PrivateBriefing } from './views/desk/PrivateBriefing';
@@ -14,9 +14,15 @@ import {
   initialStoryThreads,
 } from './data/deskFixtures';
 import type { StoryThread, NodeMapEvidence } from './types/desk';
+import { pathForTab, tabForPath, tailoringSlugForPath } from './routing';
+import { TailoringRunList } from './views/tailoring/TailoringRunList';
+import { TailoringRun } from './views/tailoring/TailoringRun';
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState<NavTab>('briefing');
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(window.location.pathname));
+  const [tailoringSlug, setTailoringSlug] = useState<string | null>(() => tailoringSlugForPath(window.location.pathname));
+  const [handoffPosting, setHandoffPosting] = useState<string | undefined>(undefined);
+  const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
   const [isInterviewActive, setIsInterviewActive] = useState(false);
   const [threads, setThreads] = useState<StoryThread[]>(initialStoryThreads);
   const [evidenceList, setEvidenceList] = useState<NodeMapEvidence[]>(initialNodeMapEvidence);
@@ -48,16 +54,33 @@ export function App() {
   };
 
   const handleViewThread = (_threadId?: string) => {
-    setCurrentTab('threads');
+    navigateTo('threads');
   };
+
+  const navigatePath = (path: string) => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+    setCurrentTab(tabForPath(path));
+    setTailoringSlug(tailoringSlugForPath(path));
+  };
+
+  const navigateTo = (tab: NavTab) => navigatePath(pathForTab(tab));
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentTab(tabForPath(window.location.pathname));
+      setTailoringSlug(tailoringSlugForPath(window.location.pathname));
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   return (
     <ThemeProvider>
       <Layout
         currentTab={currentTab}
-        onSelectTab={(tab) => {
-          setCurrentTab(tab);
-        }}
+        onSelectTab={navigateTo}
       >
         {/* Briefing Workspace (Private Briefing & Focused Interview) */}
         {currentTab === 'briefing' && (
@@ -79,6 +102,25 @@ export function App() {
           </div>
         )}
 
+        {/* Skill-driven Tailoring Runs */}
+        {currentTab === 'tailor' &&
+          (tailoringSlug ? (
+            <TailoringRun
+              slug={tailoringSlug}
+              onBack={() => navigatePath('/tailor')}
+              onOpenInCanvas={(resumeId) => {
+                setCanvasResumeId(resumeId);
+                navigateTo('exports');
+              }}
+            />
+          ) : (
+            <TailoringRunList
+              onOpenRun={(slug) => navigatePath(`/tailor/${slug}`)}
+              initialPosting={handoffPosting}
+              onInitialPostingConsumed={() => setHandoffPosting(undefined)}
+            />
+          ))}
+
         {/* Story Threads Workspace */}
         {currentTab === 'threads' && (
           <StoryThreadsNodeMap
@@ -86,7 +128,7 @@ export function App() {
             evidence={evidenceList}
             threads={threads}
             onSelectLead={() => {
-              setCurrentTab('briefing');
+              navigateTo('briefing');
               setIsInterviewActive(true);
             }}
           />
@@ -102,9 +144,15 @@ export function App() {
           <RubricGapMatrix />
         </div>
 
-        {/* Tailor & Exports Workspace */}
-        <div className={currentTab === 'exports' || currentTab === 'tailor' ? 'block' : 'hidden'}>
-          <ResumeTailor />
+        {/* Exports Workspace (manual resume canvas) */}
+        <div className={currentTab === 'exports' ? 'block' : 'hidden'}>
+          <ResumeTailor
+            preferredResumeId={canvasResumeId}
+            onStartTailoringRun={(posting) => {
+              setHandoffPosting(posting);
+              navigatePath('/tailor');
+            }}
+          />
         </div>
       </Layout>
     </ThemeProvider>

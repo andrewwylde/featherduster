@@ -52,8 +52,32 @@ function hasKeywordMatch(text: string, keyword: string): boolean {
  * 3. Replacing confidential entities using the replacements dictionary.
  * 4. Scanning the resulting text for banned_keywords violations.
  */
-export function redactText(text: string, rules: PrivacyRulesConfig): RedactResult {
+export interface RedactOptions {
+  /**
+   * Exact tokens (e.g. known evidence IDs like `ev-042`) that must survive redaction.
+   * They are swapped for opaque sentinels before any stripping and restored afterwards,
+   * so citation stripping and broad strip_patterns (e.g. `[A-Z]{2,10}-\d+`) cannot remove them.
+   */
+  protectTokens?: string[];
+}
+
+export function redactText(
+  text: string,
+  rules: PrivacyRulesConfig,
+  options?: RedactOptions
+): RedactResult {
   let currentText = text;
+
+  const protectedTokens = Array.from(new Set((options?.protectTokens ?? []).filter(Boolean)))
+    // Longest first so `ev-1000` is not partially captured by `ev-100`
+    .sort((a, b) => b.length - a.length);
+  if (protectedTokens.length > 0) {
+    const alternation = protectedTokens.map(escapeRegExp).join('|');
+    const tokenRegex = new RegExp(`(?<![a-zA-Z0-9_-])(${alternation})(?![a-zA-Z0-9_-])`, 'g');
+    currentText = currentText.replace(tokenRegex, (match) => {
+      return `⟦P${protectedTokens.indexOf(match)}⟧`;
+    });
+  }
 
   // 1. Strip internal citation tags (e.g. (ev-042), (ev-001, ev-002), [ev-042], ev-042, (kong-001), (dfn-001))
   currentText = currentText.replace(
@@ -109,6 +133,12 @@ export function redactText(text: string, rules: PrivacyRulesConfig): RedactResul
         violations.push(trimmed);
       }
     }
+  }
+
+  if (protectedTokens.length > 0) {
+    currentText = currentText.replace(/⟦P(\d+)⟧/g, (_m, idx: string) => {
+      return protectedTokens[Number(idx)] ?? '';
+    });
   }
 
   return {

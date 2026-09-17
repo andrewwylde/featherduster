@@ -28,7 +28,7 @@ export class WorkspaceWatcher extends EventEmitter {
   }
 
   /**
-   * Starts watching the evidence, rubrics, resumes, and .featherduster directories.
+   * Starts watching the evidence, companies, rubrics, resumes, tailoring, and .featherduster directories.
    */
   start(): void {
     if (this.watcher) return;
@@ -39,6 +39,7 @@ export class WorkspaceWatcher extends EventEmitter {
       path.join(this.workspaceDir, 'rubrics'),
       path.join(this.workspaceDir, 'resumes'),
       path.join(this.workspaceDir, '.featherduster'),
+      path.join(this.workspaceDir, 'tailoring'),
     ];
 
     this.watcher = chokidar.watch(watchTargets, {

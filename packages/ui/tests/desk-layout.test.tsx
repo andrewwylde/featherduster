@@ -38,11 +38,11 @@ describe('Desk Layout and Navigation Shell', () => {
     expect(screen.getByText('A quieter way to build what\'s next.')).toBeInTheDocument();
 
     // 5 primary tabs
-    expect(screen.getByRole('button', { name: /Briefing/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Threads/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Evidence/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Skills/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Exports/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Briefing/i })).toHaveAttribute('href', '/briefing');
+    expect(screen.getByRole('link', { name: /Threads/i })).toHaveAttribute('href', '/threads');
+    expect(screen.getByRole('link', { name: /Evidence/i })).toHaveAttribute('href', '/evidence');
+    expect(screen.getByRole('link', { name: /Skills/i })).toHaveAttribute('href', '/skills');
+    expect(screen.getByRole('link', { name: /Exports/i })).toHaveAttribute('href', '/exports');
 
     // Header elements
     expect(screen.getByPlaceholderText(/Search across your work, notes, and people/i)).toBeInTheDocument();
@@ -55,12 +55,12 @@ describe('Desk Layout and Navigation Shell', () => {
   it('switches tabs on click and updates active styling with vermilion indicator', () => {
     render(<TestShell />);
 
-    const threadsBtn = screen.getByRole('button', { name: /Threads/i });
+    const threadsBtn = screen.getByRole('link', { name: /Threads/i });
     fireEvent.click(threadsBtn);
 
     expect(screen.getByTestId('active-content').textContent).toBe('Content for threads');
 
-    const evidenceBtn = screen.getByRole('button', { name: /Evidence/i });
+    const evidenceBtn = screen.getByRole('link', { name: /Evidence/i });
     fireEvent.click(evidenceBtn);
     expect(screen.getByTestId('active-content').textContent).toBe('Content for evidence');
   });

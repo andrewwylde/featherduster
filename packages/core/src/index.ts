@@ -18,3 +18,7 @@ export * from './compilers/typst-compiler.js';
 export * from './compilers/latex-compiler.js';
 export * from './integrity/deslop-engine.js';
 
+export * from './tailoring/schemas.js';
+export * from './tailoring/context.js';
+export * from './tailoring/validators.js';
+export * from './tailoring/apply.js';

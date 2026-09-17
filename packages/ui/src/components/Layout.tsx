@@ -50,12 +50,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
   }, []);
 
   // Map legacy tabs to desk tabs for sidebar selection
-  const mappedDeskTab: DeskTab =
-    currentTab === 'rubrics'
-      ? 'skills'
-      : currentTab === 'tailor'
-      ? 'exports'
-      : (currentTab as DeskTab);
+  const mappedDeskTab: DeskTab = currentTab === 'rubrics' ? 'skills' : (currentTab as DeskTab);
 
   const handleSelectDeskTab = (tab: DeskTab) => {
     onSelectTab(tab);

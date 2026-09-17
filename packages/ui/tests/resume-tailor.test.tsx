@@ -159,6 +159,15 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
   });
 
   describe('3-Pane Resume Tailoring Canvas Rendering', () => {
+    it('shows an actionable error when resume data cannot be loaded', async () => {
+      vi.spyOn(apiClient, 'getResumes').mockRejectedValue(new Error('Workspace unavailable'));
+
+      render(<ResumeTailor />);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Workspace unavailable');
+      expect(screen.getByRole('button', { name: /Try again/i })).toBeInTheDocument();
+    });
+
     it('renders Left Pane (Job Matcher), Middle Pane (Modular Bullets), and Right Pane (Live Preview)', async () => {
       render(<ResumeTailor />);
 

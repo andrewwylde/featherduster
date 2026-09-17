@@ -6,15 +6,25 @@ import {
   Target,
   Download,
   Shield,
+  WandSparkles,
 } from 'lucide-react';
 
-export type DeskTab = 'briefing' | 'threads' | 'evidence' | 'skills' | 'exports';
+export type DeskTab = 'briefing' | 'tailor' | 'threads' | 'evidence' | 'skills' | 'exports';
 
 interface DeskSidebarProps {
   currentTab: DeskTab;
   onSelectTab: (tab: DeskTab) => void;
   onOpenOnboarding: () => void;
 }
+
+const pathByTab: Record<DeskTab, string> = {
+  briefing: '/briefing',
+  tailor: '/tailor',
+  threads: '/threads',
+  evidence: '/evidence',
+  skills: '/skills',
+  exports: '/exports',
+};
 
 export const DeskSidebar: React.FC<DeskSidebarProps> = ({
   currentTab,
@@ -23,6 +33,7 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
 }) => {
   const navItems: Array<{ id: DeskTab; label: string; icon: React.ElementType }> = [
     { id: 'briefing', label: 'Briefing', icon: FileText },
+    { id: 'tailor', label: 'Tailor', icon: WandSparkles },
     { id: 'threads', label: 'Threads', icon: MessageSquare },
     { id: 'evidence', label: 'Evidence', icon: BookOpen },
     { id: 'skills', label: 'Skills', icon: Target },
@@ -53,9 +64,21 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
             const Icon = item.icon;
             const isActive = currentTab === item.id;
             return (
-              <button
+              <a
                 key={item.id}
-                onClick={() => onSelectTab(item.id)}
+                href={pathByTab[item.id]}
+                onClick={(event) => {
+                  if (
+                    event.button === 0 &&
+                    !event.metaKey &&
+                    !event.ctrlKey &&
+                    !event.shiftKey &&
+                    !event.altKey
+                  ) {
+                    event.preventDefault();
+                    onSelectTab(item.id);
+                  }
+                }}
                 className={`group relative flex w-full items-center gap-3 px-3 py-2.5 rounded-desk text-sm font-medium transition-colors text-left focus-visible:ring-2 focus-visible:ring-vermilion-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0f131d] focus-visible:outline-none ${
                   isActive
                     ? 'bg-vermilion-50/70 text-vermilion-600 dark:bg-vermilion-950/25 dark:text-vermilion-400 font-semibold'
@@ -79,7 +102,7 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
                   aria-hidden="true"
                 />
                 <span>{item.label}</span>
-              </button>
+              </a>
             );
           })}
         </nav>

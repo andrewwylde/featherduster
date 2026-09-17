@@ -86,6 +86,9 @@ Featherduster provides CLI commands to validate, compile, and manage career work
   - `templates/`: Base resume templates and styling configurations.
   - `tailored/`: Target-specific resume specs and tailored drafts.
   - `exports/`: Compiled production outputs (Markdown, HTML, PDF, Typst, LaTeX).
+- `tailoring/<run>/`:
+  - In-app, skill-driven tailoring runs created from the **Tailor** view: `run.yaml` (state), `job-posting.md`, `analysis.json` (Gate 0), `alignment.json` (Gate 1), `proposals.json` (Gate 2 edits with accept/reject decisions), `resume.yaml` (applied result), and `brief.md` (Gate 4 Interview Defensibility Brief).
+  - Agents may edit these files; the web UI re-validates and reflects changes live. Do not set step statuses to `approved` on the user's behalf.
 - `.githooks/`:
   - `pre-push`: Git hook preventing accidental remote pushes of private career evidence and running integrity checks.
 
@@ -155,7 +158,7 @@ When asked to tailor a resume, collect evidence, audit prose, or prepare a perfo
 3. Build Alignment Matrix against `evidence/**/*.md` (Gate 1).
 4. Re-weight bullets and harmonize truthful terminology without exceeding ledger ceiling (Gate 2).
 5. Compile tailored resume with stripped citations and verified metrics (Gate 3).
-6. Generate Interview Defensibility Brief covering anchor stories and true gaps (Gate 4).
+6. Generate Interview Defensibility Brief covering anchor stories and true gaps (Gate 4); in-app runs write it to `tailoring/<run>/brief.md`.
 7. Run `featherduster check` to ensure zero dangling citations and valid metrics.
 
 ### Playbook C: Drafting Performance Brag Documents
