@@ -83,7 +83,9 @@ import { TailoringOrchestrator, type TailoringEvent } from './tailoring/orchestr
 import { mountTailoringRoutes } from './tailoring/routes.js';
 import { mountSettingsRoutes } from './settings/routes.js';
 import { ClaudeAuthManager } from './settings/claude-auth.js';
+import { CodexAuthManager } from './settings/codex-auth.js';
 import { getCredentialStore, type CredentialStore } from './settings/credentials.js';
+import { checkWorkspace } from './commands/check.js';
 
 export interface CreateAppOptions {
   watcher?: WorkspaceWatcher;
@@ -96,6 +98,8 @@ export interface CreateAppOptions {
   credentialStore?: CredentialStore;
   /** Override the Claude Code auth wrapper (tests). */
   claudeAuth?: ClaudeAuthManager;
+  /** Override the Codex auth wrapper (tests). */
+  codexAuth?: CodexAuthManager;
   /** Override environment used for credential resolution (tests). */
   env?: NodeJS.ProcessEnv;
 }
@@ -891,100 +895,16 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     workspaceDir: resolvedWorkspaceDir,
     store: () => options?.credentialStore ?? getCredentialStore(),
     claudeAuth: options?.claudeAuth ?? new ClaudeAuthManager({ command: orchestrator.config().runner['claude-code'].command }),
+    codexAuth: options?.codexAuth ?? new CodexAuthManager({ command: orchestrator.config().runner.codex.command }),
     runnerFactory: options?.runnerFactory ?? defaultRunnerFactory,
     env: options?.env,
   });
 
   // 7. Integrity check
   app.get('/api/integrity/check', (c) => {
-    const store = loadEvidenceStore(resolvedWorkspaceDir);
-    const privacyRules = loadPrivacyRules(resolvedWorkspaceDir);
-    const issues: any[] = [];
-
-    const candidateDirs = [
-      path.join(resolvedWorkspaceDir, 'resumes'),
-      path.join(resolvedWorkspaceDir, 'evidence'),
-    ];
-
-    const filesToCheck: string[] = [];
-    for (const dir of candidateDirs) {
-      filesToCheck.push(...findFiles(dir, ['.md', '.markdown', '.txt', '.tex', '.typ']));
-    }
-
-    for (const file of filesToCheck) {
-      const relativePath = path.relative(resolvedWorkspaceDir, file).replace(/\\/g, '/');
-      try {
-        const content = fs.readFileSync(file, 'utf-8');
-
-        // Citation verification
-        const citationResult = lintCitations(content, store);
-        for (const dangling of citationResult.danglingCitations) {
-          issues.push({
-            file: relativePath,
-            type: 'dangling_citation',
-            message: `Dangling citation '${dangling}' in ${relativePath}`,
-            citation: dangling,
-          });
-        }
-
-        // Metric verification
-        const metricResult = validateMetrics(content, store);
-        for (const issue of metricResult.issues) {
-          issues.push({
-            file: relativePath,
-            type: issue.type,
-            message: `${issue.message} in ${relativePath}`,
-            line: issue.line,
-          });
-        }
-
-        // Privacy rules scan
-        if (privacyRules.banned_keywords && privacyRules.banned_keywords.length > 0) {
-          const redactResult = redactText(content, privacyRules);
-          for (const violation of redactResult.violations) {
-            issues.push({
-              file: relativePath,
-              type: 'banned_keyword',
-              message: `Banned keyword '${violation}' in ${relativePath}`,
-              keyword: violation,
-            });
-          }
-        }
-
-        // AI Slop audit across markdown files in evidence/ and resumes/
-        const isEvidenceOrResume =
-          (relativePath.startsWith('evidence/') ||
-            relativePath.startsWith('resumes/') ||
-            relativePath.includes('/evidence/') ||
-            relativePath.includes('/resumes/')) &&
-          (file.endsWith('.md') || file.endsWith('.markdown'));
-
-        if (isEvidenceOrResume) {
-          const slopResult = auditSlop(content);
-          const severeMatches = slopResult.matches.filter(
-            (m) =>
-              (SLOP_WEIGHTS[m.type] ?? 1) >= 2 ||
-              slopResult.slopBand === 'moderate' ||
-              slopResult.slopBand === 'high'
-          );
-          for (const match of severeMatches) {
-            issues.push({
-              file: relativePath,
-              type: 'ai_slop',
-              message: `AI slop / buzzword pattern '${match.matchedText}' (${match.patternName}) in ${relativePath}`,
-              line: match.line,
-            });
-          }
-        }
-      } catch {
-        // Skip file if unreadable
-      }
-    }
-
-    return c.json({
-      isClean: issues.length === 0,
-      issues,
-    });
+    const isStrict = c.req.query('strict') === 'true';
+    const result = checkWorkspace(resolvedWorkspaceDir, { strict: isStrict });
+    return c.json(result);
   });
 
   // 8. Server-Sent Events (SSE) stream endpoint

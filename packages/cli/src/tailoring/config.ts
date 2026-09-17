@@ -7,6 +7,7 @@ export interface RunnerConfig {
   default: RunnerId;
   step_timeout_seconds: number;
   'claude-code': { model: string; command: string };
+  codex: { model: string; command: string };
   'anthropic-api': { model: string };
   ollama: { url: string; model: string; max_context: number };
 }
@@ -21,11 +22,12 @@ export const DEFAULT_RUNNER_CONFIG: RunnerConfig = {
   default: 'claude-code',
   step_timeout_seconds: 180,
   'claude-code': { model: '', command: 'claude' },
+  codex: { model: '', command: 'codex' },
   'anthropic-api': { model: 'claude-opus-5' },
   ollama: { url: 'http://127.0.0.1:11434', model: '', max_context: 32768 },
 };
 
-const RUNNER_IDS: RunnerId[] = ['claude-code', 'anthropic-api', 'ollama', 'fake'];
+const RUNNER_IDS: RunnerId[] = ['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake'];
 
 function configPath(workspaceDir: string): string {
   return path.join(workspaceDir, '.featherduster', 'config.yaml');
@@ -59,6 +61,10 @@ export function loadTailoringConfig(workspaceDir: string): TailoringConfig {
     'claude-code': {
       model: str(r['claude-code']?.model, d['claude-code'].model),
       command: str(r['claude-code']?.command, d['claude-code'].command) || d['claude-code'].command,
+    },
+    codex: {
+      model: str(r.codex?.model, d.codex.model),
+      command: str(r.codex?.command, d.codex.command) || d.codex.command,
     },
     'anthropic-api': {
       model: str(r['anthropic-api']?.model, d['anthropic-api'].model) || d['anthropic-api'].model,

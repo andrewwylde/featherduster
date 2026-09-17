@@ -1,5 +1,6 @@
 import { AnthropicApiRunner } from './anthropic-api.js';
 import { ClaudeCodeRunner } from './claude-code.js';
+import { CodexRunner } from './codex.js';
 import { OllamaRunner } from './ollama.js';
 import { FakeRunner } from './fake.js';
 import { createDemoResponder } from './demo-responder.js';
@@ -27,6 +28,8 @@ export const defaultRunnerFactory: RunnerFactory = (id, config) => {
   switch (id) {
     case 'claude-code':
       return new ClaudeCodeRunner({ command: config['claude-code'].command, model: config['claude-code'].model });
+    case 'codex':
+      return new CodexRunner({ command: config.codex.command, model: config.codex.model });
     case 'anthropic-api':
       return new AnthropicApiRunner({ model: config['anthropic-api'].model });
     case 'ollama':
@@ -41,7 +44,7 @@ export const defaultRunnerFactory: RunnerFactory = (id, config) => {
 };
 
 export function listRunnerIds(): RunnerId[] {
-  const ids: RunnerId[] = ['claude-code', 'anthropic-api', 'ollama'];
+  const ids: RunnerId[] = ['claude-code', 'codex', 'anthropic-api', 'ollama'];
   if (fakeRunnerEnabled()) ids.unshift('fake');
   return ids;
 }

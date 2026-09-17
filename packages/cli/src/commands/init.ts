@@ -397,6 +397,7 @@ export async function initWorkspace(
       default: 'claude-code',
       step_timeout_seconds: 180,
       'claude-code': { model: '' },
+      codex: { model: '' },
       'anthropic-api': { model: 'claude-opus-5' },
       ollama: { url: 'http://127.0.0.1:11434', model: '', max_context: 32768 },
     },

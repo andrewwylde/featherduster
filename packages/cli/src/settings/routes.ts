@@ -12,17 +12,19 @@ import {
 } from './credentials.js';
 import { RunnerSettingsPatchSchema, revokeRunnerConsent, writeRunnerSettings } from './runner-settings.js';
 import type { ClaudeAuthManager, LoginMode } from './claude-auth.js';
+import type { CodexAuthManager } from './codex-auth.js';
 
 export interface SettingsRouteDeps {
   workspaceDir: string;
   store: () => CredentialStore;
   claudeAuth: ClaudeAuthManager;
+  codexAuth: CodexAuthManager;
   runnerFactory: RunnerFactory;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
 }
 
-const TESTABLE: RunnerId[] = ['claude-code', 'anthropic-api', 'ollama'];
+const TESTABLE: RunnerId[] = ['claude-code', 'codex', 'anthropic-api', 'ollama'];
 
 /** Mutations must be JSON: blocks form-encoded cross-site requests in addition to the origin checks. */
 const requireJson: MiddlewareHandler = async (c, next) => {
@@ -134,5 +136,28 @@ export function mountSettingsRoutes(app: Hono, deps: SettingsRouteDeps): void {
   app.post('/api/settings/claude-code/logout', (c) => {
     const result = deps.claudeAuth.logout();
     return c.json({ ...result, status: deps.claudeAuth.status() }, result.ok ? 200 : 500);
+  });
+
+  app.get('/api/settings/codex/auth', (c) => c.json({ status: deps.codexAuth.status(), login: deps.codexAuth.loginJob }));
+
+  app.post('/api/settings/codex/login', async (c) => {
+    const { mode } = await body(c);
+    return c.json({ login: deps.codexAuth.startLogin(mode === 'device' ? 'device' : 'chatgpt') }, 202);
+  });
+
+  app.post('/api/settings/codex/login/cancel', (c) => c.json({ login: deps.codexAuth.cancelLogin() }));
+
+  app.post('/api/settings/codex/api-key', async (c) => {
+    const { apiKey } = await body(c);
+    if (typeof apiKey !== 'string' || apiKey.trim().length < 20 || /\s/.test(apiKey.trim())) {
+      return c.json({ error: 'That does not look like a complete OpenAI API key.', code: 'invalid_key' }, 400);
+    }
+    const result = deps.codexAuth.loginWithApiKey(apiKey.trim());
+    return c.json({ ...result, status: deps.codexAuth.status() }, result.ok ? 200 : 502);
+  });
+
+  app.post('/api/settings/codex/logout', (c) => {
+    const result = deps.codexAuth.logout();
+    return c.json({ ...result, status: deps.codexAuth.status() }, result.ok ? 200 : 500);
   });
 }

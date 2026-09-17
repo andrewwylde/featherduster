@@ -23,6 +23,14 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
 
   if (!isOpen) return null;
 
+  const errorCount = report?.errors
+    ? report.errors.length
+    : (report?.issues.filter((i) => (i.severity ?? 'error') === 'error').length ?? 0);
+  const warningCount = report?.warnings
+    ? report.warnings.length
+    : (report?.issues.filter((i) => i.severity === 'warning').length ?? 0);
+  const isClean = report ? (report.isClean ?? errorCount === 0) : false;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn"
@@ -39,19 +47,21 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center space-x-3">
-            <div className={`p-2 rounded-lg ${report?.isClean ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-              {report?.isClean ? <ShieldCheck className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
+            <div className={`p-2 rounded-lg ${isClean ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+              {isClean ? <ShieldCheck className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
             </div>
             <div>
               <h2 id="integrity-audit-title" className="text-lg font-semibold text-slate-100 flex items-center gap-2">
                 Integrity & Privacy Audit
                 {report && (
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                    report.isClean 
+                    isClean 
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
                       : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
                   }`}>
-                    {report.isClean ? 'PASSED (0 Violations)' : `${report.issues.length} VIOLATION${report.issues.length === 1 ? '' : 'S'}`}
+                    {isClean 
+                      ? (warningCount > 0 ? `PASSED (0 Violations, ${warningCount} Advisory)` : 'PASSED (0 Violations)')
+                      : `${errorCount} VIOLATION${errorCount === 1 ? '' : 'S'}`}
                   </span>
                 )}
               </h2>
@@ -86,23 +96,60 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
               <RefreshCw className="w-8 h-8 animate-spin text-emerald-500 mb-3" />
               <p className="text-sm">Auditing workspace integrity...</p>
             </div>
-          ) : report?.isClean ? (
-            <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-6 text-center space-y-3">
-              <div className="inline-flex p-3 rounded-full bg-emerald-500/20 text-emerald-400">
-                <ShieldCheck className="w-8 h-8" />
+          ) : isClean ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/20 p-6 text-center space-y-3">
+                <div className="inline-flex p-3 rounded-full bg-emerald-500/20 text-emerald-400">
+                  <ShieldCheck className="w-8 h-8" />
+                </div>
+                <h3 className="text-base font-semibold text-emerald-300">Clean Workspace Verification</h3>
+                <p className="text-sm text-slate-300 max-w-md mx-auto">
+                  All evidence citations map to valid entries, metric tokens are fully specified, and no prohibited company keywords or privacy leaks were detected.
+                </p>
               </div>
-              <h3 className="text-base font-semibold text-emerald-300">Clean Workspace Verification</h3>
-              <p className="text-sm text-slate-300 max-w-md mx-auto">
-                All evidence citations map to valid entries, metric tokens are fully specified, and no prohibited company keywords or privacy leaks were detected.
-              </p>
+
+              {warningCount > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-amber-400 font-mono pb-1 border-b border-slate-800">
+                    <span>Advisory in-flight citations ({warningCount})</span>
+                    <span>Provisional evidence referenced (non-blocking)</span>
+                  </div>
+                  {(report?.warnings ?? report?.issues.filter((i) => i.severity === 'warning') ?? []).slice(0, 50).map((issue, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-xl border border-amber-500/20 bg-amber-950/20 p-3 space-y-1.5"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center space-x-2 text-xs font-semibold text-amber-300 uppercase tracking-wider">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                          <span>{issue.type.replace(/_/g, ' ')}</span>
+                        </div>
+                        {issue.line && (
+                          <span className="text-xs font-mono text-slate-400">Line {issue.line}</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-300 font-medium">{issue.message}</p>
+                      <div className="flex items-center space-x-2 text-[11px] font-mono text-slate-400 bg-slate-950/60 px-2 py-1 rounded-md border border-slate-800/80">
+                        <FileText className="w-3 h-3 text-slate-500" />
+                        <span>{issue.file}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {warningCount > 50 && (
+                    <p className="text-xs text-slate-500 text-center pt-1 font-mono">
+                      + {warningCount - 50} more advisory citation(s)
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-3">
               <div className="flex items-center justify-between text-xs text-slate-400 font-mono pb-1 border-b border-slate-800">
-                <span>Violations detected ({report?.issues.length ?? 0})</span>
+                <span>Violations detected ({errorCount})</span>
                 <span>Review and resolve before compiling</span>
               </div>
-              {report?.issues.map((issue, idx) => (
+              {(report?.errors ?? report?.issues.filter((i) => (i.severity ?? 'error') === 'error') ?? []).map((issue, idx) => (
                 <div
                   key={idx}
                   className="rounded-xl border border-rose-500/20 bg-rose-950/20 p-4 space-y-2"

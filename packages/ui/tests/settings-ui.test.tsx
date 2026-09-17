@@ -14,6 +14,7 @@ function settings(overrides: Partial<SettingsResponse> = {}): SettingsResponse {
       default: 'claude-code',
       step_timeout_seconds: 180,
       'claude-code': { model: '', command: 'claude' },
+      codex: { model: '', command: 'codex' },
       'anthropic-api': { model: 'claude-opus-5' },
       ollama: { url: 'http://127.0.0.1:11434', model: '', max_context: 32768 },
     },
@@ -50,6 +51,7 @@ describe('SettingsView', () => {
     vi.restoreAllMocks();
     vi.spyOn(apiClient, 'getSettings').mockResolvedValue(settings());
     vi.spyOn(apiClient, 'getClaudeAuth').mockResolvedValue({ status: signedIn, login: null });
+    vi.spyOn(apiClient, 'getCodexAuth').mockResolvedValue({ status: { installed: true, loggedIn: true, method: 'chatgpt', detail: 'Logged in using ChatGPT' }, login: null });
     vi.spyOn(apiClient, 'getOllamaModels').mockResolvedValue({ reachable: true, models: ['llama3.1:8b', 'qwen2.5:14b'], detail: 'Ollama at http://127.0.0.1:11434' });
   });
   afterEach(cleanup);
@@ -143,6 +145,37 @@ describe('SettingsView', () => {
     expect(await within(consent).findByText('No cloud runner has consent yet.')).toBeInTheDocument();
   });
 
+  it('shows Codex status, device-code sign-in output, and signs in with an API key', async () => {
+    const running = { state: 'running' as const, mode: 'device', startedAt: '', finishedAt: null, output: 'To sign in, visit https://auth.openai.com/codex/device and enter code ABCD-EFGH', url: 'https://auth.openai.com/codex/device' };
+    const start = vi.spyOn(apiClient, 'startCodexLogin').mockResolvedValue({ login: running });
+    const keyLogin = vi.spyOn(apiClient, 'loginCodexWithApiKey').mockResolvedValue({ ok: true, detail: 'ok', status: { installed: true, loggedIn: true, method: 'api-key', detail: 'Logged in using an API key' } });
+    render(<SettingsView />);
+    const card = await screen.findByRole('region', { name: 'Codex' });
+    expect(await within(card).findByText(/Signed in with ChatGPT account/)).toBeInTheDocument();
+
+    fireEvent.change(within(card).getByLabelText('Or use an OpenAI API key'), { target: { value: 'sk-proj-secret-abcdefghijklmnop' } });
+    fireEvent.click(within(card).getByRole('button', { name: /Sign in with key/ }));
+    await waitFor(() => expect(keyLogin).toHaveBeenCalledWith('sk-proj-secret-abcdefghijklmnop'));
+    expect(await within(card).findByText('Codex signed in with your API key.')).toBeInTheDocument();
+    expect((within(card).getByLabelText('Or use an OpenAI API key') as HTMLInputElement).value).toBe('');
+
+    vi.mocked(apiClient.getCodexAuth).mockResolvedValue({ status: { installed: true, loggedIn: false, method: null, detail: 'Not logged in' }, login: running });
+    fireEvent.click(within(card).getByRole('button', { name: 'Sign in with a device code' }));
+    await waitFor(() => expect(start).toHaveBeenCalledWith('device'));
+    expect(await within(card).findByText(/ABCD-EFGH/)).toBeInTheDocument();
+    expect(within(card).getByRole('link', { name: /Open the sign-in page/ })).toHaveAttribute('href', 'https://auth.openai.com/codex/device');
+  });
+
+  it('keeps the Codex API key when Codex rejects it', async () => {
+    vi.spyOn(apiClient, 'loginCodexWithApiKey').mockResolvedValue({ ok: false, detail: 'Invalid API key', status: { installed: true, loggedIn: false, method: null, detail: 'Not logged in' } });
+    render(<SettingsView />);
+    const card = await screen.findByRole('region', { name: 'Codex' });
+    fireEvent.change(within(card).getByLabelText('Or use an OpenAI API key'), { target: { value: 'sk-proj-bad-abcdefghijklmnop' } });
+    fireEvent.click(within(card).getByRole('button', { name: /Sign in with key/ }));
+    expect(await within(card).findByRole('alert')).toHaveTextContent('Invalid API key');
+    expect((within(card).getByLabelText('Or use an OpenAI API key') as HTMLInputElement).value).toBe('sk-proj-bad-abcdefghijklmnop');
+  });
+
   it('tests a runner connection', async () => {
     vi.spyOn(apiClient, 'testRunner').mockResolvedValue({ available: false, detail: 'No API key. Add one in Settings, or set ANTHROPIC_API_KEY.' });
     render(<SettingsView />);
@@ -168,6 +201,7 @@ describe('Settings navigation', () => {
     });
     vi.spyOn(apiClient, 'getSettings').mockResolvedValue(settings());
     vi.spyOn(apiClient, 'getClaudeAuth').mockResolvedValue({ status: signedIn, login: null });
+    vi.spyOn(apiClient, 'getCodexAuth').mockResolvedValue({ status: { installed: true, loggedIn: true, method: 'chatgpt', detail: 'Logged in using ChatGPT' }, login: null });
     vi.spyOn(apiClient, 'getOllamaModels').mockResolvedValue({ reachable: false, models: [], detail: 'not running' });
   });
   afterEach(() => {

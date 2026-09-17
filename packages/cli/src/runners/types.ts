@@ -1,4 +1,4 @@
-export type RunnerId = 'claude-code' | 'anthropic-api' | 'ollama' | 'fake';
+export type RunnerId = 'claude-code' | 'codex' | 'anthropic-api' | 'ollama' | 'fake';
 
 export interface RunnerProgressEvent {
   kind: 'status' | 'token';

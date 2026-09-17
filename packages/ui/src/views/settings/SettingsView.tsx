@@ -3,11 +3,13 @@ import { apiClient, type RunnerId, type RunnerSettingsPatch, type SettingsRespon
 import { cardClass, eyebrowClass, inputClass, secondaryButton } from '../tailoring/ui';
 import { AnthropicApiCard } from './AnthropicApiCard';
 import { ClaudeCodeCard } from './ClaudeCodeCard';
+import { CodexCard } from './CodexCard';
 import { OllamaCard } from './OllamaCard';
 import { CardHeader, labelClass } from './shared';
 
 const RUNNER_LABELS: Record<Exclude<RunnerId, 'fake'>, string> = {
   'claude-code': 'Claude Code',
+  codex: 'Codex',
   'anthropic-api': 'Anthropic API',
   ollama: 'Ollama',
 };
@@ -130,6 +132,7 @@ export const SettingsView: React.FC = () => {
       </section>
 
       <ClaudeCodeCard model={settings.runner['claude-code'].model} onPatch={patch} />
+      <CodexCard model={settings.runner.codex.model} onPatch={patch} />
       <AnthropicApiCard
         credential={settings.credentials.anthropic}
         model={settings.runner['anthropic-api'].model}

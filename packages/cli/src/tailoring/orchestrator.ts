@@ -269,7 +269,7 @@ export class TailoringOrchestrator {
   }
 
   recordConsent(runnerId: unknown): void {
-    if (typeof runnerId !== 'string' || !['claude-code', 'anthropic-api', 'ollama', 'fake'].includes(runnerId)) {
+    if (typeof runnerId !== 'string' || !['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake'].includes(runnerId)) {
       throw new TailoringError(400, 'invalid_runner', 'Unknown runner.');
     }
     recordRunnerConsent(this.deps.workspaceDir, runnerId as RunnerId, this.now().toISOString().slice(0, 10));

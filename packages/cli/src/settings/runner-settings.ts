@@ -3,7 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { parseDocument, isMap } from 'yaml';
 
-const RUNNER_IDS = ['claude-code', 'anthropic-api', 'ollama'] as const;
+const RUNNER_IDS = ['claude-code', 'codex', 'anthropic-api', 'ollama'] as const;
 
 export const RunnerSettingsPatchSchema = z
   .object({
@@ -11,6 +11,7 @@ export const RunnerSettingsPatchSchema = z
     step_timeout_seconds: z.number().int().min(30).max(3600).optional(),
     deslop_warn_band: z.enum(['low', 'moderate', 'high']).optional(),
     'claude-code': z.object({ model: z.string().max(100) }).partial().strict().optional(),
+    codex: z.object({ model: z.string().max(100) }).partial().strict().optional(),
     'anthropic-api': z.object({ model: z.string().min(1).max(100) }).partial().strict().optional(),
     ollama: z
       .object({

@@ -26,7 +26,7 @@ export class ApiError extends Error {
   }
 }
 
-export type RunnerId = 'claude-code' | 'anthropic-api' | 'ollama' | 'fake';
+export type RunnerId = 'claude-code' | 'codex' | 'anthropic-api' | 'ollama' | 'fake';
 
 export interface RunnerInfo {
   id: RunnerId;
@@ -112,6 +112,7 @@ export interface IntegrityIssue {
   type: 'dangling_citation' | 'missing_metric' | 'unverified_metric' | 'banned_keyword' | string;
   message: string;
   line?: number;
+  severity?: 'error' | 'warning';
   keyword?: string;
   citation?: string;
 }
@@ -119,6 +120,13 @@ export interface IntegrityIssue {
 export interface IntegrityCheckResponse {
   isClean: boolean;
   issues: IntegrityIssue[];
+  errors?: IntegrityIssue[];
+  warnings?: IntegrityIssue[];
+  totalFiles?: number;
+  validCitationsCount?: number;
+  danglingCitationsCount?: number;
+  slopMatchesCount?: number;
+  provisionalCitationsCount?: number;
 }
 
 export interface CompileResumeResponse {
@@ -192,6 +200,7 @@ export interface RunnerPreferences {
   default: RunnerId;
   step_timeout_seconds: number;
   'claude-code': { model: string; command: string };
+  codex: { model: string; command: string };
   'anthropic-api': { model: string };
   ollama: { url: string; model: string; max_context: number };
 }
@@ -218,6 +227,7 @@ export interface RunnerSettingsPatch {
   step_timeout_seconds?: number;
   deslop_warn_band?: 'low' | 'moderate' | 'high';
   'claude-code'?: { model?: string };
+  codex?: { model?: string };
   'anthropic-api'?: { model?: string };
   ollama?: { url?: string; model?: string; max_context?: number };
 }
@@ -231,6 +241,22 @@ export interface ClaudeAuthStatus {
   orgName: string | null;
   subscriptionType: string | null;
   detail: string;
+}
+
+export interface CodexAuthStatus {
+  installed: boolean;
+  loggedIn: boolean;
+  method: 'chatgpt' | 'api-key' | null;
+  detail: string;
+}
+
+export interface CodexLoginJob {
+  state: 'running' | 'succeeded' | 'failed' | 'cancelled';
+  mode: string;
+  startedAt: string;
+  finishedAt: string | null;
+  output: string;
+  url: string | null;
 }
 
 export interface ClaudeLoginJob {
@@ -562,6 +588,26 @@ export class ApiClient {
 
   async logoutClaude(): Promise<{ ok: boolean; detail: string; status: ClaudeAuthStatus }> {
     return this.fetchJson('/api/settings/claude-code/logout', this.jsonRequest('POST'));
+  }
+
+  async getCodexAuth(): Promise<{ status: CodexAuthStatus; login: CodexLoginJob | null }> {
+    return this.fetchJson('/api/settings/codex/auth');
+  }
+
+  async startCodexLogin(mode: 'chatgpt' | 'device'): Promise<{ login: CodexLoginJob }> {
+    return this.fetchJson('/api/settings/codex/login', this.jsonRequest('POST', { mode }));
+  }
+
+  async cancelCodexLogin(): Promise<{ login: CodexLoginJob | null }> {
+    return this.fetchJson('/api/settings/codex/login/cancel', this.jsonRequest('POST'));
+  }
+
+  async loginCodexWithApiKey(apiKey: string): Promise<{ ok: boolean; detail: string; status: CodexAuthStatus }> {
+    return this.fetchJson('/api/settings/codex/api-key', this.jsonRequest('POST', { apiKey }));
+  }
+
+  async logoutCodex(): Promise<{ ok: boolean; detail: string; status: CodexAuthStatus }> {
+    return this.fetchJson('/api/settings/codex/logout', this.jsonRequest('POST'));
   }
 }
 
