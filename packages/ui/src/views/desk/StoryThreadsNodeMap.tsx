@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { SignalSource, NodeMapEvidence, StoryThread } from '../../types/desk';
 import { EvidenceBadge } from '../../components/desk/EvidenceBadge';
+import { SampleDataBanner } from '../../components/desk/SampleDataBanner';
 import type { EvidenceStatus } from '../../theme/tokens';
 
 interface StoryThreadsNodeMapProps {
@@ -102,6 +103,7 @@ export const StoryThreadsNodeMap: React.FC<StoryThreadsNodeMapProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
+      <SampleDataBanner what="This thread map" />
       {/* Top Header & Map Controls */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
         <div>

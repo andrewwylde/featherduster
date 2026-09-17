@@ -9,10 +9,11 @@ import {
 } from 'lucide-react';
 import type { RecommendedLead, SignalSource } from '../../types/desk';
 import { EvidenceBadge } from '../../components/desk/EvidenceBadge';
+import { SampleDataBanner } from '../../components/desk/SampleDataBanner';
 
 interface PrivateBriefingProps {
   lead: RecommendedLead;
-  onOpenInterview: () => void;
+  onOpenInterview?: () => void;
   onViewThread?: (threadId: string) => void;
 }
 
@@ -35,6 +36,7 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
+      <SampleDataBanner what="This briefing" />
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: The Editor lead & Signal cards (7 cols) */}
         <div className="lg:col-span-7 flex flex-col space-y-6">
@@ -93,6 +95,7 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
 
                     <div className="mt-3 flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                       <EvidenceBadge status={src.status} />
+                      {onOpenInterview && (
                       <button
                         type="button"
                         onClick={onOpenInterview}
@@ -102,6 +105,7 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
                         <span>View source</span>
                         <ArrowRight className="w-3 h-3" aria-hidden="true" />
                       </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -109,6 +113,7 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
             </div>
 
             {/* Action Bar */}
+            {onOpenInterview && (
             <div className="mt-6 pt-5 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
               <span className="text-xs text-slate-500 dark:text-slate-400">
                 Ready to reconstruct and capture this story?
@@ -121,6 +126,7 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
                 <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
+            )}
           </div>
         </div>
 

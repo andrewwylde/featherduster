@@ -85,89 +85,12 @@ async function runWalkthrough() {
     await page.locator('button[aria-label="Close"]').first().click();
     await page.waitForTimeout(400);
 
-    // Step 3: Start Focused Interview
-    console.log('  -> [Step 3] Starting focused interview with The Editor...');
-    const startInterviewBtn = page.locator('button:has-text("Start focused interview")');
-    await startInterviewBtn.click();
-    await page.waitForSelector('h1:has-text("Focused interview")');
-    await page.waitForSelector('text=[METRIC NEEDED]');
-    await page.waitForTimeout(600);
-
-    console.log('  -> Capturing 03-focused-interview-initial.png');
-    await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '03-focused-interview-initial.png'),
-    });
-
-    // Step 4: Fill Composer with metric clarification
-    console.log('  -> [Step 4] Typing quantitative clarification into composer...');
-    const composer = page.locator('#interview-input');
-    const clarificationText =
-      'We reduced alerts by 80% across 140k daily worker tasks. Pager noise dropped from ~15 alerts/week to under 3. Verified in Datadog monitor wa-au-018.';
-    await composer.fill(clarificationText);
-    await page.waitForTimeout(400);
-
-    console.log('  -> Capturing 04-composer-filled.png');
-    await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '04-composer-filled.png'),
-    });
-
-    // Step 5: Send response & observe Live Dossier update
-    console.log('  -> [Step 5] Sending response to The Editor...');
-    const sendBtn = page.locator('button:has-text("Send")');
-    await sendBtn.click();
-
-    await page.waitForSelector('text=Excellent specifics.');
-    await page.waitForSelector('text=Reduced alerts by 80% across 140k daily worker tasks.');
-    await page.waitForTimeout(600);
-
-    console.log('  -> Capturing 05-editor-acknowledged-dossier-updated.png');
-    await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '05-editor-acknowledged-dossier-updated.png'),
-    });
-
-    // Step 6: Capture evidence entry
-    console.log('  -> [Step 6] Capturing evidence entry into ledger...');
-    const captureBtn = page.locator('button:has-text("Capture evidence entry")');
-    await captureBtn.click();
-
-    await page.waitForSelector('text=Evidence entry captured:');
-    await page.waitForSelector('button:has-text("View strengthened thread")');
-    // Scroll feedback banner into prominent view
-    await page.locator('text=Evidence entry captured:').scrollIntoViewIfNeeded();
-    await page.waitForTimeout(500);
-
-    console.log('  -> Capturing 06-evidence-captured-feedback.png');
-    await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '06-evidence-captured-feedback.png'),
-    });
-
-    // Step 7: View strengthened thread in Story Threads Node Map
-    console.log('  -> [Step 7] Navigating to Story Threads & Node Map...');
-    const viewThreadBtn = page.locator('button:has-text("View strengthened thread")');
-    await viewThreadBtn.click();
-
+    // Step 3: Story threads (read-only; this walkthrough runs against a real corpus and must never write)
+    console.log('  -> [Step 3] Opening Story Threads (read-only)...');
+    await page.locator('a:has-text("Threads")').click();
     await page.waitForSelector('text=Story Threads & Node Map');
-    await page.waitForSelector('text=Reliability leadership');
-    await page.waitForSelector('text=Automated failover & alert reduction');
     await page.waitForTimeout(600);
-
-    console.log('  -> Capturing 07-story-threads-node-map.png');
-    await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '07-story-threads-node-map.png'),
-    });
-
-    // Step 8: Select newly captured evidence node for relational cross-column illumination
-    console.log('  -> [Step 8] Selecting newly captured evidence node for relational illumination...');
-    const evidenceNode = page.locator('div[role="button"]:has-text("Automated failover & alert reduction")');
-    await evidenceNode.click();
-    await page.waitForSelector('text=Traceable Inspector');
-    await page.waitForSelector('text=Selected Evidence');
-    await page.waitForTimeout(500);
-
-    console.log('  -> Capturing 08-node-map-evidence-selected.png');
-    await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '08-node-map-evidence-selected.png'),
-    });
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '03-story-threads-node-map.png') });
 
     // Step 9: Theme Toggle (Editorial Light Mode)
     console.log('  -> [Step 9] Switching to Editorial Light Mode...');
@@ -175,9 +98,9 @@ async function runWalkthrough() {
     await themeBtn.click();
     await page.waitForTimeout(600);
 
-    console.log('  -> Capturing 09-light-mode-node-map.png');
+    console.log('  -> Capturing 04-light-mode-node-map.png');
     await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '09-light-mode-node-map.png'),
+      path: path.join(SCREENSHOTS_DIR, '04-light-mode-node-map.png'),
     });
 
     // Step 10: Integrity Pre-Flight Audit Modal
@@ -187,16 +110,16 @@ async function runWalkthrough() {
     await page.waitForSelector('text=Integrity & Privacy Audit');
     await page.waitForTimeout(600);
 
-    console.log('  -> Capturing 10-integrity-audit-modal.png');
+    console.log('  -> Capturing 05-integrity-audit-modal.png');
     await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '10-integrity-audit-modal.png'),
+      path: path.join(SCREENSHOTS_DIR, '05-integrity-audit-modal.png'),
     });
 
     console.log('  -> Closing integrity modal...');
     await page.locator('button[aria-label="Close integrity audit modal"]').click();
     await page.waitForTimeout(400);
 
-    console.log('\n[4/6] Completed all 10 walkthrough steps without errors.');
+    console.log('\n[4/6] Completed all walkthrough steps without errors.');
   } catch (err) {
     console.error('Walkthrough step error:', err);
     throw err;

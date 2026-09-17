@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { Layout, type NavTab } from './components/Layout';
 import { ThemeProvider } from './theme/ThemeContext';
 import { PrivateBriefing } from './views/desk/PrivateBriefing';
-import { FocusedInterview } from './views/desk/FocusedInterview';
 import { StoryThreadsNodeMap } from './views/desk/StoryThreadsNodeMap';
 import { EvidenceExplorer } from './views/EvidenceExplorer';
 import { RubricGapMatrix } from './views/RubricGapMatrix';
@@ -13,7 +12,6 @@ import {
   initialNodeMapEvidence,
   initialStoryThreads,
 } from './data/deskFixtures';
-import type { StoryThread, NodeMapEvidence } from './types/desk';
 import { pathForTab, tabForPath, tailoringSlugForPath } from './routing';
 import { TailoringRunList } from './views/tailoring/TailoringRunList';
 import { TailoringRun } from './views/tailoring/TailoringRun';
@@ -23,35 +21,8 @@ export function App() {
   const [tailoringSlug, setTailoringSlug] = useState<string | null>(() => tailoringSlugForPath(window.location.pathname));
   const [handoffPosting, setHandoffPosting] = useState<string | undefined>(undefined);
   const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
-  const [isInterviewActive, setIsInterviewActive] = useState(false);
-  const [threads, setThreads] = useState<StoryThread[]>(initialStoryThreads);
-  const [evidenceList, setEvidenceList] = useState<NodeMapEvidence[]>(initialNodeMapEvidence);
-
-  const handleEvidenceCaptured = (evidenceId: string) => {
-    // Add captured evidence to node map
-    setEvidenceList((prev) => [
-      ...prev,
-      {
-        id: evidenceId,
-        title: 'Automated failover & alert reduction',
-        status: 'verified',
-        sourceIds: ['src-pr-4821', 'src-datadog-wa-au-018'],
-      },
-    ]);
-
-    // Visibly strengthen the story thread
-    setThreads((prev) =>
-      prev.map((t) =>
-        t.id === 'thread-reliability'
-          ? {
-              ...t,
-              status: 'strengthened',
-              evidenceIds: [...t.evidenceIds, evidenceId],
-            }
-          : t
-      )
-    );
-  };
+  const threads = initialStoryThreads;
+  const evidenceList = initialNodeMapEvidence;
 
   const handleViewThread = (_threadId?: string) => {
     navigateTo('threads');
@@ -82,24 +53,9 @@ export function App() {
         currentTab={currentTab}
         onSelectTab={navigateTo}
       >
-        {/* Briefing Workspace (Private Briefing & Focused Interview) */}
+        {/* Briefing Workspace */}
         {currentTab === 'briefing' && (
-          <div>
-            {isInterviewActive ? (
-              <FocusedInterview
-                lead={initialLead}
-                onBackToBriefing={() => setIsInterviewActive(false)}
-                onViewThread={handleViewThread}
-                onEvidenceCaptured={handleEvidenceCaptured}
-              />
-            ) : (
-              <PrivateBriefing
-                lead={initialLead}
-                onOpenInterview={() => setIsInterviewActive(true)}
-                onViewThread={handleViewThread}
-              />
-            )}
-          </div>
+          <PrivateBriefing lead={initialLead} onViewThread={handleViewThread} />
         )}
 
         {/* Skill-driven Tailoring Runs */}
@@ -127,10 +83,7 @@ export function App() {
             sources={initialSources}
             evidence={evidenceList}
             threads={threads}
-            onSelectLead={() => {
-              navigateTo('briefing');
-              setIsInterviewActive(true);
-            }}
+            onSelectLead={() => navigateTo('briefing')}
           />
         )}
 

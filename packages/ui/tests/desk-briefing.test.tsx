@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { PrivateBriefing } from '../src/views/desk/PrivateBriefing';
 import { initialLead } from '../src/data/deskFixtures';
 
@@ -27,6 +27,8 @@ describe('Private Briefing View', () => {
         onViewThread={mockOnViewThread}
       />
     );
+
+    expect(screen.getByRole('note', { name: /Sample data/i })).toBeInTheDocument();
 
     // The Editor role and lead headline
     expect(screen.getByText('The Editor')).toBeInTheDocument();
@@ -79,18 +81,4 @@ describe('Private Briefing View', () => {
     expect(screen.getByText(/Quantitative outcomes/i)).toBeInTheDocument();
   });
 
-  it('navigates to focused interview when clicking start interview button or lead card', () => {
-    render(
-      <PrivateBriefing
-        lead={initialLead}
-        onOpenInterview={mockOnOpenInterview}
-        onViewThread={mockOnViewThread}
-      />
-    );
-
-    const startBtn = screen.getByRole('button', { name: /Start focused interview/i });
-    fireEvent.click(startBtn);
-
-    expect(mockOnOpenInterview).toHaveBeenCalledTimes(1);
-  });
 });
