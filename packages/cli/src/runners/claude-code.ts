@@ -96,7 +96,12 @@ export class ClaudeCodeRunner implements ModelRunner {
           ...this.prefixArgs,
           ...buildClaudeArgs({ schema: req.schema, systemPromptFile, model: this.model || undefined }),
         ];
+        // Use the Claude Code login shown in Settings, not whatever API key happens to be in the environment.
+        const env = { ...process.env };
+        delete env.ANTHROPIC_API_KEY;
+        delete env.ANTHROPIC_AUTH_TOKEN;
         const child = spawn(this.command, args, {
+          env,
           cwd: runDir,
           stdio: ['pipe', 'pipe', 'pipe'],
           windowsHide: true,

@@ -8,6 +8,7 @@ import { OllamaRunner } from '../src/runners/ollama.js';
 import { AnthropicApiRunner } from '../src/runners/anthropic-api.js';
 import { FakeRunner } from '../src/runners/fake.js';
 import { RunnerError, type RunnerRequest } from '../src/runners/types.js';
+import { ANTHROPIC_KEY_ACCOUNT, MemoryCredentialStore } from '../src/settings/credentials.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fakeClaude = path.join(here, 'fixtures', 'fake-claude.mjs');
@@ -132,10 +133,22 @@ describe('OllamaRunner', () => {
 
 describe('AnthropicApiRunner', () => {
   it('is unavailable without credentials and defaults to claude-opus-5', async () => {
-    const runner = new AnthropicApiRunner({ env: {} });
+    const store = new MemoryCredentialStore();
+    const runner = new AnthropicApiRunner({ env: {}, store });
     expect(runner.model).toBe('claude-opus-5');
     expect((await runner.detect()).available).toBe(false);
-    expect((await new AnthropicApiRunner({ env: { ANTHROPIC_API_KEY: 'x' } }).detect()).available).toBe(true);
+    expect((await new AnthropicApiRunner({ env: { ANTHROPIC_API_KEY: 'x'.repeat(24) }, store }).detect()).detail).toContain('ANTHROPIC_API_KEY');
+  });
+
+  it('uses a key saved in the credential store without touching process.env', async () => {
+    const store = new MemoryCredentialStore();
+    store.set(ANTHROPIC_KEY_ACCOUNT, 'sk-ant-test-0000000000abcd');
+    const before = process.env.ANTHROPIC_API_KEY;
+    const detection = await new AnthropicApiRunner({ env: {}, store }).detect();
+    expect(detection.available).toBe(true);
+    expect(detection.detail).toContain('OS credential store, ending abcd');
+    expect(detection.detail).not.toContain('sk-ant-test');
+    expect(process.env.ANTHROPIC_API_KEY).toBe(before);
   });
 });
 

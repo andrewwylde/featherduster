@@ -6,7 +6,7 @@ import { DeskSidebar, type DeskTab } from './desk/DeskSidebar';
 import { DeskHeader } from './desk/DeskHeader';
 import { OnboardingModal } from './desk/OnboardingModal';
 
-export type NavTab = 'briefing' | 'threads' | 'evidence' | 'skills' | 'exports' | 'rubrics' | 'tailor';
+export type NavTab = 'briefing' | 'threads' | 'evidence' | 'skills' | 'exports' | 'rubrics' | 'tailor' | 'settings';
 
 interface LayoutProps {
   currentTab: NavTab;

@@ -4,7 +4,26 @@ import fs from 'node:fs';
 const args = process.argv.slice(2);
 const mode = process.env.FAKE_CLAUDE_MODE || 'ok';
 
-if (args.includes('--version')) {
+if (args[0] === 'auth') {
+  if (process.env.FAKE_CLAUDE_ENV_RECORD) fs.writeFileSync(process.env.FAKE_CLAUDE_ENV_RECORD, JSON.stringify({ hasKey: !!process.env.ANTHROPIC_API_KEY }));
+  if (args[1] === 'status') {
+    const loggedIn = process.env.FAKE_CLAUDE_AUTH !== 'out';
+    process.stdout.write(JSON.stringify(loggedIn
+      ? { loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty', email: 'dev@example.com', orgName: 'Dev Org', subscriptionType: 'pro' }
+      : { loggedIn: false }));
+    process.exit(0);
+  }
+  if (args[1] === 'login') {
+    process.stdout.write(`Opening browser... If it did not open, visit https://claude.ai/oauth/authorize?mode=${args.includes('--console') ? 'console' : 'claudeai'}\n`);
+    const loginMode = process.env.FAKE_CLAUDE_LOGIN || 'ok';
+    if (loginMode === 'hang') setInterval(() => {}, 1000);
+    else setTimeout(() => process.exit(loginMode === 'ok' ? 0 : 1), 200);
+  }
+  if (args[1] === 'logout') {
+    process.stdout.write('Logged out.\n');
+    process.exit(0);
+  }
+} else if (args.includes('--version')) {
   process.stdout.write('9.9.9 (Claude Code)\n');
   process.exit(0);
 }

@@ -81,6 +81,9 @@ import { isConsolidatedLedgerFile, isInsideWorkspace, toWorkspaceRelative } from
 import { defaultRunnerFactory, type RunnerFactory } from './runners/registry.js';
 import { TailoringOrchestrator, type TailoringEvent } from './tailoring/orchestrator.js';
 import { mountTailoringRoutes } from './tailoring/routes.js';
+import { mountSettingsRoutes } from './settings/routes.js';
+import { ClaudeAuthManager } from './settings/claude-auth.js';
+import { getCredentialStore, type CredentialStore } from './settings/credentials.js';
 
 export interface CreateAppOptions {
   watcher?: WorkspaceWatcher;
@@ -89,6 +92,12 @@ export interface CreateAppOptions {
   runnerFactory?: RunnerFactory;
   /** Receives the orchestrator instance (tests). */
   onOrchestrator?: (orchestrator: TailoringOrchestrator) => void;
+  /** Override secret storage (tests). */
+  credentialStore?: CredentialStore;
+  /** Override the Claude Code auth wrapper (tests). */
+  claudeAuth?: ClaudeAuthManager;
+  /** Override environment used for credential resolution (tests). */
+  env?: NodeJS.ProcessEnv;
 }
 
 export function findFiles(
@@ -876,6 +885,15 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
 
   // 6e. LLM tailoring runs
   mountTailoringRoutes(app, orchestrator);
+
+  // 6f. Runner settings (credentials, Claude Code account, preferences)
+  mountSettingsRoutes(app, {
+    workspaceDir: resolvedWorkspaceDir,
+    store: () => options?.credentialStore ?? getCredentialStore(),
+    claudeAuth: options?.claudeAuth ?? new ClaudeAuthManager({ command: orchestrator.config().runner['claude-code'].command }),
+    runnerFactory: options?.runnerFactory ?? defaultRunnerFactory,
+    env: options?.env,
+  });
 
   // 7. Integrity check
   app.get('/api/integrity/check', (c) => {

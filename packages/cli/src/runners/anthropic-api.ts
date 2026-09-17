@@ -1,11 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { abortError, RunnerError, type ModelRunner, type RunnerDetection, type RunnerRequest } from './types.js';
+import {
+  getCredentialStore,
+  resolveAnthropicCredential,
+  type CredentialStore,
+  type ResolvedCredential,
+} from '../settings/credentials.js';
 
 export interface AnthropicApiRunnerOptions {
   model?: string;
   /** Injected for tests. */
   client?: Anthropic;
   env?: NodeJS.ProcessEnv;
+  /** Credential store for keys saved from the settings UI (defaults to the OS store). */
+  store?: CredentialStore;
 }
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-opus-5';
@@ -21,26 +29,47 @@ export class AnthropicApiRunner implements ModelRunner {
   readonly model: string;
   private readonly injectedClient?: Anthropic;
   private readonly env: NodeJS.ProcessEnv;
+  private readonly store?: CredentialStore;
 
   constructor(options: AnthropicApiRunnerOptions = {}) {
     this.model = options.model || DEFAULT_ANTHROPIC_MODEL;
     this.injectedClient = options.client;
     this.env = options.env ?? process.env;
+    this.store = options.store;
+  }
+
+  private credential(): ResolvedCredential | null {
+    return resolveAnthropicCredential(this.env, this.store ?? getCredentialStore());
+  }
+
+  /** Builds a client from the resolved key without copying it into process.env. */
+  private client(): Anthropic {
+    if (this.injectedClient) return this.injectedClient;
+    const cred = this.credential();
+    if (!cred) {
+      throw new RunnerError('unavailable', 'No Anthropic API key configured. Add one in Settings.');
+    }
+    return cred.envVar === 'ANTHROPIC_AUTH_TOKEN'
+      ? new Anthropic({ apiKey: null, authToken: cred.key })
+      : new Anthropic({ apiKey: cred.key, authToken: null });
   }
 
   async detect(): Promise<RunnerDetection> {
-    if (this.injectedClient || this.env.ANTHROPIC_API_KEY || this.env.ANTHROPIC_AUTH_TOKEN) {
-      return { available: true, detail: `API credentials found in environment (${this.model})` };
+    if (this.injectedClient) return { available: true, detail: `Injected client (${this.model})` };
+    const cred = this.credential();
+    if (cred) {
+      const where = cred.source === 'env' ? `from ${cred.envVar}` : 'from the OS credential store';
+      return { available: true, detail: `API key ${where}, ending ${cred.key.slice(-4)} (${this.model})` };
     }
     return {
       available: false,
-      detail: 'Set ANTHROPIC_API_KEY in the environment that launches Featherduster.',
+      detail: 'No API key. Add one in Settings, or set ANTHROPIC_API_KEY.',
     };
   }
 
   async run(req: RunnerRequest): Promise<unknown> {
     if (req.signal.aborted) throw abortError();
-    const client = this.injectedClient ?? new Anthropic();
+    const client = this.client();
 
     req.onProgress({ kind: 'status', text: `Calling ${this.model}…` });
     let message: Anthropic.Beta.BetaMessage;

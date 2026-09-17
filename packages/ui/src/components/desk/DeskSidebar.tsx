@@ -7,9 +7,10 @@ import {
   Download,
   Shield,
   WandSparkles,
+  Settings,
 } from 'lucide-react';
 
-export type DeskTab = 'briefing' | 'tailor' | 'threads' | 'evidence' | 'skills' | 'exports';
+export type DeskTab = 'briefing' | 'tailor' | 'threads' | 'evidence' | 'skills' | 'exports' | 'settings';
 
 interface DeskSidebarProps {
   currentTab: DeskTab;
@@ -24,6 +25,7 @@ const pathByTab: Record<DeskTab, string> = {
   evidence: '/evidence',
   skills: '/skills',
   exports: '/exports',
+  settings: '/settings',
 };
 
 export const DeskSidebar: React.FC<DeskSidebarProps> = ({
@@ -38,6 +40,7 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
     { id: 'evidence', label: 'Evidence', icon: BookOpen },
     { id: 'skills', label: 'Skills', icon: Target },
     { id: 'exports', label: 'Exports', icon: Download },
+    { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
   return (

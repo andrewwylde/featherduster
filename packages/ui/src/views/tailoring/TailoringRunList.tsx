@@ -12,12 +12,13 @@ import { StatusPill, cardClass, eyebrowClass, inputClass, primaryButton, seconda
 
 interface TailoringRunListProps {
   onOpenRun: (slug: string) => void;
+  onOpenSettings?: () => void;
   /** Posting handed over from the Exports canvas ("Run full tailoring"). */
   initialPosting?: string;
   onInitialPostingConsumed?: () => void;
 }
 
-export const TailoringRunList: React.FC<TailoringRunListProps> = ({ onOpenRun, initialPosting, onInitialPostingConsumed }) => {
+export const TailoringRunList: React.FC<TailoringRunListProps> = ({ onOpenRun, onOpenSettings, initialPosting, onInitialPostingConsumed }) => {
   const [runs, setRuns] = useState<TailoringRunSummary[]>([]);
   const [runners, setRunners] = useState<RunnerInfo[]>([]);
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
@@ -205,7 +206,12 @@ export const TailoringRunList: React.FC<TailoringRunListProps> = ({ onOpenRun, i
                 {selectedRunner.detail}.{' '}
                 {selectedRunner.locality === 'cloud'
                   ? 'Cloud runner: evidence is redacted with your privacy rules before it is sent.'
-                  : 'Local runner: evidence never leaves this machine.'}
+                  : 'Local runner: evidence never leaves this machine.'}{' '}
+                {onOpenSettings && (
+                  <button type="button" onClick={onOpenSettings} className="font-medium text-vermilion-600 underline dark:text-vermilion-400">
+                    Configure runners
+                  </button>
+                )}
               </span>
             </p>
           )}

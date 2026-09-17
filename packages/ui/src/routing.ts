@@ -8,6 +8,7 @@ const routeByTab: Record<NavTab, string> = {
   exports: '/exports',
   rubrics: '/skills',
   tailor: '/tailor',
+  settings: '/settings',
 };
 
 const tabByRoute: Record<string, NavTab> = {
@@ -19,6 +20,7 @@ const tabByRoute: Record<string, NavTab> = {
   '/rubrics': 'skills',
   '/exports': 'exports',
   '/tailor': 'tailor',
+  '/settings': 'settings',
 };
 
 export function pathForTab(tab: NavTab): string {

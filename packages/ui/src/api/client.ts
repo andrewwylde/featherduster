@@ -184,6 +184,64 @@ export interface PreflightResult {
   error?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Runner settings
+// ---------------------------------------------------------------------------
+
+export interface RunnerPreferences {
+  default: RunnerId;
+  step_timeout_seconds: number;
+  'claude-code': { model: string; command: string };
+  'anthropic-api': { model: string };
+  ollama: { url: string; model: string; max_context: number };
+}
+
+export interface CredentialSummary {
+  configured: boolean;
+  source: 'env' | 'keychain' | null;
+  envVar: string | null;
+  last4: string | null;
+  storeAvailable: boolean;
+  storeDetail: string;
+  shadowedKeychainValue: boolean;
+}
+
+export interface SettingsResponse {
+  runner: RunnerPreferences;
+  runner_consent: Partial<Record<RunnerId, string>>;
+  deslop_warn_band: 'low' | 'moderate' | 'high';
+  credentials: { anthropic: CredentialSummary };
+}
+
+export interface RunnerSettingsPatch {
+  default?: Exclude<RunnerId, 'fake'>;
+  step_timeout_seconds?: number;
+  deslop_warn_band?: 'low' | 'moderate' | 'high';
+  'claude-code'?: { model?: string };
+  'anthropic-api'?: { model?: string };
+  ollama?: { url?: string; model?: string; max_context?: number };
+}
+
+export interface ClaudeAuthStatus {
+  installed: boolean;
+  loggedIn: boolean;
+  authMethod: string | null;
+  apiProvider: string | null;
+  email: string | null;
+  orgName: string | null;
+  subscriptionType: string | null;
+  detail: string;
+}
+
+export interface ClaudeLoginJob {
+  state: 'running' | 'succeeded' | 'failed' | 'cancelled';
+  mode: 'claudeai' | 'console';
+  startedAt: string;
+  finishedAt: string | null;
+  output: string;
+  url: string | null;
+}
+
 export class ApiClient {
   private baseUrl: string;
 
@@ -451,6 +509,59 @@ export class ApiClient {
 
   async finalizeTailoringRun(slug: string): Promise<FinalizeResponse> {
     return this.fetchJson<FinalizeResponse>(`/api/tailoring/${encodeURIComponent(slug)}/finalize`, { method: 'POST' });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Runner settings
+  // ---------------------------------------------------------------------------
+
+  private jsonRequest(method: string, body: unknown = {}): RequestInit {
+    return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) };
+  }
+
+  async getSettings(): Promise<SettingsResponse> {
+    return this.fetchJson<SettingsResponse>('/api/settings');
+  }
+
+  async updateRunnerSettings(patch: RunnerSettingsPatch): Promise<SettingsResponse> {
+    return this.fetchJson<SettingsResponse>('/api/settings/runner', this.jsonRequest('PUT', patch));
+  }
+
+  async saveAnthropicKey(apiKey: string): Promise<SettingsResponse> {
+    return this.fetchJson<SettingsResponse>('/api/settings/credentials/anthropic', this.jsonRequest('PUT', { apiKey }));
+  }
+
+  async removeAnthropicKey(): Promise<SettingsResponse> {
+    return this.fetchJson<SettingsResponse>('/api/settings/credentials/anthropic', this.jsonRequest('DELETE'));
+  }
+
+  async revokeRunnerConsent(runner: RunnerId): Promise<SettingsResponse> {
+    return this.fetchJson<SettingsResponse>(`/api/settings/consent/${encodeURIComponent(runner)}`, this.jsonRequest('DELETE'));
+  }
+
+  async testRunner(runner: RunnerId): Promise<{ available: boolean; detail: string }> {
+    return this.fetchJson(`/api/settings/runners/${encodeURIComponent(runner)}/test`, this.jsonRequest('POST'));
+  }
+
+  async getOllamaModels(url?: string): Promise<{ reachable: boolean; models: string[]; detail: string }> {
+    const q = url ? `?url=${encodeURIComponent(url)}` : '';
+    return this.fetchJson(`/api/settings/ollama/models${q}`);
+  }
+
+  async getClaudeAuth(): Promise<{ status: ClaudeAuthStatus; login: ClaudeLoginJob | null }> {
+    return this.fetchJson('/api/settings/claude-code/auth');
+  }
+
+  async startClaudeLogin(mode: 'claudeai' | 'console'): Promise<{ login: ClaudeLoginJob }> {
+    return this.fetchJson('/api/settings/claude-code/login', this.jsonRequest('POST', { mode }));
+  }
+
+  async cancelClaudeLogin(): Promise<{ login: ClaudeLoginJob | null }> {
+    return this.fetchJson('/api/settings/claude-code/login/cancel', this.jsonRequest('POST'));
+  }
+
+  async logoutClaude(): Promise<{ ok: boolean; detail: string; status: ClaudeAuthStatus }> {
+    return this.fetchJson('/api/settings/claude-code/logout', this.jsonRequest('POST'));
   }
 }
 

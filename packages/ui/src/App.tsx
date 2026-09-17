@@ -11,6 +11,7 @@ import { useDeskData } from './hooks/useDeskData';
 import { pathForTab, tabForPath, tailoringSlugForPath } from './routing';
 import { TailoringRunList } from './views/tailoring/TailoringRunList';
 import { TailoringRun } from './views/tailoring/TailoringRun';
+import { SettingsView } from './views/settings/SettingsView';
 
 export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(window.location.pathname));
@@ -83,10 +84,14 @@ export function App() {
           ) : (
             <TailoringRunList
               onOpenRun={(slug) => navigatePath(`/tailor/${slug}`)}
+              onOpenSettings={() => navigateTo('settings')}
               initialPosting={handoffPosting}
               onInitialPostingConsumed={() => setHandoffPosting(undefined)}
             />
           ))}
+
+        {/* Runner Settings */}
+        {currentTab === 'settings' && <SettingsView />}
 
         {/* Story Threads Workspace */}
         {currentTab === 'threads' && (
