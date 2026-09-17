@@ -13,13 +13,17 @@ import {
   Tag,
 } from 'lucide-react';
 import type { EvidenceRecord } from '@featherduster/core';
-import { apiClient } from '../api/client';
+import { apiClient, type TailoringCitations } from '../api/client';
 import { useLiveSync } from '../hooks/useLiveSync';
 import { QuickCaptureModal } from '../components/QuickCaptureModal';
 import { EvidenceDetailModal } from '../components/EvidenceDetailModal';
 
 export const EvidenceExplorer: React.FC = () => {
   const [evidenceList, setEvidenceList] = useState<EvidenceRecord[]>([]);
+  const [citations, setCitations] = useState<TailoringCitations>({});
+  useEffect(() => {
+    apiClient.getTailoringCitations().then(setCitations).catch(() => setCitations({}));
+  }, [evidenceList]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -473,6 +477,14 @@ export const EvidenceExplorer: React.FC = () => {
                   <h3 className="text-base font-bold text-white group-hover:text-emerald-300 transition-colors line-clamp-2">
                     {item.title}
                   </h3>
+                  {citations[item.id]?.length ? (
+                    <span
+                      title={citations[item.id].map((c) => c.title).join(', ')}
+                      className="inline-flex w-fit items-center rounded-full border border-vermilion-500/30 bg-vermilion-500/10 px-2 py-0.5 text-[10px] font-semibold text-vermilion-300"
+                    >
+                      Cited in {citations[item.id].length} tailoring {citations[item.id].length === 1 ? 'run' : 'runs'}
+                    </span>
+                  ) : null}
 
                   {/* Key Impact Snippet */}
                   <div className="p-3 bg-slate-950/60 rounded-xl border border-slate-800/60 text-xs text-slate-300 line-clamp-3">

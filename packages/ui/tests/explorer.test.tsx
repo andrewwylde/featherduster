@@ -308,4 +308,12 @@ describe('Evidence Explorer Tests', () => {
       expect(onClose).toHaveBeenCalled();
     });
   });
+  it('shows how many tailoring runs cite each entry', async () => {
+    vi.spyOn(apiClient, 'getEvidence').mockResolvedValue(sampleEvidenceList);
+    vi.spyOn(apiClient, 'getTailoringCitations').mockResolvedValue({
+      [sampleEvidenceList[0].id]: [{ slug: 'a', title: 'A' }, { slug: 'b', title: 'B' }],
+    });
+    render(<EvidenceExplorer />);
+    expect(await screen.findByText('Cited in 2 tailoring runs')).toBeInTheDocument();
+  });
 });
