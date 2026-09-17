@@ -45,6 +45,8 @@ export interface RunnersResponse {
 
 export type TailoringRunSummary = RunManifest & { needs_review: boolean };
 
+export type TailoringCitations = Record<string, Array<{ slug: string; title: string }>>;
+
 export interface TailoringRunDetail {
   manifest: RunManifest;
   posting: string;
@@ -377,6 +379,22 @@ export class ApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ runner }),
+    });
+  }
+
+  async getTailoringCitations(): Promise<TailoringCitations> {
+    return this.fetchJson<TailoringCitations>('/api/tailoring-citations');
+  }
+
+  async updateEvidence(
+    id: string,
+    entry: EvidenceEntry,
+    narrative: string
+  ): Promise<{ success: boolean; entry: EvidenceEntry; filePath: string }> {
+    return this.fetchJson(`/api/evidence/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ entry, narrative }),
     });
   }
 

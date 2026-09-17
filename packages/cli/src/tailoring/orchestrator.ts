@@ -182,6 +182,24 @@ export class TailoringOrchestrator {
       needs_review: ['analysis_ready', 'alignment_review', 'proposal_review'].includes(m.state),
     }));
   }
+  /** Evidence ID → runs whose approved alignment or accepted proposals cite it. */
+  citationIndex(): Record<string, Array<{ slug: string; title: string }>> {
+    const index: Record<string, Array<{ slug: string; title: string }>> = {};
+    for (const manifest of this.store.list()) {
+      const ids = new Set<string>();
+      const alignment = this.store.readJson(manifest.slug, RUN_FILES.alignment, (raw) => AlignmentMatrixSchema.parse(raw));
+      alignment?.rows.forEach((row) => row.citations.forEach((c) => ids.add(c)));
+      const proposals = this.store.readJson(manifest.slug, RUN_FILES.proposals, (raw) => ProposalSetSchema.parse(raw));
+      proposals?.proposals
+        .filter((p) => p.decision === 'accepted')
+        .forEach((p) => p.citations.forEach((c) => ids.add(c)));
+      for (const id of ids) {
+        (index[id] ??= []).push({ slug: manifest.slug, title: manifest.title || manifest.slug });
+      }
+    }
+    return index;
+  }
+
 
   getRun(slug: string): RunDetail {
     const manifest = this.store.readManifest(slug);

@@ -40,6 +40,14 @@ export function mountTailoringRoutes(app: Hono, orchestrator: TailoringOrchestra
     }
   });
 
+  app.get('/api/tailoring-citations', (c) => {
+    try {
+      return c.json(orchestrator.citationIndex());
+    } catch (err) {
+      return handleError(c, err);
+    }
+  });
+
   app.get('/api/tailoring', (c) => {
     try {
       return c.json({ runs: orchestrator.listRuns() });

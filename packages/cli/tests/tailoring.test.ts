@@ -348,6 +348,19 @@ describe('Tailoring runs API', () => {
     expect((await call('GET', '/api/tailoring/missing-run')).status).toBe(404);
   });
 
+  it('indexes which runs cite each evidence entry', async () => {
+    build([ANALYSIS, ALIGNMENT]);
+    const slug = await createRun('citations-check');
+    await runAndApprove(slug, 'analysis');
+    await call('POST', `/api/tailoring/${slug}/steps/analysis/approve`);
+    await runAndApprove(slug, 'alignment');
+
+    const res = await call('GET', '/api/tailoring-citations');
+    expect(res.status).toBe(200);
+    expect(res.json['ev-002']).toEqual([{ slug, title: 'citations-check' }]);
+    expect(res.json['ev-001']).toEqual([{ slug, title: 'citations-check' }]);
+  });
+
   it('lists runners with detection info', async () => {
     build([]);
     const res = await call('GET', '/api/runners');
