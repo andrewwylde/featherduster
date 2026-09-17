@@ -77,6 +77,7 @@ import {
   SLOP_WEIGHTS,
 } from '@featherduster/core';
 import { WorkspaceWatcher } from './watcher.js';
+import { isConsolidatedLedgerFile, isInsideWorkspace, toWorkspaceRelative } from './evidence-files.js';
 import { defaultRunnerFactory, type RunnerFactory } from './runners/registry.js';
 import { TailoringOrchestrator, type TailoringEvent } from './tailoring/orchestrator.js';
 import { mountTailoringRoutes } from './tailoring/routes.js';
@@ -460,6 +461,22 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       const validatedEntry = EvidenceEntrySchema.parse(entryData);
       const serialized = serializeEvidenceMarkdown(validatedEntry, narrative);
 
+      if (!body.filePath) {
+        const existing = loadEvidenceStore(resolvedWorkspaceDir).get(validatedEntry.id);
+        if (existing) {
+          return c.json(
+            {
+              success: false,
+              code: 'duplicate_id',
+              error: `Evidence ${validatedEntry.id} already exists${
+                existing.filePath ? ` in ${toWorkspaceRelative(resolvedWorkspaceDir, existing.filePath)}` : ''
+              }. Use a new ID or edit the existing entry.`,
+            },
+            409
+          );
+        }
+      }
+
       const companySlug = (validatedEntry.company || 'general').replace(/[^a-zA-Z0-9_-]/g, '_');
       const safeId = validatedEntry.id.replace(/[^a-zA-Z0-9_-]/g, '_');
       const evidenceRootDir = path.resolve(resolvedWorkspaceDir, 'evidence');
@@ -489,6 +506,22 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       if (fs.existsSync(targetFile) && fs.lstatSync(targetFile).isSymbolicLink()) {
         return c.json({ success: false, error: 'Cannot overwrite symbolic links' }, 403);
       }
+      if (isConsolidatedLedgerFile(targetFile)) {
+        return c.json(
+          {
+            success: false,
+            code: 'ledger_file',
+            error: 'Refusing to overwrite a consolidated evidence ledger with a single entry.',
+          },
+          409
+        );
+      }
+      if (!body.filePath && fs.existsSync(targetFile)) {
+        return c.json(
+          { success: false, code: 'duplicate_file', error: `${toWorkspaceRelative(resolvedWorkspaceDir, targetFile)} already exists.` },
+          409
+        );
+      }
 
       fs.mkdirSync(path.dirname(targetFile), { recursive: true });
       fs.writeFileSync(targetFile, serialized, 'utf-8');
@@ -506,6 +539,47 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         },
         400
       );
+    }
+  });
+
+
+  // 3b. Evidence update (single-entry files only)
+  app.put('/api/evidence/:id', async (c) => {
+    try {
+      const id = c.req.param('id');
+      const body = await c.req.json();
+      const record = loadEvidenceStore(resolvedWorkspaceDir).get(id);
+      if (!record || !record.filePath) {
+        return c.json({ success: false, code: 'not_found', error: `Evidence ${id} not found` }, 404);
+      }
+      const validatedEntry = EvidenceEntrySchema.parse(body.entry);
+      if (validatedEntry.id !== id) {
+        return c.json({ success: false, code: 'id_mismatch', error: 'Entry ID cannot change on update' }, 400);
+      }
+      const file = path.resolve(record.filePath);
+      const rel = toWorkspaceRelative(resolvedWorkspaceDir, file);
+      if (!isInsideWorkspace(resolvedWorkspaceDir, file)) {
+        return c.json({ success: false, code: 'outside_workspace', error: 'Evidence file is outside the workspace' }, 403);
+      }
+      if (fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink()) {
+        return c.json({ success: false, code: 'symlink', error: 'Cannot overwrite symbolic links' }, 403);
+      }
+      if (isConsolidatedLedgerFile(file)) {
+        return c.json(
+          {
+            success: false,
+            code: 'ledger_entry',
+            filePath: rel,
+            error: `${id} lives in the consolidated ledger ${rel}. Edit it in that file; Featherduster does not rewrite ledgers.`,
+          },
+          409
+        );
+      }
+      const narrative = typeof body.narrative === 'string' ? body.narrative : record.narrative;
+      fs.writeFileSync(file, serializeEvidenceMarkdown(validatedEntry, narrative), 'utf-8');
+      return c.json({ success: true, entry: validatedEntry, filePath: rel });
+    } catch (err: any) {
+      return c.json({ success: false, code: 'invalid', error: err.message || 'Failed to update evidence', issues: err.issues }, 400);
     }
   });
 
