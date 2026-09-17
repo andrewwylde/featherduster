@@ -6,7 +6,7 @@ import { StoryThreadsNodeMap } from './views/desk/StoryThreadsNodeMap';
 import { EvidenceExplorer } from './views/EvidenceExplorer';
 import { RubricGapMatrix } from './views/RubricGapMatrix';
 import { ResumeTailor } from './views/ResumeTailor';
-import { initialLead } from './data/deskFixtures';
+import { EvidenceStrengthener } from './views/desk/EvidenceStrengthener';
 import { useDeskData } from './hooks/useDeskData';
 import { pathForTab, tabForPath, tailoringSlugForPath } from './routing';
 import { TailoringRunList } from './views/tailoring/TailoringRunList';
@@ -18,10 +18,7 @@ export function App() {
   const [handoffPosting, setHandoffPosting] = useState<string | undefined>(undefined);
   const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
   const desk = useDeskData();
-
-  const handleViewThread = (_threadId?: string) => {
-    navigateTo('threads');
-  };
+  const [strengthenId, setStrengthenId] = useState<string | null>(null);
 
   const navigatePath = (path: string) => {
     if (window.location.pathname !== path) {
@@ -49,9 +46,28 @@ export function App() {
         onSelectTab={navigateTo}
       >
         {/* Briefing Workspace */}
-        {currentTab === 'briefing' && (
-          <PrivateBriefing lead={initialLead} onViewThread={handleViewThread} />
-        )}
+        {currentTab === 'briefing' &&
+          (strengthenId && desk.model.recordsById.get(strengthenId) ? (
+            <EvidenceStrengthener
+              key={strengthenId}
+              record={desk.model.recordsById.get(strengthenId)!}
+              onBack={() => setStrengthenId(null)}
+              onSaved={() => desk.refresh()}
+            />
+          ) : (
+            <PrivateBriefing
+              loading={desk.loading}
+              error={desk.error}
+              briefing={desk.briefing}
+              runs={desk.runs}
+              onStrengthen={setStrengthenId}
+              onViewThreads={() => navigateTo('threads')}
+              onOpenTailor={() => navigatePath('/tailor')}
+              onOpenRun={(slug) => navigatePath(`/tailor/${slug}`)}
+              onOpenEvidence={() => navigateTo('evidence')}
+              onRetry={desk.refresh}
+            />
+          ))}
 
         {/* Skill-driven Tailoring Runs */}
         {currentTab === 'tailor' &&

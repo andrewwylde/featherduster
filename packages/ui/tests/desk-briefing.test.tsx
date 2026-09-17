@@ -1,84 +1,79 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import type { RunManifest } from '@featherduster/core';
 import { PrivateBriefing } from '../src/views/desk/PrivateBriefing';
-import { initialLead } from '../src/data/deskFixtures';
+import { buildBriefing, buildDeskModel } from '../src/data/deskModel';
+import { testRecords } from './fixtures/deskRecords';
 
-describe('Private Briefing View', () => {
-  const mockOnOpenInterview = vi.fn();
-  const mockOnViewThread = vi.fn();
+const run = (slug: string, needs_review: boolean) =>
+  ({ slug, title: `Run ${slug}`, state: needs_review ? 'proposal_review' : 'complete', updated: '2026-09-16T10:00:00Z', needs_review } as RunManifest & { needs_review: boolean });
 
-  beforeEach(() => {
-    vi.restoreAllMocks();
+function setup(overrides: Partial<React.ComponentProps<typeof PrivateBriefing>> = {}) {
+  const model = buildDeskModel(testRecords);
+  const props = {
+    loading: false,
+    error: null,
+    briefing: buildBriefing(model),
+    runs: [run('acme', true), run('done', false)],
+    onStrengthen: vi.fn(),
+    onViewThreads: vi.fn(),
+    onOpenTailor: vi.fn(),
+    onOpenRun: vi.fn(),
+    onOpenEvidence: vi.fn(),
+    onRetry: vi.fn(),
+    ...overrides,
+  };
+  render(<PrivateBriefing {...props} />);
+  return props;
+}
+
+describe('Private Briefing (ledger-backed)', () => {
+  afterEach(cleanup);
+
+  it('leads with the largest real thread and its recent entries', () => {
+    setup();
+    expect(screen.getByRole('heading', { name: 'Your strongest thread: Platform' })).toBeInTheDocument();
+    expect(screen.getByText(/Computed from your ledger/i)).toBeInTheDocument();
+    const recent = screen.getByRole('list', { name: 'Recent entries' });
+    for (const title of ['Queue migration', 'Latency work', 'Gateway rewrite']) {
+      expect(within(recent).getByText(title)).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('note', { name: /Sample data/i })).not.toBeInTheDocument();
+    expect(screen.getByText('4 entries · 2 verified · 2 need proof · 3 threads')).toBeInTheDocument();
   });
 
-  afterEach(() => {
-    cleanup();
+  it('lists entries needing proof with strengthen actions', () => {
+    const props = setup();
+    const list = screen.getByRole('list', { name: 'Needs proof' });
+    fireEvent.click(within(list).getByRole('button', { name: 'Strengthen Latency work' }));
+    expect(props.onStrengthen).toHaveBeenCalledWith('ev-003');
   });
 
-  it('renders The Editor recommendation, headline, and signal source cards', () => {
-    render(
-      <PrivateBriefing
-        lead={initialLead}
-        onOpenInterview={mockOnOpenInterview}
-        onViewThread={mockOnViewThread}
-      />
-    );
-
-    expect(screen.getByRole('note', { name: /Sample data/i })).toBeInTheDocument();
-
-    // The Editor role and lead headline
-    expect(screen.getByText('The Editor')).toBeInTheDocument();
-    expect(screen.getByText('A reliability story may be taking shape.')).toBeInTheDocument();
-    expect(
-      screen.getByText(/You've shipped infrastructure improvements, documented operational learnings/i)
-    ).toBeInTheDocument();
-
-    // 3 source cards
-    expect(screen.getByText('Add automated failover for job workers')).toBeInTheDocument();
-    expect(screen.getByText('Post-incident improvements')).toBeInTheDocument();
-    expect(screen.getByText('Leadership during the outage')).toBeInTheDocument();
-
-    // Editorial quotes with attribution
-    expect(
-      screen.getByText(/This will save us a lot of 3 a.m. pages/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Strong analysis and practical next steps/i)
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/You brought clarity when things were chaotic/i)
-    ).toBeInTheDocument();
+  it('surfaces tailoring: CTA and runs needing review', () => {
+    const props = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Tailor for a job' }));
+    expect(props.onOpenTailor).toHaveBeenCalled();
+    const review = screen.getByRole('list', { name: 'Runs needing review' });
+    expect(within(review).queryByText('Run done')).not.toBeInTheDocument();
+    fireEvent.click(within(review).getByRole('button', { name: /Run acme/ }));
+    expect(props.onOpenRun).toHaveBeenCalledWith('acme');
   });
 
-  it('renders "How the pieces connect" node map preview and "Live dossier" summary', () => {
-    render(
-      <PrivateBriefing
-        lead={initialLead}
-        onOpenInterview={mockOnOpenInterview}
-        onViewThread={mockOnViewThread}
-      />
-    );
-
-    expect(screen.getByText('How the pieces connect')).toBeInTheDocument();
-    expect(screen.getByText(/Sources roll up into evidence, which build your career story/i)).toBeInTheDocument();
-    expect(screen.getByText('Fit view')).toBeInTheDocument();
-
-    // Node items in graph
-    expect(screen.getByText('Improved system resilience')).toBeInTheDocument();
-    expect(screen.getByText('Operational ownership')).toBeInTheDocument();
-    expect(screen.getByText('Trusted by teammates')).toBeInTheDocument();
-    expect(screen.getAllByText('Reliability leadership').length).toBeGreaterThanOrEqual(1);
-
-    // Live dossier section
-    expect(screen.getByText('Live dossier')).toBeInTheDocument();
-    expect(screen.getByText('Claim')).toBeInTheDocument();
-    expect(screen.getByText(/You demonstrate reliability leadership/i)).toBeInTheDocument();
-    expect(screen.getByText('Still needed')).toBeInTheDocument();
-    expect(screen.getByText(/Quantitative outcomes/i)).toBeInTheDocument();
+  it('shows an empty ledger state instead of sample content', () => {
+    const props = setup({ briefing: null, runs: [] });
+    expect(screen.getByText('Your ledger is empty')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Capture evidence' }));
+    expect(props.onOpenEvidence).toHaveBeenCalled();
   });
 
+  it('shows load errors with retry', () => {
+    const props = setup({ error: 'server down', briefing: null });
+    expect(screen.getByRole('alert')).toHaveTextContent('server down');
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(props.onRetry).toHaveBeenCalled();
+  });
 });

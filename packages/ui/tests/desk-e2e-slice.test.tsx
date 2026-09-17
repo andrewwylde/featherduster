@@ -3,9 +3,10 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, cleanup } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { App } from '../src/App';
 import { apiClient } from '../src/api/client';
+import { testRecords } from './fixtures/deskRecords';
 
 describe('Career Intelligence Desk — Vertical Slice Integration Loop', () => {
   beforeEach(() => {
@@ -24,24 +25,34 @@ describe('Career Intelligence Desk — Vertical Slice Integration Loop', () => {
     vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
     vi.spyOn(apiClient, 'getRubrics').mockResolvedValue([]);
     vi.spyOn(apiClient, 'getResumes').mockResolvedValue([]);
+    vi.spyOn(apiClient, 'listTailoringRuns').mockResolvedValue([]);
+    vi.spyOn(apiClient, 'getTailoringCitations').mockResolvedValue({});
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  it('labels fixture-backed views as sample data and offers no evidence capture', async () => {
-    const saveSpy = vi.spyOn(apiClient, 'saveEvidence');
+  it('briefing → strengthen an entry → save through PUT → threads, all from ledger data', async () => {
+    vi.spyOn(apiClient, 'getEvidence').mockResolvedValue(testRecords);
+    vi.spyOn(apiClient, 'listTailoringRuns').mockResolvedValue([]);
+    vi.spyOn(apiClient, 'getTailoringCitations').mockResolvedValue({});
+    const update = vi.spyOn(apiClient, 'updateEvidence').mockResolvedValue({ success: true, entry: testRecords[2].entry, filePath: 'evidence/acme/ev-003.md' });
+    const create = vi.spyOn(apiClient, 'saveEvidence');
+
     render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Your strongest thread: Platform' })).toBeInTheDocument();
 
-    expect(await screen.findByRole('note', { name: /Sample data/i })).toHaveTextContent(/not your ledger/i);
-    expect(screen.queryByRole('button', { name: /Start focused interview/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /Capture evidence entry/i })).not.toBeInTheDocument();
-    expect(saveSpy).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Strengthen Latency work' }));
+    expect(await screen.findByRole('heading', { name: /Strengthen evidence: Latency work/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to ledger file' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith('ev-003', expect.anything(), expect.any(String)));
+    expect(create).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByRole('button', { name: /Back to briefing/ }));
     fireEvent.click(screen.getByRole('link', { name: 'Threads' }));
     expect(await screen.findByText('Story Threads & Node Map')).toBeInTheDocument();
-    expect(screen.queryByRole('note', { name: /Sample data/i })).not.toBeInTheDocument();
+    expect(screen.getAllByText('Platform').length).toBeGreaterThan(0);
   });
 
   it('supports light and dark theme switching in the full desk shell', () => {
