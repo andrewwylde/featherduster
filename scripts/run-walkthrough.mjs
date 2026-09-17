@@ -14,6 +14,9 @@ const WORKSPACE_DIR = 'C:/Users/drewk/career';
 const PORT = 4178;
 
 async function runWalkthrough() {
+  const corpusStatusBefore = fs.existsSync(path.join(WORKSPACE_DIR, '.git'))
+    ? (await import('node:child_process')).execSync('git status --porcelain', { cwd: WORKSPACE_DIR, encoding: 'utf-8' })
+    : null;
   console.log('============================================================');
   console.log('Featherduster: Career Intelligence Desk Playwright Runner');
   console.log('============================================================');
@@ -60,7 +63,7 @@ async function runWalkthrough() {
   try {
     console.log('\n[3/6] Navigating to Career Desk and executing vertical slice walkthrough...');
     await page.goto(`http://127.0.0.1:${PORT}`, { waitUntil: 'networkidle' });
-    await page.waitForSelector('text=The Editor');
+    await page.waitForSelector('text=Your strongest thread');
     await page.waitForTimeout(600);
 
     // Step 1: Private Briefing
@@ -85,12 +88,23 @@ async function runWalkthrough() {
     await page.locator('button[aria-label="Close"]').first().click();
     await page.waitForTimeout(400);
 
-    // Step 3: Story threads (read-only; this walkthrough runs against a real corpus and must never write)
-    console.log('  -> [Step 3] Opening Story Threads (read-only)...');
+    // Step 3: Strengthen view (read-only — this walkthrough runs against a real corpus; never click Save)
+    console.log('  -> [Step 3] Opening Strengthen evidence for the first entry needing proof (read-only)...');
+    const strengthen = page.locator('button[aria-label^="Strengthen "]').first();
+    if (await strengthen.count()) {
+      await strengthen.click();
+      await page.waitForSelector('text=Open gaps');
+      await page.waitForTimeout(500);
+      await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '03-strengthen-evidence.png') });
+      await page.locator('button:has-text("Back to briefing")').click();
+    }
+
+    // Step 4: Story threads from the ledger
+    console.log('  -> [Step 4] Opening Story Threads...');
     await page.locator('a:has-text("Threads")').click();
     await page.waitForSelector('text=Story Threads & Node Map');
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '03-story-threads-node-map.png') });
+    await page.screenshot({ path: path.join(SCREENSHOTS_DIR, '04-story-threads-node-map.png') });
 
     // Step 9: Theme Toggle (Editorial Light Mode)
     console.log('  -> [Step 9] Switching to Editorial Light Mode...');
@@ -98,9 +112,9 @@ async function runWalkthrough() {
     await themeBtn.click();
     await page.waitForTimeout(600);
 
-    console.log('  -> Capturing 04-light-mode-node-map.png');
+    console.log('  -> Capturing 05-light-mode-node-map.png');
     await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '04-light-mode-node-map.png'),
+      path: path.join(SCREENSHOTS_DIR, '05-light-mode-node-map.png'),
     });
 
     // Step 10: Integrity Pre-Flight Audit Modal
@@ -110,14 +124,21 @@ async function runWalkthrough() {
     await page.waitForSelector('text=Integrity & Privacy Audit');
     await page.waitForTimeout(600);
 
-    console.log('  -> Capturing 05-integrity-audit-modal.png');
+    console.log('  -> Capturing 06-integrity-audit-modal.png');
     await page.screenshot({
-      path: path.join(SCREENSHOTS_DIR, '05-integrity-audit-modal.png'),
+      path: path.join(SCREENSHOTS_DIR, '06-integrity-audit-modal.png'),
     });
 
     console.log('  -> Closing integrity modal...');
     await page.locator('button[aria-label="Close integrity audit modal"]').click();
     await page.waitForTimeout(400);
+
+    if (corpusStatusBefore !== null) {
+      const after = (await import('node:child_process')).execSync('git status --porcelain', { cwd: WORKSPACE_DIR, encoding: 'utf-8' });
+      if (after !== corpusStatusBefore) {
+        throw new Error(`Walkthrough modified the real corpus:\n${after}`);
+      }
+    }
 
     console.log('\n[4/6] Completed all walkthrough steps without errors.');
   } catch (err) {

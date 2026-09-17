@@ -66,4 +66,10 @@ describe('EvidenceStrengthener', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save to ledger file' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('companies/acme/evidence/evidence-ledger.md');
   });
+  it('tells the user up front when an entry lives in a consolidated ledger', () => {
+    const ledgerBacked = { ...gappy, filePath: String.raw`C:\career\companies\acme\evidence\evidence-ledger.md` };
+    render(<EvidenceStrengthener record={ledgerBacked} onBack={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByRole('note')).toHaveTextContent(/consolidated ledger/);
+    expect(screen.getByRole('button', { name: 'Save to ledger file' })).toBeDisabled();
+  });
 });

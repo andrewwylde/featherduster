@@ -23,6 +23,10 @@ export const EvidenceStrengthener: React.FC<EvidenceStrengthenerProps> = ({ reco
   const [error, setError] = useState<string | null>(null);
   const [savedPath, setSavedPath] = useState<string | null>(null);
 
+  // Consolidated ledgers are never rewritten by the UI (the server refuses too); say so before any editing.
+  const ledgerPath =
+    record.filePath && /(^|[\\/])evidence-ledger[^\\/]*$/i.test(record.filePath) ? record.filePath : null;
+
   const prompts = useMemo(() => strengthenPrompts(draft, narrative), [draft, narrative]);
   const status = evidenceStatus({ ...record, entry: draft, narrative });
   const verifiedWithoutRefs = draft.metrics.some((m) => m.status === 'verified') && draft.internal_references.length === 0;
@@ -85,6 +89,12 @@ export const EvidenceStrengthener: React.FC<EvidenceStrengthenerProps> = ({ reco
             save();
           }}
         >
+          {ledgerPath && (
+            <p role="note" className="rounded-desk bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
+              This entry lives in a consolidated ledger ({ledgerPath}). Use the gaps on the left as a checklist and edit it in
+              that file; Featherduster does not rewrite ledgers.
+            </p>
+          )}
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
             Summary
             <textarea rows={2} value={draft.summary} onChange={(e) => set('summary', e.target.value)} className={field} />
@@ -154,7 +164,7 @@ export const EvidenceStrengthener: React.FC<EvidenceStrengthenerProps> = ({ reco
           )}
 
           <div className="flex justify-end">
-            <button type="submit" disabled={saving} className="rounded-desk bg-vermilion-500 px-4 py-2 text-sm font-semibold text-white hover:bg-vermilion-600 disabled:opacity-40">
+            <button type="submit" disabled={saving || !!ledgerPath} className="rounded-desk bg-vermilion-500 px-4 py-2 text-sm font-semibold text-white hover:bg-vermilion-600 disabled:opacity-40">
               {saving ? 'Saving…' : 'Save to ledger file'}
             </button>
           </div>
