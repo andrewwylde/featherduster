@@ -5,11 +5,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, cleanup } from '@testing-library/react';
 import { StoryThreadsNodeMap } from '../src/views/desk/StoryThreadsNodeMap';
-import {
-  initialSources,
-  initialNodeMapEvidence,
-  initialStoryThreads,
-} from '../src/data/deskFixtures';
+import { buildDeskModel } from '../src/data/deskModel';
+import { testRecords } from './fixtures/deskRecords';
+
+const model = buildDeskModel(testRecords);
+const initialSources = model.sources;
+const initialNodeMapEvidence = model.evidence;
+const initialStoryThreads = model.threads;
 
 describe('Story Threads Node Map Tests', () => {
   const mockOnSelectLead = vi.fn();
@@ -22,7 +24,7 @@ describe('Story Threads Node Map Tests', () => {
     cleanup();
   });
 
-  it('renders 3 topology columns: Sources, Evidence, and Story Threads', () => {
+  const renderMap = () =>
     render(
       <StoryThreadsNodeMap
         sources={initialSources}
@@ -32,77 +34,46 @@ describe('Story Threads Node Map Tests', () => {
       />
     );
 
-    // Section header
+  it('renders 3 topology columns built from the ledger', () => {
+    renderMap();
     expect(screen.getByText('Career Story Threads')).toBeInTheDocument();
-    expect(screen.getByText(/Sources roll up into evidence, which build your career story/i)).toBeInTheDocument();
-
-    // 3 Column headings
+    expect(screen.getByText(/Built from your evidence ledger/i)).toBeInTheDocument();
     expect(screen.getByText('1. Sources')).toBeInTheDocument();
     expect(screen.getByText('2. Evidence')).toBeInTheDocument();
     expect(screen.getByText('3. Story Threads')).toBeInTheDocument();
-
-    // Key nodes
-    expect(screen.getByText('Add automated failover for job workers')).toBeInTheDocument();
-    expect(screen.getByText('Improved system resilience')).toBeInTheDocument();
-    expect(screen.getAllByText('Reliability leadership').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('pr #12').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Gateway rewrite').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Platform').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('allows keyboard navigation and node selection with Enter and Space', () => {
-    render(
-      <StoryThreadsNodeMap
-        sources={initialSources}
-        evidence={initialNodeMapEvidence}
-        threads={initialStoryThreads}
-        onSelectLead={mockOnSelectLead}
-      />
-    );
-
-    const threadNode = screen.getByRole('button', { name: /Reliability leadership/i });
+  it('allows keyboard navigation and node selection with Enter', () => {
+    renderMap();
+    const threadNode = screen.getAllByRole('button', { name: /Performance/i })[0];
     expect(threadNode).toHaveAttribute('tabindex', '0');
-
-    // Select with Enter
     fireEvent.keyDown(threadNode, { key: 'Enter', code: 'Enter' });
-
-    // Inspector opens with traceable relationship details
     expect(screen.getByText('Traceable Inspector')).toBeInTheDocument();
-    expect(screen.getByText(/Selected Thread: Reliability leadership/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/Infrastructure resilience, operational ownership/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/Selected Thread: Performance/i)).toBeInTheDocument();
   });
 
   it('inspects source relationships when clicking a source node', () => {
-    render(
-      <StoryThreadsNodeMap
-        sources={initialSources}
-        evidence={initialNodeMapEvidence}
-        threads={initialStoryThreads}
-        onSelectLead={mockOnSelectLead}
-      />
-    );
-
-    const prSource = screen.getByRole('button', { name: /Add automated failover for job workers/i });
-    fireEvent.click(prSource);
-
-    expect(screen.getByText('Traceable Inspector')).toBeInTheDocument();
-    expect(screen.getByText(/Selected Source: Add automated failover for job workers/i)).toBeInTheDocument();
-    expect(screen.getByText(/This will save us a lot of 3 a.m. pages/i)).toBeInTheDocument();
+    renderMap();
+    fireEvent.click(screen.getAllByRole('button', { name: /pr #12/i })[0]);
+    expect(screen.getByText(/Selected Source: pr #12/i)).toBeInTheDocument();
   });
 
   it('filters by status and supports fit view toggle', () => {
-    render(
-      <StoryThreadsNodeMap
-        sources={initialSources}
-        evidence={initialNodeMapEvidence}
-        threads={initialStoryThreads}
-        onSelectLead={mockOnSelectLead}
-      />
-    );
+    renderMap();
+    fireEvent.click(screen.getByRole('button', { name: /Fit view/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Verified/i }));
+  });
 
-    const fitViewBtn = screen.getByRole('button', { name: /Fit view/i });
-    expect(fitViewBtn).toBeInTheDocument();
-    fireEvent.click(fitViewBtn);
+  it('shows an empty state when the ledger has no evidence', () => {
+    render(<StoryThreadsNodeMap sources={[]} evidence={[]} threads={[]} onSelectLead={mockOnSelectLead} />);
+    expect(screen.getByText(/No evidence yet/i)).toBeInTheDocument();
+  });
 
-    // Verified filter button
-    const verifiedFilterBtn = screen.getByRole('button', { name: /Verified/i });
-    fireEvent.click(verifiedFilterBtn);
+  it('does not show the sample data banner', () => {
+    renderMap();
+    expect(screen.queryByRole('note', { name: /Sample data/i })).not.toBeInTheDocument();
   });
 });

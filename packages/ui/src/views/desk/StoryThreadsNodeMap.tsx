@@ -10,7 +10,6 @@ import {
 } from 'lucide-react';
 import type { SignalSource, NodeMapEvidence, StoryThread } from '../../types/desk';
 import { EvidenceBadge } from '../../components/desk/EvidenceBadge';
-import { SampleDataBanner } from '../../components/desk/SampleDataBanner';
 import type { EvidenceStatus } from '../../theme/tokens';
 
 interface StoryThreadsNodeMapProps {
@@ -32,10 +31,9 @@ export const StoryThreadsNodeMap: React.FC<StoryThreadsNodeMapProps> = ({
   threads,
   onSelectLead,
 }) => {
-  const [selectedEntity, setSelectedEntity] = useState<SelectedEntity>({
-    type: 'thread',
-    data: threads[0],
-  });
+  const [selectedEntity, setSelectedEntity] = useState<SelectedEntity>(
+    threads[0] ? { type: 'thread', data: threads[0] } : null
+  );
   const [filterStatus, setFilterStatus] = useState<EvidenceStatus | 'all'>('all');
   const [isFitView, setIsFitView] = useState(false);
 
@@ -103,7 +101,6 @@ export const StoryThreadsNodeMap: React.FC<StoryThreadsNodeMapProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-150">
-      <SampleDataBanner what="This thread map" />
       {/* Top Header & Map Controls */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-5">
         <div>
@@ -114,7 +111,7 @@ export const StoryThreadsNodeMap: React.FC<StoryThreadsNodeMapProps> = ({
             Story Threads & Node Map
           </h1>
           <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
-            Sources roll up into evidence, which build your career story.
+            Built from your evidence ledger: references roll up into entries, and entries group into threads by theme.
           </p>
         </div>
 
@@ -171,6 +168,15 @@ export const StoryThreadsNodeMap: React.FC<StoryThreadsNodeMapProps> = ({
           </button>
         </div>
       </div>
+
+      {evidence.length === 0 && (
+        <div className="rounded-desk border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121622] p-8 text-center">
+          <p className="text-sm font-semibold text-slate-900 dark:text-white">No evidence yet</p>
+          <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+            Threads appear here once your ledger has entries with themes. Capture one under Evidence.
+          </p>
+        </div>
+      )}
 
       {/* Main Working Area: 3-Column Node Map + Traceable Inspector */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">

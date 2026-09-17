@@ -6,12 +6,8 @@ import { StoryThreadsNodeMap } from './views/desk/StoryThreadsNodeMap';
 import { EvidenceExplorer } from './views/EvidenceExplorer';
 import { RubricGapMatrix } from './views/RubricGapMatrix';
 import { ResumeTailor } from './views/ResumeTailor';
-import {
-  initialLead,
-  initialSources,
-  initialNodeMapEvidence,
-  initialStoryThreads,
-} from './data/deskFixtures';
+import { initialLead } from './data/deskFixtures';
+import { useDeskData } from './hooks/useDeskData';
 import { pathForTab, tabForPath, tailoringSlugForPath } from './routing';
 import { TailoringRunList } from './views/tailoring/TailoringRunList';
 import { TailoringRun } from './views/tailoring/TailoringRun';
@@ -21,8 +17,7 @@ export function App() {
   const [tailoringSlug, setTailoringSlug] = useState<string | null>(() => tailoringSlugForPath(window.location.pathname));
   const [handoffPosting, setHandoffPosting] = useState<string | undefined>(undefined);
   const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
-  const threads = initialStoryThreads;
-  const evidenceList = initialNodeMapEvidence;
+  const desk = useDeskData();
 
   const handleViewThread = (_threadId?: string) => {
     navigateTo('threads');
@@ -80,9 +75,9 @@ export function App() {
         {/* Story Threads Workspace */}
         {currentTab === 'threads' && (
           <StoryThreadsNodeMap
-            sources={initialSources}
-            evidence={evidenceList}
-            threads={threads}
+            sources={desk.model.sources}
+            evidence={desk.model.evidence}
+            threads={desk.model.threads}
             onSelectLead={() => navigateTo('briefing')}
           />
         )}

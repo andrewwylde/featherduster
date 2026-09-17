@@ -40,7 +40,8 @@ describe('Career Intelligence Desk — Vertical Slice Integration Loop', () => {
     expect(saveSpy).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('link', { name: 'Threads' }));
-    expect(await screen.findByRole('note', { name: /Sample data/i })).toBeInTheDocument();
+    expect(await screen.findByText('Story Threads & Node Map')).toBeInTheDocument();
+    expect(screen.queryByRole('note', { name: /Sample data/i })).not.toBeInTheDocument();
   });
 
   it('supports light and dark theme switching in the full desk shell', () => {
