@@ -454,7 +454,7 @@ Expected: FAIL.
 Implement:
 - `EvidenceBadge`: Clean pill with status dot or fine rule distinguishing `Verified`, `Remembered`, and `Missing proof`.
 - `DeskSidebar`: Left-aligned editorial archive column with Featherduster branding, vertical nav tabs with vermilion left border on active tab, theme toggle, and bottom quote.
-- `DeskHeader`: Search bar input, editorial slogan ("Your work tells a bigger story."), and integrity status trigger.
+- `DeskHeader`: Search bar input, workspace status, and integrity status trigger.
 - `OnboardingModal`: Local-first explanation modal with the 3 starting paths, save dismissal to `localStorage`.
 - `Layout.tsx`: Updated to use `DeskSidebar` and `DeskHeader`, with backwards-compatible navigation props.
 

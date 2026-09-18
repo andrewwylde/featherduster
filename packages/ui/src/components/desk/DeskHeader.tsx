@@ -48,10 +48,6 @@ export const DeskHeader: React.FC<DeskHeaderProps> = ({
 
       {/* Right cluster: Editorial slogan, Workspace, Integrity audit, and Theme Toggle */}
       <div className="flex items-center gap-4 ml-4">
-        <span className="hidden md:inline text-xs text-slate-600 dark:text-slate-400 italic">
-          Your work tells a bigger story.
-        </span>
-
         {compactWorkspace && (
           <div
             className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-400"

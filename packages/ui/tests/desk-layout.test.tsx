@@ -34,19 +34,19 @@ describe('Desk Layout and Navigation Shell', () => {
 
     // Brand and tagline
     expect(screen.getByText('Featherduster')).toBeInTheDocument();
-    expect(screen.getByText('Private career intelligence for engineers.')).toBeInTheDocument();
-    expect(screen.getByText('A quieter way to build what\'s next.')).toBeInTheDocument();
+    expect(screen.getByText('Private career intelligence.')).toBeInTheDocument();
+    expect(screen.getByText('Build what\'s next.')).toBeInTheDocument();
 
-    // 5 primary tabs
+    // Primary tabs — exports merged into Tailor, so there is no separate Exports item
     expect(screen.getByRole('link', { name: /Briefing/i })).toHaveAttribute('href', '/briefing');
+    expect(screen.getByRole('link', { name: /Tailor/i })).toHaveAttribute('href', '/tailor');
     expect(screen.getByRole('link', { name: /Threads/i })).toHaveAttribute('href', '/threads');
     expect(screen.getByRole('link', { name: /Evidence/i })).toHaveAttribute('href', '/evidence');
     expect(screen.getByRole('link', { name: /Skills/i })).toHaveAttribute('href', '/skills');
-    expect(screen.getByRole('link', { name: /Exports/i })).toHaveAttribute('href', '/exports');
+    expect(screen.queryByRole('link', { name: /Exports/i })).not.toBeInTheDocument();
 
     // Header elements
     expect(screen.getByPlaceholderText(/Search across your work, notes, and people/i)).toBeInTheDocument();
-    expect(screen.getByText('Your work tells a bigger story.')).toBeInTheDocument();
 
     // Theme toggle button
     expect(screen.getByRole('button', { name: /Toggle theme/i })).toBeInTheDocument();
@@ -69,10 +69,10 @@ describe('Desk Layout and Navigation Shell', () => {
     render(<TestShell />);
 
     // Onboarding trigger or auto-modal for first run
-    const helpBtn = screen.getByRole('button', { name: /Desk Foundation|Privacy/i });
+    const helpBtn = screen.getByRole('button', { name: /Privacy/i });
     fireEvent.click(helpBtn);
 
-    expect(screen.getByText(/Private Career Intelligence Desk/i)).toBeInTheDocument();
+    expect(screen.getByText(/Career Intelligence Desk/i)).toBeInTheDocument();
     expect(screen.getByText(/Local-first privacy foundation/i)).toBeInTheDocument();
 
     // Dismiss

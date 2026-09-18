@@ -46,13 +46,13 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({
         <div className="flex items-start justify-between p-6 border-b border-slate-100 dark:border-slate-800/80">
           <div>
             <span className="text-[11px] font-mono uppercase tracking-widest text-vermilion-600 dark:text-vermilion-400 font-semibold">
-              The Desk Foundation
+              Career foundations
             </span>
             <h2
               id="onboarding-title"
               className="text-xl font-bold tracking-tight text-slate-900 dark:text-white mt-1"
             >
-              Private Career Intelligence Desk
+              Career Intelligence Desk
             </h2>
           </div>
           <button

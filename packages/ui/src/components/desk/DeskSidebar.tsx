@@ -4,13 +4,12 @@ import {
   MessageSquare,
   BookOpen,
   Target,
-  Download,
   Shield,
   WandSparkles,
   Settings,
 } from 'lucide-react';
 
-export type DeskTab = 'briefing' | 'tailor' | 'threads' | 'evidence' | 'skills' | 'exports' | 'settings';
+export type DeskTab = 'briefing' | 'tailor' | 'threads' | 'evidence' | 'skills' | 'settings';
 
 interface DeskSidebarProps {
   currentTab: DeskTab;
@@ -24,7 +23,6 @@ const pathByTab: Record<DeskTab, string> = {
   threads: '/threads',
   evidence: '/evidence',
   skills: '/skills',
-  exports: '/exports',
   settings: '/settings',
 };
 
@@ -39,7 +37,6 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
     { id: 'threads', label: 'Threads', icon: MessageSquare },
     { id: 'evidence', label: 'Evidence', icon: BookOpen },
     { id: 'skills', label: 'Skills', icon: Target },
-    { id: 'exports', label: 'Exports', icon: Download },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
@@ -49,7 +46,6 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
       aria-label="Main Navigation"
     >
       <div>
-        {/* Desk Brand & Metaphor */}
         <div className="mb-8">
           <div className="flex items-center gap-2">
             <span className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">
@@ -57,7 +53,7 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
             </span>
           </div>
           <p className="mt-1 text-xs text-slate-600 dark:text-slate-400 leading-snug">
-            Private career intelligence for engineers.
+            Private career intelligence.
           </p>
         </div>
 
@@ -111,7 +107,7 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
         </nav>
       </div>
 
-      {/* Footer & Subtle Privacy Foundation Trigger */}
+      {/* Footer */}
       <div className="pt-6 border-t border-slate-100 dark:border-slate-800/60 space-y-3">
         <button
           onClick={onOpenOnboarding}
@@ -119,11 +115,11 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
           title="Review local-first privacy foundation and starting paths"
         >
           <Shield className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
-          <span>Desk Foundation & Privacy</span>
+          <span>Privacy</span>
         </button>
 
         <p className="text-xs text-slate-600 dark:text-slate-400 font-normal leading-relaxed max-w-[140px]">
-          A quieter way to build what's next.
+          Build what's next.
         </p>
       </div>
     </aside>

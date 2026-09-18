@@ -73,10 +73,10 @@ async function runWalkthrough() {
     });
 
     // Step 2: Onboarding & Privacy Foundation Modal
-    console.log('  -> [Step 2] Opening Desk Foundation & Privacy modal...');
-    const onboardingBtn = page.locator('button:has-text("Desk Foundation & Privacy")');
+    console.log('  -> [Step 2] Opening Privacy modal...');
+    const onboardingBtn = page.locator('button:has-text("Privacy")');
     await onboardingBtn.click();
-    await page.waitForSelector('text=The Desk Foundation');
+    await page.waitForSelector('text=Career foundations');
     await page.waitForTimeout(500);
 
     console.log('  -> Capturing 02-onboarding-modal.png');
