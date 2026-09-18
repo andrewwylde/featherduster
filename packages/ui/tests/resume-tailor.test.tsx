@@ -147,6 +147,12 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       };
     });
     vi.spyOn(apiClient, 'runPreflight').mockResolvedValue(samplePreflightClean);
+    vi.spyOn(apiClient, 'getExports').mockResolvedValue([]);
+    vi.spyOn(apiClient, 'createBundle').mockResolvedValue({
+      success: true,
+      variant: 'starter',
+      files: ['resumes/exports/starter.md', 'resumes/exports/starter.html'],
+    });
 
     // Mock URL.createObjectURL and URL.revokeObjectURL for downloads
     global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
@@ -158,8 +164,8 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     cleanup();
   });
 
-  describe('3-Pane Resume Tailoring Canvas Rendering', () => {
-    it('renders Left Pane (Job Matcher), Middle Pane (Modular Bullets), and Right Pane (Live Preview)', async () => {
+  describe('2-Pane Resume Tailoring Canvas & Top Bar Controls', () => {
+    it('renders Left Pane (Job Matcher), Right Pane (Modular Bullets), and Top Bar Deliverables Trigger', async () => {
       render(<ResumeTailor />);
 
       await waitFor(() => {
@@ -170,15 +176,15 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       expect(screen.getByText('Target Job Description')).toBeInTheDocument();
       expect(screen.getByText('Candidate Profile')).toBeInTheDocument();
 
-      // Middle pane items
+      // Right pane items
       expect(screen.getByText('Modular Experiences & Bullets')).toBeInTheDocument();
       expect(screen.getByDisplayValue('CloudMatrix Technologies')).toBeInTheDocument();
 
-      // Right pane items
-      expect(screen.getByText('ATS Markdown')).toBeInTheDocument();
-      expect(screen.getByText('Web Print (HTML)')).toBeInTheDocument();
-      expect(screen.getByText('Typst')).toBeInTheDocument();
-      expect(screen.getByText('LaTeX')).toBeInTheDocument();
+      // Top Bar items
+      expect(screen.getByText(/1-Page Budget:/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Squeeze: OFF/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /De-Slop/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Deliverables & Exports/i })).toBeInTheDocument();
     });
 
     it('highlights matched keywords when a target job description is pasted', async () => {
@@ -289,13 +295,21 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     });
   });
 
-  describe('Format switcher (Markdown, HTML, Typst, LaTeX)', () => {
-    it('switches target compiler formats and re-renders corresponding output views', async () => {
+  describe('Format switcher (Markdown, HTML, Typst, LaTeX, Defense Brief)', () => {
+    it('opens deliverables drawer, switches compiler formats and re-renders corresponding output views', async () => {
       const compileSpy = vi.spyOn(apiClient, 'compileResume');
 
       render(<ResumeTailor />);
 
       await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Deliverables & Exports/i })).toBeInTheDocument();
+      });
+
+      // Open Export Drawer
+      fireEvent.click(screen.getByRole('button', { name: /Deliverables & Exports/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /Deliverables & Exports/i })).toBeInTheDocument();
         expect(screen.getByText('ATS Markdown')).toBeInTheDocument();
       });
 
@@ -305,8 +319,8 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
 
       await waitFor(() => {
         expect(compileSpy).toHaveBeenCalledWith(expect.anything(), 'html');
-        expect(screen.getByTitle('Sandboxed Resume Print Preview')).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Print \/ Save as PDF/i })).toBeInTheDocument();
+        expect(screen.getByTitle('Resume Print Preview')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Print to PDF/i })).toBeInTheDocument();
       });
 
       // 2. Switch to Typst
@@ -327,7 +341,16 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
         expect(screen.getByText(/Compiled \[latex\] Resume/)).toBeInTheDocument();
       });
 
-      // 4. Switch back to ATS Markdown
+      // 4. Switch to Defense Brief
+      const briefTab = screen.getByRole('button', { name: /Defense Brief/i });
+      fireEvent.click(briefTab);
+
+      await waitFor(() => {
+        expect(compileSpy).toHaveBeenCalledWith(expect.anything(), 'brief');
+        expect(screen.getByText(/Compiled \[brief\] Resume/)).toBeInTheDocument();
+      });
+
+      // 5. Switch back to ATS Markdown
       const markdownTab = screen.getByRole('button', { name: /ATS Markdown/i });
       fireEvent.click(markdownTab);
 

@@ -1024,4 +1024,78 @@ experiences:
       expect(data.violations).toContain('CLASSIFIED_PROJECT');
     });
   });
+
+  describe('GET /api/exports & POST /api/exports/bundle', () => {
+    it('POST /api/exports/bundle compiles requested formats and quarantines interview defense brief', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/exports/bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'netflix-staff-platform',
+          spec: sampleResumeSpec,
+          formats: ['markdown', 'html'],
+          includeBrief: true,
+          targetCompany: 'Netflix',
+          targetRole: 'Staff Platform Engineer',
+          matchedKeywords: ['Distributed Systems', 'Kafka'],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.name).toBe('netflix-staff-platform');
+      expect(data.files.length).toBe(3);
+
+      const atsFile = data.files.find((f: any) => f.format === 'markdown' && f.category === 'export');
+      expect(atsFile).toBeDefined();
+      expect(atsFile.relativePath).toContain('resumes/exports/resume_netflix-staff-platform_ats.md');
+
+      const htmlFile = data.files.find((f: any) => f.format === 'html' && f.category === 'export');
+      expect(htmlFile).toBeDefined();
+      expect(htmlFile.relativePath).toContain('resumes/exports/resume_netflix-staff-platform.html');
+
+      const briefFile = data.files.find((f: any) => f.category === 'brief');
+      expect(briefFile).toBeDefined();
+      expect(briefFile.relativePath).toContain('resumes/tailored/briefs/netflix-staff-platform-defense-brief.md');
+
+      // Verify files actually exist on disk
+      const briefDiskPath = path.join(tmpWorkspace, briefFile.relativePath);
+      expect(fs.existsSync(briefDiskPath)).toBe(true);
+      const briefContent = fs.readFileSync(briefDiskPath, 'utf-8');
+      expect(briefContent).toContain('# 🛡️ Interview Defense Brief: Alex Mercer');
+      expect(briefContent).toContain('Target Role:** Staff Platform Engineer at Netflix');
+    });
+
+    it('GET /api/exports lists generated export files and briefs with metadata', async () => {
+      const app = createApp(tmpWorkspace);
+
+      // Seed bundle first
+      await app.request('/api/exports/bundle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'stripe-infra',
+          spec: sampleResumeSpec,
+          formats: ['markdown', 'html'],
+          includeBrief: true,
+        }),
+      });
+
+      const res = await app.request('/api/exports');
+      expect(res.status).toBe(200);
+      const items = await res.json();
+      expect(Array.isArray(items)).toBe(true);
+      expect(items.length).toBe(3);
+
+      const hasExport = items.some((item: any) => item.category === 'export' && item.format === 'html');
+      const hasBrief = items.some((item: any) => item.category === 'brief');
+      expect(hasExport).toBe(true);
+      expect(hasBrief).toBe(true);
+      expect(items[0]).toHaveProperty('sizeBytes');
+      expect(items[0]).toHaveProperty('updatedAt');
+    });
+  });
 });
+

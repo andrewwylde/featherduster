@@ -2,12 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import {
   Sparkles,
   ShieldCheck,
-  Printer,
-  Copy,
-  Download,
   Plus,
   Trash2,
-  Check,
   RefreshCw,
   AlertTriangle,
   Save,
@@ -18,6 +14,7 @@ import {
   User,
   GraduationCap,
   Wrench,
+  Package,
 } from 'lucide-react';
 import {
   apiClient,
@@ -26,9 +23,11 @@ import {
 } from '../api/client';
 import { PreFlightModal } from '../components/PreFlightModal';
 import { EvidencePickerModal } from '../components/EvidencePickerModal';
+import { ExportDrawer } from '../components/ExportDrawer';
 import { useModalA11y } from '../hooks/useModalA11y';
 import {
   cleanSlop,
+  calculatePageBudget,
   type EvidenceRecord,
   type ResumeSpec,
   type ResumeEducation,
@@ -51,8 +50,6 @@ interface ModularExperience {
   endDate: string;
   bullets: ModularBullet[];
 }
-
-type CompilerFormat = 'markdown' | 'html' | 'typst' | 'latex';
 
 export const ResumeTailor: React.FC = () => {
   // Remote data state
@@ -78,11 +75,8 @@ export const ResumeTailor: React.FC = () => {
   // Target Job Description State
   const [jobDescription, setJobDescription] = useState('');
 
-  // Right Pane: Compiler & Format State
-  const [activeFormat, setActiveFormat] = useState<CompilerFormat>('markdown');
+  // Compiled Markdown Output for Pre-Flight Validation
   const [compiledOutput, setCompiledOutput] = useState('');
-  const [compiling, setCompiling] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   // Pre-Flight Gate State
   const [preflightStatus, setPreflightStatus] = useState<PreflightResult | null>(null);
@@ -98,7 +92,6 @@ export const ResumeTailor: React.FC = () => {
   const [saveVariantType, setSaveVariantType] = useState<'tailored' | 'template'>('tailored');
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
 
-  const printIframeRef = useRef<HTMLIFrameElement | null>(null);
   const saveModalRef = useRef<HTMLDivElement | null>(null);
 
   useModalA11y({
@@ -138,6 +131,27 @@ export const ResumeTailor: React.FC = () => {
       skills,
     };
   }, [profile, summary, experiences, education, skills]);
+
+  // Deliverables & Exports Drawer State
+  const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
+  const [squeezeMode, setSqueezeMode] = useState(false);
+
+  // Live Page Budget Telemetry
+  const pageBudget = useMemo(() => {
+    return calculatePageBudget(currentSpec, { squeeze: squeezeMode });
+  }, [currentSpec, squeezeMode]);
+
+  // Global Ctrl+E / Cmd+E shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+        e.preventDefault();
+        setIsExportDrawerOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Load initial data
   const loadInitialData = useCallback(async () => {
@@ -206,12 +220,11 @@ export const ResumeTailor: React.FC = () => {
     }
   };
 
-  // Re-compile resume whenever activeFormat or currentSpec changes
+  // Re-compile markdown resume for background preflight audit
   const compileActiveSpec = useCallback(async () => {
     if (!profile.name && experiences.length === 0) return;
-    setCompiling(true);
     try {
-      const res = await apiClient.compileResume(currentSpec, activeFormat);
+      const res = await apiClient.compileResume(currentSpec, 'markdown');
       setCompiledOutput(res.output);
 
       // Also trigger quick background preflight check
@@ -223,10 +236,8 @@ export const ResumeTailor: React.FC = () => {
         .finally(() => setPreflightLoading(false));
     } catch (err: any) {
       setCompiledOutput(`// Compilation Error:\n${err.message || err}`);
-    } finally {
-      setCompiling(false);
     }
-  }, [currentSpec, activeFormat, profile.name, experiences.length]);
+  }, [currentSpec, profile.name, experiences.length]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -444,67 +455,6 @@ export const ResumeTailor: React.FC = () => {
     setDeslopping(false);
   }, [summary, experiences]);
 
-  // Copy compiled output
-  const handleCopyCompiled = async () => {
-    if (!compiledOutput) return;
-    try {
-      await navigator.clipboard.writeText(compiledOutput);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Fallback
-    }
-  };
-
-  // Download compiled file
-  const handleDownloadCompiled = () => {
-    if (!compiledOutput) return;
-    const extMap: Record<CompilerFormat, string> = {
-      markdown: 'md',
-      html: 'html',
-      typst: 'typ',
-      latex: 'tex',
-    };
-    const mimeMap: Record<CompilerFormat, string> = {
-      markdown: 'text/markdown;charset=utf-8',
-      html: 'text/html;charset=utf-8',
-      typst: 'text/plain;charset=utf-8',
-      latex: 'application/x-latex;charset=utf-8',
-    };
-    const ext = extMap[activeFormat] || 'txt';
-    const mime = mimeMap[activeFormat] || 'text/plain';
-
-    const blob = new Blob([compiledOutput], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `resume_tailored.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
-
-  // Browser Print for HTML preview
-  const handlePrintHtml = () => {
-    if (printIframeRef.current?.contentWindow) {
-      try {
-        printIframeRef.current.contentWindow.focus();
-        printIframeRef.current.contentWindow.print();
-        return;
-      } catch {
-        // Fallback if iframe print throws
-      }
-    }
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(compiledOutput);
-      printWindow.document.close();
-      printWindow.focus();
-      printWindow.print();
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400 space-y-3">
@@ -530,7 +480,7 @@ export const ResumeTailor: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-2.5 flex-wrap">
           {deslopBanner && (
             <div className="px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-purple-200 text-xs font-medium flex items-center gap-2 animate-fadeIn shadow-lg shadow-purple-950/50">
               <Sparkles className="w-4 h-4 text-purple-400 shrink-0" />
@@ -544,15 +494,94 @@ export const ResumeTailor: React.FC = () => {
               <span>{saveSuccessMessage}</span>
             </div>
           )}
+
+          {/* 1-Page Line Budget Telemetry */}
+          <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/80 border border-slate-800 text-xs shadow-sm">
+            <span className="text-slate-400 font-mono text-[11px]">1-Page Budget:</span>
+            <span
+              className={`font-mono font-semibold ${
+                pageBudget.status === 'optimal'
+                  ? 'text-emerald-400'
+                  : pageBudget.status === 'warning'
+                  ? 'text-amber-400'
+                  : 'text-rose-400'
+              }`}
+            >
+              {pageBudget.totalLines}/{pageBudget.maxBudget} ({pageBudget.percentage}%)
+            </span>
+            <button
+              onClick={() => setSqueezeMode((prev) => !prev)}
+              className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all ${
+                squeezeMode
+                  ? 'bg-purple-950 text-purple-300 border-purple-500/50'
+                  : 'bg-slate-800/80 text-slate-400 border-slate-700 hover:text-slate-200'
+              }`}
+              title="Compact vertical padding and spacing to force 1-page fit"
+            >
+              {squeezeMode ? 'Squeeze: ON' : 'Squeeze: OFF'}
+            </button>
+          </div>
+
+          {/* De-Slop Button */}
+          <button
+            onClick={handleDeSlop}
+            disabled={deslopping}
+            className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 transition-all inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+            title="Run De-Slop cleaner on resume bullets"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${deslopping ? 'animate-spin text-purple-400' : 'text-purple-400'}`} />
+            <span>De-Slop</span>
+          </button>
+
+          {/* Pre-Flight Button */}
+          <button
+            onClick={() => setIsPreflightModalOpen(true)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all inline-flex items-center gap-1.5 shadow-sm ${
+              preflightStatus?.isClean
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
+            }`}
+            title="Run Pre-Flight Check"
+          >
+            {preflightLoading ? (
+              <>
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                <span>Auditing...</span>
+              </>
+            ) : preflightStatus?.isClean ? (
+              <>
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Pre-Flight: Passed</span>
+              </>
+            ) : (
+              <>
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>Pre-Flight: Needs Review</span>
+              </>
+            )}
+          </button>
+
+          {/* Deliverables & Exports Trigger */}
+          <button
+            onClick={() => setIsExportDrawerOpen(true)}
+            className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold transition-all inline-flex items-center gap-2 shadow-md shadow-purple-950/50"
+            title="Open Deliverables & Exports slide-over flyout (Ctrl+E)"
+          >
+            <Package className="w-4 h-4" />
+            <span>Deliverables & Exports</span>
+            <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-black/30 rounded border border-white/20">
+              Ctrl+E
+            </kbd>
+          </button>
         </div>
       </div>
 
-      {/* 3-Pane Split-Screen Grid */}
+      {/* 2-Column Split-Screen Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* ========================================================================= */}
-        {/* LEFT PANE: Target Job & Matcher (Col span 3) */}
+        {/* LEFT PANE: Target Job & Matcher (Col span 5) */}
         {/* ========================================================================= */}
-        <div className="xl:col-span-3 space-y-5">
+        <div className="xl:col-span-5 space-y-5">
           {/* Variant Loader Dropdown */}
           <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3 shadow-md">
             <div className="flex items-center justify-between">
@@ -756,9 +785,9 @@ export const ResumeTailor: React.FC = () => {
         </div>
 
         {/* ========================================================================= */}
-        {/* MIDDLE PANE: Modular Section & Bullet Builder (Col span 5) */}
+        {/* RIGHT PANE: Modular Section & Bullet Builder (Col span 7) */}
         {/* ========================================================================= */}
-        <div className="xl:col-span-5 space-y-5">
+        <div className="xl:col-span-7 space-y-5">
           {/* Header Controls for Middle Pane */}
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
@@ -1139,170 +1168,27 @@ export const ResumeTailor: React.FC = () => {
             </div>
           </div>
         </div>
-
-        {/* ========================================================================= */}
-        {/* RIGHT PANE: Live Multi-Target Compiler Preview & Pre-Flight Gate (Col span 4) */}
-        {/* ========================================================================= */}
-        <div className="xl:col-span-4 space-y-4 flex flex-col">
-          {/* Top Bar: Format Switcher & Pre-Flight Gate Action */}
-          <div className="p-3 bg-slate-900/80 border border-slate-800 rounded-2xl shadow-md flex flex-wrap items-center justify-between gap-2.5">
-            {/* Target Format Switcher Tabs */}
-            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
-              <button
-                onClick={() => setActiveFormat('markdown')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
-                  activeFormat === 'markdown'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                ATS Markdown
-              </button>
-              <button
-                onClick={() => setActiveFormat('html')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
-                  activeFormat === 'html'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Web Print (HTML)
-              </button>
-              <button
-                onClick={() => setActiveFormat('typst')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
-                  activeFormat === 'typst'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                Typst
-              </button>
-              <button
-                onClick={() => setActiveFormat('latex')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg transition-all ${
-                  activeFormat === 'latex'
-                    ? 'bg-purple-600 text-white shadow-sm'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-              >
-                LaTeX
-              </button>
-            </div>
-
-            {/* Pre-Flight & De-Slop Actions */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleDeSlop}
-                disabled={deslopping}
-                className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 transition-all inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
-                title="Run De-Slop cleaner on resume bullets"
-              >
-                <Sparkles className={`w-3.5 h-3.5 ${deslopping ? 'animate-spin text-purple-400' : 'text-purple-400'}`} />
-                <span>De-Slop</span>
-              </button>
-
-              <button
-                onClick={() => setIsPreflightModalOpen(true)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all inline-flex items-center gap-1.5 ${
-                  preflightStatus?.isClean
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/20'
-                    : 'bg-amber-500/10 text-amber-400 border-amber-500/30 hover:bg-amber-500/20'
-                }`}
-                title="Run Pre-Flight Check"
-              >
-                {preflightLoading ? (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-purple-400" />
-                    <span>Auditing...</span>
-                  </>
-                ) : preflightStatus?.isClean ? (
-                  <>
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Pre-Flight: Passed</span>
-                  </>
-                ) : (
-                  <>
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    <span>Pre-Flight: Needs Review</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Compiler Preview Card */}
-          <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-lg flex-1 flex flex-col min-h-[600px]">
-            {/* Preview Toolbar */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800 bg-slate-950/60">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-slate-400">
-                  Target: <strong className="text-slate-200">{activeFormat.toUpperCase()}</strong>
-                </span>
-                {compiling && (
-                  <span className="text-[10px] text-purple-400 animate-pulse font-mono">
-                    Compiling...
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2">
-                {activeFormat === 'html' ? (
-                  <button
-                    onClick={handlePrintHtml}
-                    className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5 shadow-sm shadow-purple-900/30"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>Print / Save as PDF</span>
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={handleCopyCompiled}
-                      className="px-2.5 py-1 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-medium transition-colors inline-flex items-center gap-1"
-                    >
-                      {copied ? (
-                        <>
-                          <Check className="w-3 h-3 text-emerald-400" />
-                          <span className="text-emerald-400">Copied</span>
-                        </>
-                      ) : (
-                        <>
-                          <Copy className="w-3 h-3" />
-                          <span>Copy</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      onClick={handleDownloadCompiled}
-                      className="px-2.5 py-1 text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-medium transition-colors inline-flex items-center gap-1"
-                    >
-                      <Download className="w-3 h-3" />
-                      <span>Download</span>
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Preview Body */}
-            <div className="p-3 flex-1 flex flex-col overflow-hidden">
-              {activeFormat === 'html' ? (
-                <iframe
-                  ref={printIframeRef}
-                  srcDoc={compiledOutput}
-                  title="Sandboxed Resume Print Preview"
-                  className="w-full flex-1 bg-white rounded-xl shadow-inner border border-slate-700 min-h-[580px]"
-                />
-              ) : (
-                <pre className="p-4 bg-slate-950 font-mono text-xs text-slate-200 rounded-xl overflow-auto whitespace-pre-wrap flex-1 border border-slate-800/80 leading-relaxed selection:bg-purple-900/50">
-                  {compiledOutput}
-                </pre>
-              )}
-            </div>
-          </div>
-        </div>
       </div>
+
+      {/* Slide-Over Deliverables & Exports Drawer */}
+      <ExportDrawer
+        isOpen={isExportDrawerOpen}
+        onClose={() => setIsExportDrawerOpen(false)}
+        spec={currentSpec}
+        variantName={resumes.find((r) => r.id === selectedResumeId)?.name || 'tailored'}
+        jobDescription={jobDescription}
+        matchedKeywords={matchedKeywords}
+        missingKeywords={unmatchedKeywords}
+        targetCompany={experiences[0]?.company}
+        targetRole={experiences[0]?.role}
+        preflightStatus={preflightStatus}
+        preflightLoading={preflightLoading}
+        onOpenPreflightModal={() => setIsPreflightModalOpen(true)}
+        onDeSlop={handleDeSlop}
+        deslopping={deslopping}
+        squeezeMode={squeezeMode}
+        onToggleSqueeze={() => setSqueezeMode((prev) => !prev)}
+      />
 
       {/* Evidence Picker Drawer/Modal */}
       <EvidencePickerModal
