@@ -15,11 +15,16 @@ function redact(text: string, rules?: PrivacyRulesConfig): string {
 
 /**
  * Escapes characters that have special syntactic meaning in Typst markup mode.
+ *
+ * `@` matters most: Typst reads `alex@example.com` as a reference to a label
+ * named `example`, which is a hard compile error, so an unescaped email address
+ * breaks the whole document. `~` is a non-breaking space and would silently
+ * corrupt the text instead.
  */
 export function escapeTypst(str: string): string {
   return str
     .replace(/\\/g, '\\\\')
-    .replace(/([#$\[\]*_`<>"])/g, '\\$1');
+    .replace(/([#$\[\]*_`<>"@~])/g, '\\$1');
 }
 
 function sanitizeUrl(url: string): string {

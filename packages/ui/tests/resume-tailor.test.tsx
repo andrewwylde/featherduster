@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { ResumeTailor } from '../src/views/ResumeTailor';
 import { PreFlightModal } from '../src/components/PreFlightModal';
-import { apiClient, type ResumeRecord, type PreflightResult } from '../src/api/client';
+import { apiClient, ApiError, type ResumeRecord, type PreflightResult } from '../src/api/client';
 import type { EvidenceRecord } from '@featherduster/core';
 
 describe('Resume Tailor & Pre-Flight Gate Tests', () => {
@@ -147,6 +147,15 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       };
     });
     vi.spyOn(apiClient, 'runPreflight').mockResolvedValue(samplePreflightClean);
+    // Default to a machine with no typst installed, so the Typst tab falls back
+    // to showing source. Tests that care about rendering override this.
+    vi.spyOn(apiClient, 'renderTypst').mockResolvedValue({
+      available: false,
+      detail: 'Typst CLI not found on PATH. Install it to enable the rendered preview.',
+      pages: [],
+      error: null,
+      source: '= Summary',
+    });
 
     // Mock URL.createObjectURL and URL.revokeObjectURL for downloads
     global.URL.createObjectURL = vi.fn(() => 'blob:mock-url');
@@ -344,6 +353,134 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
         expect(compileSpy).toHaveBeenCalledWith(expect.anything(), 'markdown');
         expect(screen.getByText(/Compiled \[markdown\] Resume/)).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Typst rendered preview', () => {
+    const openTypstTab = async () => {
+      render(<ResumeTailor />);
+      await waitFor(() => {
+        expect(screen.getByText('ATS Markdown')).toBeInTheDocument();
+      });
+      fireEvent.click(screen.getByRole('button', { name: /^Typst$/i }));
+    };
+
+    it('shows one rendered page image per typeset page instead of the source', async () => {
+      vi.spyOn(apiClient, 'renderTypst').mockResolvedValue({
+        available: true,
+        detail: 'typst 0.13.1',
+        pages: [
+          '<svg xmlns="http://www.w3.org/2000/svg"><title>one</title></svg>',
+          '<svg xmlns="http://www.w3.org/2000/svg"><title>two</title></svg>',
+        ],
+        error: null,
+        source: '= Summary',
+      });
+
+      await openTypstTab();
+
+      await waitFor(
+        () => {
+          expect(screen.getByAltText('Rendered resume page 1')).toBeInTheDocument();
+          expect(screen.getByAltText('Rendered resume page 2')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+      // The rendered preview replaces the raw .typ dump.
+      expect(screen.queryByText(/Compiled \[typst\] Resume/)).not.toBeInTheDocument();
+    });
+
+    it('falls back to the source with an install hint when typst is missing', async () => {
+      await openTypstTab();
+
+      await waitFor(
+        () => {
+          expect(screen.getByText(/Typst is not installed/i)).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+      expect(screen.getByText(/Install it to enable the rendered preview/i)).toBeInTheDocument();
+      expect(screen.getByText(/Compiled \[typst\] Resume/)).toBeInTheDocument();
+    });
+
+    it('surfaces typst diagnostics when the document fails to compile', async () => {
+      vi.spyOn(apiClient, 'renderTypst').mockResolvedValue({
+        available: true,
+        detail: 'typst 0.13.1',
+        pages: [],
+        error: 'error: unknown variable: wobble',
+        source: '= Summary',
+      });
+
+      await openTypstTab();
+
+      await waitFor(
+        () => {
+          expect(screen.getByText(/Typst failed to compile this resume/i)).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+      expect(screen.getByText(/unknown variable: wobble/)).toBeInTheDocument();
+    });
+
+    it('toggles between the rendered preview and the .typ source', async () => {
+      const renderSpy = vi.spyOn(apiClient, 'renderTypst').mockResolvedValue({
+        available: true,
+        detail: 'typst 0.13.1',
+        pages: ['<svg xmlns="http://www.w3.org/2000/svg"><title>one</title></svg>'],
+        error: null,
+        source: '= Summary',
+      });
+
+      await openTypstTab();
+
+      await waitFor(
+        () => {
+          expect(screen.getByAltText('Rendered resume page 1')).toBeInTheDocument();
+        },
+        { timeout: 3000 }
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /Source/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/Compiled \[typst\] Resume/)).toBeInTheDocument();
+      });
+      expect(screen.queryByAltText('Rendered resume page 1')).not.toBeInTheDocument();
+
+      // Source view must not keep spawning typst in the background.
+      const callsWhileSourceShown = renderSpy.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(renderSpy.mock.calls.length).toBe(callsWhileSourceShown);
+    });
+
+    it('downloads a typeset PDF and reports export failures', async () => {
+      const pdfSpy = vi
+        .spyOn(apiClient, 'exportTypstPdf')
+        .mockResolvedValue(new Blob(['%PDF-1.7'], { type: 'application/pdf' }));
+
+      await openTypstTab();
+
+      const exportButton = await screen.findByRole('button', { name: /Export PDF/i });
+      fireEvent.click(exportButton);
+
+      await waitFor(() => {
+        expect(pdfSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ profile: expect.objectContaining({ name: 'Alex Mercer' }) })
+        );
+        expect(global.URL.createObjectURL).toHaveBeenCalled();
+      });
+
+      pdfSpy.mockRejectedValue(new ApiError('Typst CLI not found on PATH.', 503, 'typst_not_installed'));
+      fireEvent.click(exportButton);
+
+      await waitFor(() => {
+        expect(screen.getByText('Typst CLI not found on PATH.')).toBeInTheDocument();
+      });
+
+      // The failure must stay visible after switching to the source view.
+      fireEvent.click(screen.getByRole('button', { name: /Source/i }));
+      expect(screen.getByText('Typst CLI not found on PATH.')).toBeInTheDocument();
     });
   });
 

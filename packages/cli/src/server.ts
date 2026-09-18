@@ -85,6 +85,7 @@ import { mountSettingsRoutes } from './settings/routes.js';
 import { ClaudeAuthManager } from './settings/claude-auth.js';
 import { CodexAuthManager } from './settings/codex-auth.js';
 import { getCredentialStore, type CredentialStore } from './settings/credentials.js';
+import { TypstRenderer } from './render/typst-renderer.js';
 import { checkWorkspace } from './commands/check.js';
 
 export interface CreateAppOptions {
@@ -100,6 +101,8 @@ export interface CreateAppOptions {
   claudeAuth?: ClaudeAuthManager;
   /** Override the Codex auth wrapper (tests). */
   codexAuth?: CodexAuthManager;
+  /** Override the Typst binary wrapper (tests). */
+  typstRenderer?: TypstRenderer;
   /** Override environment used for credential resolution (tests). */
   env?: NodeJS.ProcessEnv;
 }
@@ -361,6 +364,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   const resolvedWorkspaceDir = path.resolve(workspaceDir);
   const app = new Hono();
   const watcher = options?.watcher ?? new WorkspaceWatcher(resolvedWorkspaceDir);
+  const typstRenderer = options?.typstRenderer ?? new TypstRenderer();
 
   // Tailoring run events fan out to every SSE subscriber. Token events are coalesced (~10/s).
   const tailoringListeners = new Set<(evt: TailoringEvent) => void>();
@@ -732,6 +736,61 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       });
     } catch (err: any) {
       return c.json({ error: err.message || 'Failed to compile resume' }, 400);
+    }
+  });
+
+  // 6a. Typst rendering — rendered preview and PDF export via the local typst binary.
+  // The binary is optional: a missing one is reported, not thrown, so the UI can
+  // fall back to showing the .typ source.
+  const typstSourceFor = (spec: any): string => {
+    const shouldRedact = spec.redact !== false;
+    const privacyRules = loadPrivacyRules(resolvedWorkspaceDir);
+    return compileTypstResume(spec, shouldRedact ? privacyRules : undefined);
+  };
+
+  app.post('/api/resumes/render', async (c) => {
+    try {
+      const { spec } = await c.req.json();
+      if (!spec) {
+        return c.json({ error: 'Missing spec in request body' }, 400);
+      }
+      const source = typstSourceFor(spec);
+      const render = await typstRenderer.renderSvg(source);
+      return c.json({
+        available: render.available,
+        detail: render.detail,
+        pages: render.pages,
+        error: render.error,
+        source,
+      });
+    } catch (err: any) {
+      return c.json({ error: err.message || 'Failed to render resume' }, 400);
+    }
+  });
+
+  app.post('/api/resumes/render/pdf', async (c) => {
+    try {
+      const { spec } = await c.req.json();
+      if (!spec) {
+        return c.json({ error: 'Missing spec in request body' }, 400);
+      }
+      const render = await typstRenderer.renderPdf(typstSourceFor(spec));
+      if (!render.available) {
+        return c.json({ error: render.detail, code: 'typst_not_installed' }, 503);
+      }
+      if (render.error || !render.pdf) {
+        return c.json({ error: render.error || 'Typst produced no PDF', code: 'typst_compile_failed' }, 422);
+      }
+      return new Response(new Uint8Array(render.pdf), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="resume.pdf"',
+          'Content-Length': String(render.pdf.byteLength),
+        },
+      });
+    } catch (err: any) {
+      return c.json({ error: err.message || 'Failed to export PDF' }, 400);
     }
   });
 

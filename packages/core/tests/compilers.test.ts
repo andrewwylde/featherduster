@@ -589,7 +589,8 @@ describe('compileTypstResume', () => {
     expect(typ).toContain('#set text(');
     expect(typ).toContain('Kai Chen');
     expect(typ).toContain('Senior Site Reliability Engineer');
-    expect(typ).toContain('kai@example.com');
+    // The @ must be escaped or typst reads it as a reference and refuses to compile.
+    expect(typ).toContain('kai\\@example.com');
     expect(typ).toContain('CloudMatrix');
     expect(typ).toContain('Senior SRE');
     expect(typ).toContain('Stanford University');
@@ -622,6 +623,26 @@ describe('compileTypstResume', () => {
     const typ = compileTypstResume(specWithSpecials);
     expect(typ).toContain('\\$5M');
     expect(typ).toContain('\\#1');
+    expect(typ).toContain('\\[verified\\]');
+  });
+
+  it('escapes @ in email addresses, which Typst would otherwise read as a label reference', () => {
+    const typ = compileTypstResume({
+      ...sampleSpec,
+      profile: { ...sampleSpec.profile, email: 'alex@example.com' },
+    });
+    // Unescaped, `@example` is a reference to a non-existent label and typst
+    // refuses to compile the document at all.
+    expect(typ).toContain('alex\\@example.com');
+    expect(typ).not.toMatch(/[^\\]@example/);
+  });
+
+  it('escapes ~, which Typst would silently turn into a non-breaking space', () => {
+    const typ = compileTypstResume({
+      ...sampleSpec,
+      summary: 'Handled ~40% of incident load.',
+    });
+    expect(typ).toContain('\\~40%');
   });
 });
 

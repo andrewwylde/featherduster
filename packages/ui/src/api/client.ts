@@ -135,6 +135,19 @@ export interface CompileResumeResponse {
   isClean: boolean;
 }
 
+export interface TypstRenderResponse {
+  /** Whether the local typst binary was found. */
+  available: boolean;
+  /** Version banner when installed, install hint when not. */
+  detail: string;
+  /** One SVG document per page, in page order. */
+  pages: string[];
+  /** Typst diagnostics when compilation failed. */
+  error: string | null;
+  /** The .typ source that was rendered. */
+  source: string;
+}
+
 export interface ImportRubricPayload {
   rawTable?: string;
   rubric?: LevelingRubric | any;
@@ -392,6 +405,43 @@ export class ApiClient {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ spec, format }),
     });
+  }
+
+  /**
+   * Render the resume's Typst output to SVG pages using the local typst binary.
+   * `available: false` means the binary is missing — not an error; callers fall
+   * back to showing the source.
+   */
+  async renderTypst(spec: ResumeSpec | Record<string, any>): Promise<TypstRenderResponse> {
+    return this.fetchJson<TypstRenderResponse>('/api/resumes/render', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec }),
+    });
+  }
+
+  /**
+   * Typeset the resume to PDF with the local typst binary.
+   */
+  async exportTypstPdf(spec: ResumeSpec | Record<string, any>): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}/api/resumes/render/pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec }),
+    });
+    if (!res.ok) {
+      let message = `API Error ${res.status}: ${res.statusText}`;
+      let code: string | undefined;
+      try {
+        const body = await res.json();
+        if (body.error) message = body.error;
+        if (typeof body.code === 'string') code = body.code;
+      } catch {
+        // Fallback to status text
+      }
+      throw new ApiError(message, res.status, code);
+    }
+    return res.blob();
   }
 
   /**
