@@ -659,6 +659,58 @@ export class ApiClient {
   async logoutCodex(): Promise<{ ok: boolean; detail: string; status: CodexAuthStatus }> {
     return this.fetchJson('/api/settings/codex/logout', this.jsonRequest('POST'));
   }
+
+  /**
+   * List generated export files and briefs
+   */
+  async getExports(): Promise<ExportArtifact[]> {
+    return this.fetchJson<ExportArtifact[]>('/api/exports');
+  }
+
+  /**
+   * Compile and save full application release bundle
+   */
+  async createBundle(payload: BundlePayload): Promise<BundleResponse> {
+    return this.fetchJson<BundleResponse>('/api/exports/bundle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
 }
 
-export const apiClient = new ApiClient();
+export interface ExportArtifact {
+  name: string;
+  relativePath: string;
+  category: 'export' | 'brief';
+  format: string;
+  sizeBytes: number;
+  updatedAt: string;
+}
+
+export interface BundlePayload {
+  name: string;
+  spec: ResumeSpec;
+  formats?: Array<'markdown' | 'html' | 'typst' | 'latex'>;
+  includeBrief?: boolean;
+  targetCompany?: string;
+  targetRole?: string;
+  jobDescription?: string;
+  matchedKeywords?: string[];
+  missingKeywords?: string[];
+  squeeze?: boolean;
+}
+
+export interface BundleResponse {
+  success: boolean;
+  name: string;
+  files: Array<{
+    name: string;
+    relativePath: string;
+    category: 'export' | 'brief';
+    format: string;
+  }>;
+  error?: string;
+}
+
+export const apiClient = new ApiClient();

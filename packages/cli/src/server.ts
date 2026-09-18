@@ -43,6 +43,26 @@ export function getMimeType(filePath: string): string {
       return 'application/octet-stream';
   }
 }
+
+export function getFormatFromFilename(filename: string): string {
+  const ext = path.extname(filename).toLowerCase();
+  switch (ext) {
+    case '.md':
+    case '.markdown':
+      return 'markdown';
+    case '.html':
+    case '.htm':
+      return 'html';
+    case '.typ':
+      return 'typst';
+    case '.tex':
+      return 'latex';
+    case '.pdf':
+      return 'pdf';
+    default:
+      return 'other';
+  }
+}
 import { streamSSE } from 'hono/streaming';
 import { serve } from '@hono/node-server';
 import yaml from 'js-yaml';
@@ -63,6 +83,8 @@ import {
   compileLatexResume,
   compileMarkdownResume,
   compileTypstResume,
+  compileDefenseBrief,
+  calculatePageBudget,
   lintCitations,
   parseEvidenceLedger,
   parseEvidenceMarkdown,
@@ -959,6 +981,156 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     env: options?.env,
   });
 
+  // 6g. List compiled exports and interview defense briefs
+  app.get('/api/exports', (c) => {
+    const exportsDir = path.join(resolvedWorkspaceDir, 'resumes', 'exports');
+    const briefsDir = path.join(resolvedWorkspaceDir, 'resumes', 'tailored', 'briefs');
+    const items: Array<{
+      name: string;
+      relativePath: string;
+      category: 'export' | 'brief';
+      format: string;
+      sizeBytes: number;
+      updatedAt: string;
+    }> = [];
+
+    const dirs: Array<{ dir: string; category: 'export' | 'brief' }> = [
+      { dir: exportsDir, category: 'export' },
+      { dir: briefsDir, category: 'brief' },
+    ];
+
+    for (const { dir, category } of dirs) {
+      if (!fs.existsSync(dir)) continue;
+      const files = findFiles(dir, ['.md', '.markdown', '.html', '.htm', '.typ', '.tex', '.pdf', '.txt']);
+      for (const file of files) {
+        try {
+          const stat = fs.statSync(file);
+          const rel = path.relative(resolvedWorkspaceDir, file).replace(/\\/g, '/');
+          const format = getFormatFromFilename(file);
+          items.push({
+            name: path.basename(file),
+            relativePath: rel,
+            category,
+            format,
+            sizeBytes: stat.size,
+            updatedAt: stat.mtime.toISOString(),
+          });
+        } catch {
+          // Skip unreadable files
+        }
+      }
+    }
+
+    items.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return c.json(items);
+  });
+
+  // 6h. Compile and save multi-target application release bundle
+  app.post('/api/exports/bundle', async (c) => {
+    try {
+      const body = await c.req.json();
+      let rawName = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!rawName) {
+        return c.json({ success: false, error: 'Bundle name / slug is required' }, 400);
+      }
+      rawName = rawName.replace(/\.(ya?ml|json|md)$/i, '');
+      const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const validatedSpec = ResumeSpecSchema.parse(body.spec);
+      const privacyRules = loadPrivacyRules(resolvedWorkspaceDir);
+      const store = loadEvidenceStore(resolvedWorkspaceDir);
+
+      const requestedFormats: string[] =
+        Array.isArray(body.formats) && body.formats.length > 0
+          ? body.formats
+          : ['markdown', 'html'];
+      const includeBrief = body.includeBrief !== false;
+
+      const exportsDir = path.join(resolvedWorkspaceDir, 'resumes', 'exports');
+      const briefsDir = path.join(resolvedWorkspaceDir, 'resumes', 'tailored', 'briefs');
+      fs.mkdirSync(exportsDir, { recursive: true });
+      if (includeBrief) {
+        fs.mkdirSync(briefsDir, { recursive: true });
+      }
+
+      const generatedFiles: Array<{
+        name: string;
+        relativePath: string;
+        category: 'export' | 'brief';
+        format: string;
+      }> = [];
+
+      // 1. Compile requested resume formats
+      for (const fmt of requestedFormats) {
+        let content = '';
+        let fileName = '';
+        switch (fmt) {
+          case 'markdown':
+            content = compileMarkdownResume(validatedSpec, privacyRules);
+            fileName = `resume_${safeName}_ats.md`;
+            break;
+          case 'html':
+            content = compileHtmlPrintResume(validatedSpec, privacyRules);
+            fileName = `resume_${safeName}.html`;
+            break;
+          case 'typst':
+            content = compileTypstResume(validatedSpec, privacyRules);
+            fileName = `resume_${safeName}.typ`;
+            break;
+          case 'latex':
+            content = compileLatexResume(validatedSpec, privacyRules);
+            fileName = `resume_${safeName}.tex`;
+            break;
+        }
+
+        if (content && fileName) {
+          const filePath = path.join(exportsDir, fileName);
+          fs.writeFileSync(filePath, content, 'utf-8');
+          generatedFiles.push({
+            name: fileName,
+            relativePath: path.relative(resolvedWorkspaceDir, filePath).replace(/\\/g, '/'),
+            category: 'export',
+            format: fmt,
+          });
+        }
+      }
+
+      // 2. Compile Interview Defense Dossier (strictly quarantined in briefs/)
+      if (includeBrief) {
+        const briefContent = compileDefenseBrief(validatedSpec, store, {
+          targetCompany: body.targetCompany,
+          targetRole: body.targetRole,
+          jobDescription: body.jobDescription,
+          matchedKeywords: body.matchedKeywords,
+          missingKeywords: body.missingKeywords,
+        });
+        const briefFileName = `${safeName}-defense-brief.md`;
+        const briefFilePath = path.join(briefsDir, briefFileName);
+        fs.writeFileSync(briefFilePath, briefContent, 'utf-8');
+        generatedFiles.push({
+          name: briefFileName,
+          relativePath: path.relative(resolvedWorkspaceDir, briefFilePath).replace(/\\/g, '/'),
+          category: 'brief',
+          format: 'markdown',
+        });
+      }
+
+      return c.json({
+        success: true,
+        name: safeName,
+        files: generatedFiles,
+      });
+    } catch (err: any) {
+      return c.json(
+        {
+          success: false,
+          error: err.message || 'Failed to compile and save application bundle',
+          issues: err.issues,
+        },
+        400
+      );
+    }
+  });
+
   // 7. Integrity check
   app.get('/api/integrity/check', (c) => {
     const isStrict = c.req.query('strict') === 'true';
@@ -1151,4 +1323,4 @@ export async function startServer(options?: StartServerOptions): Promise<ServerI
       });
     },
   };
-}
+}

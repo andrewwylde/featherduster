@@ -61,7 +61,7 @@ cli
 cli
   .command('build [target]', 'Compile tailored resume or performance brag doc')
   .option('-w, --workspace <dir>', 'Path to workspace directory')
-  .option('-f, --format <format>', 'Export format: markdown | html | brag | typst | latex', {
+  .option('-f, --format <format>', 'Export format: markdown | html | brag | typst | latex | brief', {
     default: 'markdown',
   })
   .option('-s, --spec <file>', 'Path to resume spec or rubric file')

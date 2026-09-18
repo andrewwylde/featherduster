@@ -10,6 +10,7 @@ import {
   compileTypstResume,
   compileLatexResume,
   compileBragDoc,
+  compileDefenseBrief,
   redactText,
 } from '@featherduster/core';
 import {
@@ -19,7 +20,7 @@ import {
   loadRubrics,
 } from '../server.js';
 
-export type BuildFormat = 'markdown' | 'html' | 'brag' | 'typst' | 'latex';
+export type BuildFormat = 'markdown' | 'html' | 'brag' | 'typst' | 'latex' | 'brief';
 
 export interface BuildOptions {
   workspace?: string;
@@ -47,6 +48,8 @@ function getExtensionForFormat(format: BuildFormat): string {
     case 'html':
       return 'html';
     case 'brag':
+      return 'md';
+    case 'brief':
       return 'md';
     case 'typst':
       return 'typ';
@@ -131,6 +134,13 @@ export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
       case 'latex':
         output = compileLatexResume(specObj, privacyRules);
         break;
+      case 'brief': {
+        const store = loadEvidenceStore(workspaceDir);
+        output = compileDefenseBrief(specObj, store, {
+          candidateName: options?.candidateName,
+        });
+        break;
+      }
       default:
         throw new Error(`Unsupported format: ${format}`);
     }
@@ -149,12 +159,10 @@ export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
     process.stdout.write(output);
   } else {
     const ext = getExtensionForFormat(format);
-    const defaultOutput = path.join(
-      workspaceDir,
-      'resumes',
-      'exports',
-      `resume-${format}.${ext}`
-    );
+    const defaultOutput =
+      format === 'brief'
+        ? path.join(workspaceDir, 'resumes', 'tailored', 'briefs', 'defense-brief.md')
+        : path.join(workspaceDir, 'resumes', 'exports', `resume-${format}.${ext}`);
     if (options?.output) {
       outputPath = path.isAbsolute(options.output)
         ? path.resolve(options.output)
