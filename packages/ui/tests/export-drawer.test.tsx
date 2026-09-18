@@ -78,11 +78,11 @@ describe('ExportDrawer Component Tests', () => {
     vi.spyOn(apiClient, 'getExports').mockResolvedValue(sampleArtifacts);
     vi.spyOn(apiClient, 'createBundle').mockResolvedValue({
       success: true,
-      variant: 'netflix-staff',
+      name: 'netflix-staff',
       files: [
-        'resumes/exports/resume_netflix-staff.md',
-        'resumes/exports/resume_netflix-staff.html',
-        'resumes/tailored/briefs/netflix-staff-defense-brief.md',
+        { name: 'resume_netflix-staff_ats.md', relativePath: 'resumes/exports/resume_netflix-staff_ats.md', category: 'export', format: 'markdown' },
+        { name: 'resume_netflix-staff.html', relativePath: 'resumes/exports/resume_netflix-staff.html', category: 'export', format: 'html' },
+        { name: 'netflix-staff-defense-brief.md', relativePath: 'resumes/tailored/briefs/netflix-staff-defense-brief.md', category: 'brief', format: 'markdown' },
       ],
     });
 

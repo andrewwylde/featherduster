@@ -13,6 +13,9 @@ import {
   FileText,
   Clock,
   HardDrive,
+  Eye,
+  Code2,
+  FileDown,
 } from 'lucide-react';
 import {
   calculatePageBudget,
@@ -22,6 +25,7 @@ import {
   apiClient,
   type PreflightResult,
   type ExportArtifact,
+  type TypstRenderResponse,
 } from '../api/client';
 import { useModalA11y } from '../hooks/useModalA11y';
 
@@ -44,6 +48,10 @@ export interface ExportDrawerProps {
   deslopping: boolean;
   squeezeMode: boolean;
   onToggleSqueeze: () => void;
+}
+
+function svgToDataUri(svg: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
 export const ExportDrawer: React.FC<ExportDrawerProps> = ({
@@ -87,6 +95,13 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
   const [bundleLoading, setBundleLoading] = useState(false);
   const [bundleMessage, setBundleMessage] = useState<string | null>(null);
 
+  // Typst live rendering state
+  const [typstView, setTypstView] = useState<'preview' | 'source'>('preview');
+  const [typstRender, setTypstRender] = useState<TypstRenderResponse | null>(null);
+  const [typstRendering, setTypstRendering] = useState(false);
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
+
   // Artifacts shelf state
   const [artifacts, setArtifacts] = useState<ExportArtifact[]>([]);
   const [artifactsLoading, setArtifactsLoading] = useState(false);
@@ -119,6 +134,67 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
       setCompiling(false);
     }
   }, [spec, targetCompany, targetRole, jobDescription, matchedKeywords, missingKeywords]);
+
+  // Typst rendering effect
+  const shouldRenderTypst = isOpen && activeFormat === 'typst' && typstView === 'preview';
+
+  useEffect(() => {
+    if (!shouldRenderTypst) {
+      setTypstRendering(false);
+      return;
+    }
+    if (!spec.profile?.name && (spec.experiences || []).length === 0) return;
+
+    let cancelled = false;
+    setTypstRendering(true);
+    const timer = setTimeout(() => {
+      apiClient
+        .renderTypst(spec)
+        .then((res) => {
+          if (!cancelled) setTypstRender(res);
+        })
+        .catch((err: any) => {
+          if (!cancelled) {
+            setTypstRender({
+              available: true,
+              detail: '',
+              pages: [],
+              error: err?.message || String(err),
+              source: '',
+            });
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setTypstRendering(false);
+        });
+    }, 400);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [shouldRenderTypst, spec]);
+
+  // Export Typst PDF directly via local typst binary
+  const handleExportTypstPdf = async () => {
+    setPdfExporting(true);
+    setPdfError(null);
+    try {
+      const blob = await apiClient.exportTypstPdf(spec);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resume_${(variantName || 'master').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setPdfError(err?.message || 'Failed to export PDF');
+    } finally {
+      setPdfExporting(false);
+    }
+  };
 
   // Fetch exports shelf files
   const loadArtifacts = useCallback(async () => {
@@ -568,8 +644,50 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
                   </button>
                 </div>
 
+                {activeFormat === 'typst' && (
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+                      <button
+                        onClick={() => setTypstView('preview')}
+                        aria-pressed={typstView === 'preview'}
+                        className={`px-2 py-0.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
+                          typstView === 'preview' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>Preview</span>
+                      </button>
+                      <button
+                        onClick={() => setTypstView('source')}
+                        aria-pressed={typstView === 'source'}
+                        className={`px-2 py-0.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
+                          typstView === 'source' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Code2 className="w-3 h-3" />
+                        <span>Source</span>
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={handleExportTypstPdf}
+                      disabled={pdfExporting}
+                      className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5 shadow-sm shadow-purple-900/30 disabled:opacity-50"
+                      title="Typeset a PDF with the local typst binary"
+                    >
+                      {pdfExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+                      <span>Export PDF</span>
+                    </button>
+                  </div>
+                )}
+
                 {/* Preview Box */}
                 <div className="flex-1 overflow-hidden bg-slate-950 border border-slate-800 rounded-xl relative flex flex-col">
+                  {activeFormat === 'typst' && pdfError && (
+                    <div className="m-2 px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+                      {pdfError}
+                    </div>
+                  )}
                   {compiling ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-slate-500 space-y-2">
                       <RefreshCw className="w-6 h-6 animate-spin text-purple-400" />
@@ -582,6 +700,49 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
                       title="Resume Print Preview"
                       className="w-full flex-1 bg-white rounded-lg shadow-inner border-0"
                     />
+                  ) : activeFormat === 'typst' && typstView === 'preview' ? (
+                    <div className="flex-1 flex flex-col overflow-hidden p-2 gap-2">
+                      {typstRender && !typstRender.available && (
+                        <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
+                          <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <div>
+                            <p className="font-semibold">Typst is not installed — showing source instead.</p>
+                            <p className="text-amber-200/80 mt-0.5">{typstRender.detail}</p>
+                          </div>
+                        </div>
+                      )}
+                      {typstRender?.error && (
+                        <div className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs">
+                          <p className="font-semibold inline-flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5" /> Typst failed to compile this resume
+                          </p>
+                          <pre className="mt-1 font-mono text-[11px] whitespace-pre-wrap text-red-200/90 max-h-32 overflow-auto">
+                            {typstRender.error}
+                          </pre>
+                        </div>
+                      )}
+                      {typstRender && typstRender.available && !typstRender.error && typstRender.pages.length > 0 ? (
+                        <div className="flex-1 overflow-auto rounded-xl bg-slate-950 border border-slate-800/80 p-4 space-y-4">
+                          {typstRender.pages.map((svg, index) => (
+                            <img
+                              key={index}
+                              src={svgToDataUri(svg)}
+                              alt={`Rendered resume page ${index + 1}`}
+                              className="w-full block bg-white rounded-lg shadow-lg"
+                            />
+                          ))}
+                        </div>
+                      ) : !typstRender && typstRendering ? (
+                        <div className="flex-1 flex items-center justify-center gap-2 text-xs text-slate-500 rounded-xl bg-slate-950 border border-slate-800/80">
+                          <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                          <span>Rendering with typst...</span>
+                        </div>
+                      ) : (
+                        <pre className="p-4 flex-1 overflow-auto font-mono text-xs text-slate-200 whitespace-pre-wrap leading-relaxed selection:bg-purple-900/50">
+                          {compiledOutput || '// No output generated'}
+                        </pre>
+                      )}
+                    </div>
                   ) : (
                     <pre className="p-4 flex-1 overflow-auto font-mono text-xs text-slate-200 whitespace-pre-wrap leading-relaxed selection:bg-purple-900/50">
                       {compiledOutput || '// No output generated'}

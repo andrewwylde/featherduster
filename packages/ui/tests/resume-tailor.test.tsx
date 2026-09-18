@@ -150,8 +150,11 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     vi.spyOn(apiClient, 'getExports').mockResolvedValue([]);
     vi.spyOn(apiClient, 'createBundle').mockResolvedValue({
       success: true,
-      variant: 'starter',
-      files: ['resumes/exports/starter.md', 'resumes/exports/starter.html'],
+      name: 'starter',
+      files: [
+        { name: 'resume_starter_ats.md', relativePath: 'resumes/exports/resume_starter_ats.md', category: 'export', format: 'markdown' },
+        { name: 'resume_starter.html', relativePath: 'resumes/exports/resume_starter.html', category: 'export', format: 'html' },
+      ],
     });
 
     // Mock URL.createObjectURL and URL.revokeObjectURL for downloads
