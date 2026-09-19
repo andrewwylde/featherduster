@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -451,6 +452,23 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     }
     await next();
   });
+
+  // 1a. CORS support for localhost and 127.0.0.1 origins
+  app.use('*', cors({
+    origin: (origin) => {
+      if (!origin) return '*';
+      try {
+        const originUrl = new URL(origin);
+        if (['127.0.0.1', 'localhost'].includes(originUrl.hostname)) {
+          return origin;
+        }
+      } catch {}
+      return null;
+    },
+    allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowHeaders: ['Content-Type', 'Accept', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+  }));
 
   // 1b. Health check
   app.get('/api/health', (c) => {
@@ -1220,6 +1238,10 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     // If request is under /api, do not fallback to index.html
     if (c.req.path.startsWith('/api')) {
       return c.json({ error: 'Endpoint not found' }, 404);
+    }
+    // Do not serve index.html for missing source maps
+    if (c.req.path.endsWith('.map')) {
+      return c.body(null, 404);
     }
 
     if (!fs.existsSync(uiDir)) {
