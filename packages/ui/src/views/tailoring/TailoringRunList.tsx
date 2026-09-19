@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Cloud, HardDrive, Plus, RefreshCw, Sparkles } from 'lucide-react';
+import { Cloud, HardDrive, PenLine, Plus, RefreshCw, Sparkles } from 'lucide-react';
 import {
   apiClient,
   type ResumeRecord,
@@ -13,12 +13,14 @@ import { StatusPill, cardClass, eyebrowClass, inputClass, primaryButton, seconda
 interface TailoringRunListProps {
   onOpenRun: (slug: string) => void;
   onOpenSettings?: () => void;
-  /** Posting handed over from the Exports canvas ("Run full tailoring"). */
+  /** Opens the manual resume canvas, the other mode of this tab. */
+  onOpenCanvas?: () => void;
+  /** Posting handed over from the manual canvas ("Run full tailoring"). */
   initialPosting?: string;
   onInitialPostingConsumed?: () => void;
 }
 
-export const TailoringRunList: React.FC<TailoringRunListProps> = ({ onOpenRun, onOpenSettings, initialPosting, onInitialPostingConsumed }) => {
+export const TailoringRunList: React.FC<TailoringRunListProps> = ({ onOpenRun, onOpenSettings, onOpenCanvas, initialPosting, onInitialPostingConsumed }) => {
   const [runs, setRuns] = useState<TailoringRunSummary[]>([]);
   const [runners, setRunners] = useState<RunnerInfo[]>([]);
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
@@ -116,10 +118,18 @@ export const TailoringRunList: React.FC<TailoringRunListProps> = ({ onOpenRun, o
             resume without your approval.
           </p>
         </div>
-        <button type="button" className={primaryButton} onClick={() => setShowForm((v) => !v)} aria-expanded={showForm}>
-          <Plus className="h-4 w-4" aria-hidden="true" />
-          New tailoring run
-        </button>
+        <div className="flex items-center gap-3">
+          {onOpenCanvas && (
+            <button type="button" className={secondaryButton} onClick={onOpenCanvas}>
+              <PenLine className="h-4 w-4" aria-hidden="true" />
+              Open canvas
+            </button>
+          )}
+          <button type="button" className={primaryButton} onClick={() => setShowForm((v) => !v)} aria-expanded={showForm}>
+            <Plus className="h-4 w-4" aria-hidden="true" />
+            New tailoring run
+          </button>
+        </div>
       </header>
 
       {loadError && (

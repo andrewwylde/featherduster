@@ -28,11 +28,26 @@ describe('static application routes', () => {
     ['/threads', 'Threads'],
     ['/evidence', 'Evidence'],
     ['/skills', 'Skills'],
-    ['/exports', 'Exports'],
+    ['/tailor', 'Tailor'],
   ])('renders %s directly', async (path, navLabel) => {
     window.history.replaceState({}, '', path);
     render(<App />);
     expect(await screen.findByRole('link', { name: navLabel })).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('keeps the canvas under the tailor tab', async () => {
+    window.history.replaceState({}, '', '/tailor/canvas');
+    render(<App />);
+    expect(await screen.findByRole('link', { name: 'Tailor' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByText(/Resume Tailoring Canvas/i)).toBeInTheDocument();
+  });
+
+  it('redirects the legacy /exports route to the canvas', async () => {
+    window.history.replaceState({}, '', '/exports');
+    render(<App />);
+    await waitFor(() => expect(window.location.pathname).toBe('/tailor/canvas'));
+    expect(await screen.findByRole('link', { name: 'Tailor' })).toHaveAttribute('aria-current', 'page');
+    expect(await screen.findByText(/Resume Tailoring Canvas/i)).toBeInTheDocument();
   });
 
   it('updates the URL on navigation and restores the view on browser navigation', async () => {
@@ -43,9 +58,9 @@ describe('static application routes', () => {
     expect(window.location.pathname).toBe('/skills');
     expect(await screen.findByText(/Competency Gap Matrix/i)).toBeInTheDocument();
 
-    window.history.pushState({}, '', '/exports');
+    window.history.pushState({}, '', '/tailor/canvas');
     window.dispatchEvent(new PopStateEvent('popstate'));
-    await waitFor(() => expect(window.location.pathname).toBe('/exports'));
+    await waitFor(() => expect(window.location.pathname).toBe('/tailor/canvas'));
     expect(await screen.findByText(/Resume Tailoring Canvas/i)).toBeInTheDocument();
   });
 });

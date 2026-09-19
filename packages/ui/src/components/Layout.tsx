@@ -6,7 +6,7 @@ import { DeskSidebar, type DeskTab } from './desk/DeskSidebar';
 import { DeskHeader } from './desk/DeskHeader';
 import { OnboardingModal } from './desk/OnboardingModal';
 
-export type NavTab = 'briefing' | 'threads' | 'evidence' | 'skills' | 'exports' | 'rubrics' | 'tailor' | 'settings';
+export type NavTab = 'briefing' | 'threads' | 'evidence' | 'skills' | 'tailor' | 'settings';
 
 interface LayoutProps {
   currentTab: NavTab;
@@ -49,9 +49,6 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
     fetchWorkspaceAndIntegrity();
   }, []);
 
-  // Map legacy tabs to desk tabs for sidebar selection
-  const mappedDeskTab: DeskTab = currentTab === 'rubrics' ? 'skills' : (currentTab as DeskTab);
-
   const handleSelectDeskTab = (tab: DeskTab) => {
     onSelectTab(tab);
   };
@@ -60,7 +57,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
     <div className="min-h-screen bg-[#fbfbfb] dark:bg-[#0c0f17] flex text-slate-900 dark:text-slate-100 transition-colors duration-150">
       {/* Left Desk Navigation Column */}
       <DeskSidebar
-        currentTab={mappedDeskTab}
+        currentTab={currentTab}
         onSelectTab={handleSelectDeskTab}
         onOpenOnboarding={() => setIsOnboardingModalOpen(true)}
       />

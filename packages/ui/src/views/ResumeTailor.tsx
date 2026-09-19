@@ -15,6 +15,7 @@ import {
   GraduationCap,
   Wrench,
   Package,
+  ArrowLeft,
 } from 'lucide-react';
 import {
   apiClient,
@@ -56,9 +57,11 @@ interface ResumeTailorProps {
   onStartTailoringRun?: (posting: string) => void;
   /** Resume variant to select once loaded (e.g. a freshly finalized tailoring run). */
   preferredResumeId?: string;
+  /** Returns to the tailoring run list, the other mode of this tab. */
+  onBackToRuns?: () => void;
 }
 
-export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId }) => {
+export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns }) => {
   // Remote data state
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
   const [selectedResumeId, setSelectedResumeId] = useState<string>('');
@@ -507,6 +510,16 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
+          {onBackToRuns && (
+            <button
+              type="button"
+              onClick={onBackToRuns}
+              className="mb-2 inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-slate-200"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" aria-hidden="true" />
+              Tailoring runs
+            </button>
+          )}
           <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
             Resume Tailoring Canvas
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/50 text-purple-300 border border-purple-500/30">

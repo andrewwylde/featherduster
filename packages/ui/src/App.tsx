@@ -8,14 +8,31 @@ import { RubricGapMatrix } from './views/RubricGapMatrix';
 import { ResumeTailor } from './views/ResumeTailor';
 import { EvidenceStrengthener } from './views/desk/EvidenceStrengthener';
 import { useDeskData } from './hooks/useDeskData';
-import { pathForTab, tabForPath, tailoringSlugForPath } from './routing';
+import {
+  CANVAS_PATH,
+  pathForTab,
+  redirectForPath,
+  tabForPath,
+  tailorViewForPath,
+  type TailorView,
+} from './routing';
 import { TailoringRunList } from './views/tailoring/TailoringRunList';
 import { TailoringRun } from './views/tailoring/TailoringRun';
 import { SettingsView } from './views/settings/SettingsView';
 
+/** Rewrites a legacy URL in place so the address bar matches the merged routes. */
+function canonicalPath(pathname: string): string {
+  const redirect = redirectForPath(pathname);
+  if (redirect) {
+    window.history.replaceState({}, '', redirect);
+    return redirect;
+  }
+  return pathname;
+}
+
 export function App() {
-  const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(window.location.pathname));
-  const [tailoringSlug, setTailoringSlug] = useState<string | null>(() => tailoringSlugForPath(window.location.pathname));
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(canonicalPath(window.location.pathname)));
+  const [tailorView, setTailorView] = useState<TailorView>(() => tailorViewForPath(window.location.pathname));
   const [handoffPosting, setHandoffPosting] = useState<string | undefined>(undefined);
   const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
   const desk = useDeskData();
@@ -26,19 +43,23 @@ export function App() {
       window.history.pushState({}, '', path);
     }
     setCurrentTab(tabForPath(path));
-    setTailoringSlug(tailoringSlugForPath(path));
+    setTailorView(tailorViewForPath(path));
   };
 
   const navigateTo = (tab: NavTab) => navigatePath(pathForTab(tab));
 
   useEffect(() => {
     const handlePopState = () => {
-      setCurrentTab(tabForPath(window.location.pathname));
-      setTailoringSlug(tailoringSlugForPath(window.location.pathname));
+      const path = canonicalPath(window.location.pathname);
+      setCurrentTab(tabForPath(path));
+      setTailorView(tailorViewForPath(path));
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  // The canvas holds unsaved editor state, so it stays mounted across tab changes.
+  const isCanvasVisible = currentTab === 'tailor' && tailorView.mode === 'canvas';
 
   return (
     <ThemeProvider>
@@ -70,25 +91,27 @@ export function App() {
             />
           ))}
 
-        {/* Skill-driven Tailoring Runs */}
-        {currentTab === 'tailor' &&
-          (tailoringSlug ? (
-            <TailoringRun
-              slug={tailoringSlug}
-              onBack={() => navigatePath('/tailor')}
-              onOpenInCanvas={(resumeId) => {
-                setCanvasResumeId(resumeId);
-                navigateTo('exports');
-              }}
-            />
-          ) : (
-            <TailoringRunList
-              onOpenRun={(slug) => navigatePath(`/tailor/${slug}`)}
-              onOpenSettings={() => navigateTo('settings')}
-              initialPosting={handoffPosting}
-              onInitialPostingConsumed={() => setHandoffPosting(undefined)}
-            />
-          ))}
+        {/* Tailor Workspace: run list, run detail, and the manual canvas */}
+        {currentTab === 'tailor' && tailorView.mode === 'run' && (
+          <TailoringRun
+            slug={tailorView.slug}
+            onBack={() => navigatePath('/tailor')}
+            onOpenInCanvas={(resumeId) => {
+              setCanvasResumeId(resumeId);
+              navigatePath(CANVAS_PATH);
+            }}
+          />
+        )}
+
+        {currentTab === 'tailor' && tailorView.mode === 'list' && (
+          <TailoringRunList
+            onOpenRun={(slug) => navigatePath(`/tailor/${slug}`)}
+            onOpenSettings={() => navigateTo('settings')}
+            onOpenCanvas={() => navigatePath(CANVAS_PATH)}
+            initialPosting={handoffPosting}
+            onInitialPostingConsumed={() => setHandoffPosting(undefined)}
+          />
+        )}
 
         {/* Runner Settings */}
         {currentTab === 'settings' && <SettingsView />}
@@ -109,14 +132,15 @@ export function App() {
         </div>
 
         {/* Skills & Rubric Gaps Workspace */}
-        <div className={currentTab === 'skills' || currentTab === 'rubrics' ? 'block' : 'hidden'}>
+        <div className={currentTab === 'skills' ? 'block' : 'hidden'}>
           <RubricGapMatrix />
         </div>
 
-        {/* Exports Workspace (manual resume canvas) */}
-        <div className={currentTab === 'exports' ? 'block' : 'hidden'}>
+        {/* Manual resume canvas (a mode of the tailor tab) */}
+        <div className={isCanvasVisible ? 'block' : 'hidden'}>
           <ResumeTailor
             preferredResumeId={canvasResumeId}
+            onBackToRuns={() => navigatePath('/tailor')}
             onStartTailoringRun={(posting) => {
               setHandoffPosting(posting);
               navigatePath('/tailor');
