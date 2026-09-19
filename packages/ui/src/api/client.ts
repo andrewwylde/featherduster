@@ -290,34 +290,47 @@ export class ApiClient {
 
   private async fetchJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
-    const res = await fetch(url, {
-      ...init,
-      headers: {
-        'Accept': 'application/json',
-        ...init?.headers,
-      },
-    });
-
-    if (!res.ok) {
-      let errorMessage = `API Error ${res.status}: ${res.statusText}`;
-      let code: string | undefined;
-      let detail: unknown;
-      try {
-        const errorData = await res.json();
-        if (errorData.error) {
-          errorMessage = errorData.error;
-        } else if (errorData.message) {
-          errorMessage = errorData.message;
-        }
-        code = typeof errorData.code === 'string' ? errorData.code : undefined;
-        detail = errorData.detail;
-      } catch {
-        // Fallback to status text
-      }
-      throw new ApiError(errorMessage, res.status, code, detail);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort(new Error(`Request timed out after 15s: ${endpoint}`));
+    }, 15000);
+    if (init?.signal) {
+      init.signal.addEventListener('abort', () => controller.abort(init.signal?.reason));
     }
 
-    return res.json() as Promise<T>;
+    try {
+      const res = await fetch(url, {
+        ...init,
+        signal: controller.signal,
+        headers: {
+          'Accept': 'application/json',
+          ...init?.headers,
+        },
+      });
+
+      if (!res.ok) {
+        let errorMessage = `API Error ${res.status}: ${res.statusText}`;
+        let code: string | undefined;
+        let detail: unknown;
+        try {
+          const errorData = await res.json();
+          if (errorData.error) {
+            errorMessage = errorData.error;
+          } else if (errorData.message) {
+            errorMessage = errorData.message;
+          }
+          code = typeof errorData.code === 'string' ? errorData.code : undefined;
+          detail = errorData.detail;
+        } catch {
+          // Fallback to status text
+        }
+        throw new ApiError(errorMessage, res.status, code, detail);
+      }
+
+      return res.json() as Promise<T>;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /**

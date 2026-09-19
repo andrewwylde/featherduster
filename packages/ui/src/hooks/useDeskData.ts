@@ -13,20 +13,25 @@ export function useDeskData() {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [evidence, runList, citationIndex] = await Promise.allSettled([
-      apiClient.getEvidence(),
-      apiClient.listTailoringRuns(),
-      apiClient.getTailoringCitations(),
-    ]);
-    if (evidence.status === 'fulfilled') {
-      setRecords(evidence.value);
-      setError(null);
-    } else {
-      setError(evidence.reason instanceof Error ? evidence.reason.message : 'Failed to load evidence');
+    try {
+      const [evidence, runList, citationIndex] = await Promise.allSettled([
+        apiClient.getEvidence(),
+        apiClient.listTailoringRuns(),
+        apiClient.getTailoringCitations(),
+      ]);
+      if (evidence.status === 'fulfilled') {
+        setRecords(evidence.value);
+        setError(null);
+      } else {
+        setError(evidence.reason instanceof Error ? evidence.reason.message : 'Failed to load evidence');
+      }
+      setRuns(runList.status === 'fulfilled' ? runList.value : []);
+      setCitations(citationIndex.status === 'fulfilled' ? citationIndex.value : {});
+    } catch (err: any) {
+      setError(err instanceof Error ? err.message : 'Failed to load ledger data');
+    } finally {
+      setLoading(false);
     }
-    setRuns(runList.status === 'fulfilled' ? runList.value : []);
-    setCitations(citationIndex.status === 'fulfilled' ? citationIndex.value : {});
-    setLoading(false);
   }, []);
 
   useEffect(() => {
