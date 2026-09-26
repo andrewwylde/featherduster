@@ -1,8 +1,22 @@
 import React from 'react';
-import { ArrowRight, FileText, GitPullRequest, Maximize2, WandSparkles } from 'lucide-react';
+import {
+  ArrowRight,
+  FileText,
+  GitPullRequest,
+  Maximize2,
+  MessageSquare,
+  ShieldAlert,
+  Sparkles,
+  WandSparkles,
+} from 'lucide-react';
 import type { TailoringRunSummary } from '../../api/client';
 import { EvidenceBadge } from '../../components/desk/EvidenceBadge';
 import { evidenceStatus, type BriefingModel } from '../../data/deskModel';
+import {
+  generateDefenseQuestions,
+  evaluateDefenseAnswer,
+  type DefenseEvaluation,
+} from '@featherduster/core';
 
 interface PrivateBriefingProps {
   loading: boolean;
@@ -33,6 +47,10 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
   onRetry,
 }) => {
   const needsReview = runs.filter((r) => r.needs_review);
+  const [selectedEntryId, setSelectedEntryId] = React.useState<string | null>(null);
+  const [activeQuestionId, setActiveQuestionId] = React.useState<string>('attribution');
+  const [answerText, setAnswerText] = React.useState<string>('');
+  const [evaluation, setEvaluation] = React.useState<DefenseEvaluation | null>(null);
 
   const tailorPanel = (
     <section aria-labelledby="tailor-heading" className={card}>
@@ -89,6 +107,15 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
   }
 
   const { thread, recent, needsProof, totals } = briefing;
+  const activeRecord = (recent.find((r) => r.id === selectedEntryId) || recent[0]) || null;
+  const defenseQuestions = activeRecord ? generateDefenseQuestions(activeRecord.entry) : [];
+  const currentQuestion = defenseQuestions.find((q) => q.id === activeQuestionId) || defenseQuestions[0];
+
+  const handleEvaluate = () => {
+    if (!activeRecord || !currentQuestion) return;
+    const result = evaluateDefenseAnswer(answerText, activeRecord.entry, currentQuestion);
+    setEvaluation(result);
+  };
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
@@ -139,6 +166,153 @@ export const PrivateBriefing: React.FC<PrivateBriefingProps> = ({
 
       <div className="space-y-6 lg:col-span-5">
         {tailorPanel}
+
+        {activeRecord && currentQuestion && (
+          <section className={card} aria-labelledby="defense-heading">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className={eyebrow}>Mock Cross-Examination</span>
+                <h2 id="defense-heading" className="mt-1 text-base font-bold text-slate-900 dark:text-white">
+                  Interview Defense Simulator
+                </h2>
+              </div>
+              <span className="inline-flex items-center gap-1 rounded-full bg-vermilion-50 px-2 py-0.5 text-xs font-semibold text-vermilion-700 dark:bg-vermilion-950/40 dark:text-vermilion-300">
+                <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" /> Defense Mode
+              </span>
+            </div>
+
+            <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+              Skeptical Staff+ interviewer probing your active evidence. Defend your claims without buzzwords or hollow fluff.
+            </p>
+
+            {recent.length > 1 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {recent.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => { setSelectedEntryId(r.id); setEvaluation(null); }}
+                    className={`rounded px-2 py-1 text-xs font-medium transition ${
+                      activeRecord.id === r.id
+                        ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300'
+                    }`}
+                  >
+                    {r.id}: {r.entry.title.slice(0, 16)}…
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-3 flex flex-wrap gap-1 border-b border-slate-100 pb-2 dark:border-slate-800">
+              {defenseQuestions.map((q) => (
+                <button
+                  key={q.id}
+                  type="button"
+                  onClick={() => { setActiveQuestionId(q.id); setEvaluation(null); }}
+                  className={`rounded-desk px-2.5 py-1 text-xs font-medium ${
+                    currentQuestion.id === q.id
+                      ? 'bg-vermilion-500 text-white'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {q.id.charAt(0).toUpperCase() + q.id.slice(1).replace('_', ' ')}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 rounded-desk border border-slate-200/80 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-900/60">
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500">
+                <MessageSquare className="h-3.5 w-3.5 text-vermilion-500" aria-hidden="true" />
+                {currentQuestion.interviewerRole} asks:
+              </div>
+              <p className="mt-1 text-xs font-medium leading-relaxed text-slate-800 dark:text-slate-200">
+                "{currentQuestion.prompt}"
+              </p>
+            </div>
+
+            <div className="mt-3">
+              <label htmlFor="defense-answer-input" className="sr-only">Your defense answer</label>
+              <textarea
+                id="defense-answer-input"
+                aria-label="Your defense answer"
+                rows={3}
+                value={answerText}
+                onChange={(e) => setAnswerText(e.target.value)}
+                placeholder="Deliver your pitch: state your exact personal contribution, root mechanisms, profiling tools, and trade-offs accepted..."
+                className="w-full rounded-desk border border-slate-200 bg-white p-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-vermilion-500 focus:outline-none dark:border-slate-800 dark:bg-slate-900 dark:text-white"
+              />
+            </div>
+
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400">
+                {answerText.trim().split(/\s+/).filter(Boolean).length} words
+              </span>
+              <button
+                type="button"
+                onClick={handleEvaluate}
+                disabled={!answerText.trim()}
+                className="inline-flex items-center gap-1.5 rounded-desk bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+              >
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Evaluate Defense
+              </button>
+            </div>
+
+            {evaluation && (
+              <div
+                role="region"
+                aria-label="Defense Evaluation"
+                className="mt-3 rounded-desk border border-slate-200 p-3.5 text-xs dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/40"
+              >
+                <div className="flex items-center justify-between border-b border-slate-200/60 pb-2 dark:border-slate-800/60">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 font-bold uppercase tracking-wider text-[10px] ${
+                        evaluation.verdict === 'defensible'
+                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : evaluation.verdict === 'vulnerable'
+                          ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300'
+                          : 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300'
+                      }`}
+                    >
+                      {evaluation.verdict}
+                    </span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      Score: {evaluation.score}/100
+                    </span>
+                  </div>
+                  {evaluation.groundedMetrics.length > 0 && (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400">
+                      {evaluation.groundedMetrics.length} metrics cited
+                    </span>
+                  )}
+                </div>
+
+                {evaluation.strengths.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <span className="font-semibold text-emerald-700 dark:text-emerald-400">Strengths:</span>
+                    <ul className="list-inside list-disc text-slate-600 dark:text-slate-300 space-y-0.5">
+                      {evaluation.strengths.map((s, idx) => (
+                        <li key={idx}>{s}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {evaluation.improvements.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <span className="font-semibold text-rose-700 dark:text-rose-400">Areas to Defend:</span>
+                    <ul className="list-inside list-disc text-slate-600 dark:text-slate-300 space-y-0.5">
+                      {evaluation.improvements.map((imp, idx) => (
+                        <li key={idx}>{imp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+        )}
         <section className={card} aria-labelledby="proof-heading">
           <h2 id="proof-heading" className="text-sm font-bold text-slate-900 dark:text-white">Still needs proof in {thread.title}</h2>
           {needsProof.length === 0 ? (

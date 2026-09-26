@@ -76,4 +76,36 @@ describe('Private Briefing (ledger-backed)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
     expect(props.onRetry).toHaveBeenCalled();
   });
+
+  it('renders interview defense simulator and evaluates candidate answer', () => {
+    setup();
+    expect(screen.getByRole('heading', { name: 'Interview Defense Simulator' })).toBeInTheDocument();
+    expect(screen.getByText(/Mock Cross-Examination/i)).toBeInTheDocument();
+
+    // Check tabs
+    expect(screen.getByRole('button', { name: 'Attribution' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Metrics' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tradeoffs' })).toBeInTheDocument();
+
+    // Switch question tab
+    fireEvent.click(screen.getByRole('button', { name: 'Tradeoffs' }));
+    expect(screen.getByText(/Principal Architect asks:/i)).toBeInTheDocument();
+
+    // Type answer
+    const textarea = screen.getByLabelText('Your defense answer');
+    fireEvent.change(textarea, {
+      target: {
+        value: 'I designed the partition controller in Go, evaluating consistent hashing vs static sharding. The trade-off was memory overhead vs lookup latency, dropping p99 from 850ms to 42ms.',
+      },
+    });
+
+    // Evaluate
+    fireEvent.click(screen.getByRole('button', { name: /Evaluate Defense/i }));
+
+    const evalRegion = screen.getByRole('region', { name: 'Defense Evaluation' });
+    expect(evalRegion).toBeInTheDocument();
+    expect(within(evalRegion).getByText(/Score:/i)).toBeInTheDocument();
+    expect(within(evalRegion).getByText(/defensible/i)).toBeInTheDocument();
+  });
 });
+

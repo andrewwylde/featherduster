@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wordDiff, type DiffPart } from '../src/views/tailoring/wordDiff.js';
+import { wordDiff } from '../src/views/tailoring/wordDiff.js';
 
 describe('wordDiff', () => {
   describe('basic diffing', () => {

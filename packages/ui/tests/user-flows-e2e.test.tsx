@@ -6,7 +6,6 @@ import '@testing-library/jest-dom/vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { App } from '../src/App';
 import { apiClient } from '../src/api/client';
-import { testRecords } from './fixtures/deskRecords';
 
 describe('End-to-End User Workflows', () => {
   beforeEach(() => {
