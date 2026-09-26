@@ -1,0 +1,149 @@
+# sssf.config.yaml — Featherduster ADW agent roster & tier presets.
+# Phases: planner -> builder -> npm test -> fix loop -> git commit -> TM done
+defaults:
+  coding_agent: pi
+  model: openai-codex/gpt-6-astra
+  thinking: medium
+  harness_engineering: []
+  tools:
+    - read
+    - bash
+    - edit
+    - write
+    - grep
+    - find
+    - ls
+  protected_files:
+    - adws/adw_featherduster_config/
+    - adws/adw_*.py
+  data_dir: adws/adw_data
+  ephemeral_paths:
+    - adws/adw_data/
+  git_excludes:
+    - adws/adw_data/
+    - .taskmaster/
+    - node_modules/
+
+observability:
+  db: adws/adw_data/sssf.db
+  poll_ms: 500
+
+presets:
+  # Standard balanced tier
+  codex:
+    defaults:
+      model: openai-codex/gpt-6-astra
+      thinking: medium
+    agents:
+      - name: planner
+        model: openai-codex/gpt-6-astra
+        thinking: high
+      - name: builder
+        model: openai-codex/gpt-5.3-codex-spark
+        thinking: medium
+
+  # Fast tier — lighter models, lower cost
+  fast:
+    defaults:
+      model: openai-codex/gpt-5.4-mini
+      thinking: low
+    agents:
+      - name: planner
+        model: openai-codex/gpt-6-astra
+        thinking: medium
+      - name: builder
+        model: openai-codex/gpt-5.3-codex-spark
+        thinking: low
+
+  # Free tier using free OpenRouter models
+  free:
+    defaults:
+      model: openrouter/google/gemma-4-31b-it:free
+      thinking: medium
+    agents:
+      - name: planner
+        model: openrouter/nvidia/nemotron-3-ultra-550b-a55b:free
+        thinking: medium
+      - name: builder
+        model: openrouter/qwen/qwen3.8-27b:free
+        thinking: low
+
+  # Budget tier using low cost OpenRouter models
+  budget:
+    defaults:
+      model: openrouter/deepseek/deepseek-chat
+      thinking: medium
+    agents:
+      - name: planner
+        model: openrouter/deepseek/deepseek-r1
+        thinking: high
+      - name: builder
+        model: openrouter/qwen/qwen3-coder
+        thinking: medium
+
+  # Value tier using balanced OpenRouter models
+  value:
+    defaults:
+      model: openrouter/google/gemini-2.5-flash
+      thinking: medium
+    agents:
+      - name: planner
+        model: openrouter/google/gemini-2.5-pro
+        thinking: high
+      - name: builder
+        model: openrouter/qwen/qwen3-coder
+        thinking: medium
+
+  # Frontier tier using high capability models
+  frontier:
+    defaults:
+      model: openrouter/anthropic/claude-sonnet-5
+      thinking: medium
+    agents:
+      - name: planner
+        model: openrouter/anthropic/claude-sonnet-5
+        thinking: high
+      - name: builder
+        model: openrouter/anthropic/claude-sonnet-5
+        thinking: medium
+
+agents:
+  - name: planner
+    thinking: high
+    color: "#a78bfa"
+    purpose: >
+      Read a TaskMaster task (title, description, details, subtasks, testStrategy)
+      and produce a concrete implementation plan: which files to touch, what each
+      change does, and a falsifiable acceptance criterion (the exact test command
+      that must go green).
+    capability_profile: read_only
+    prompt_engineering:
+      system: adws/adw_featherduster_config/prompt_engineering/planner/system.md
+      user:   adws/adw_featherduster_config/prompt_engineering/planner/user.md
+    writes:
+      - specs/
+    tools:
+      - read
+      - grep
+      - find
+      - ls
+      - write
+
+  - name: builder
+    color: "#22d3ee"
+    purpose: >
+      Implement the plan in the Featherduster TypeScript monorepo (packages/core,
+      packages/cli, packages/ui). Write or edit TypeScript/Vitest files only.
+      Run `npm test` to verify before reporting. Report every changed file.
+    capability_profile: code_builder
+    prompt_engineering:
+      system: adws/adw_featherduster_config/prompt_engineering/builder/system.md
+      user:   adws/adw_featherduster_config/prompt_engineering/builder/user.md
+    tools:
+      - read
+      - grep
+      - find
+      - ls
+      - bash
+      - edit
+      - write

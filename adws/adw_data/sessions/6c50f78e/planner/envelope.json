@@ -1,0 +1,13 @@
+{
+  "agent_name": "planner",
+  "purpose": "Read a TaskMaster task (title, description, details, subtasks, testStrategy) and produce a concrete implementation plan: which files to touch, what each change does, and a falsifiable acceptance criterion (the exact test command that must go green).\n",
+  "output_type": "PlanOutput",
+  "attempt": 1,
+  "status": "success",
+  "summary": "Created implementation plan for ATS Simulation & Readability Gate: new ats-simulator.ts module with Greenhouse/Lever parser simulation, section extraction, keyword scoring, distortion detection, and readability scoring; plus ats-simulator.test.ts with comprehensive test cases; export added to index.ts; verified via npm test and npm run build.",
+  "artifacts": [
+    "adws/adw_data/sessions/6c50f78e/context_handoff/plan.md"
+  ],
+  "notes_for_next_agent": "Create packages/core/src/integrity/ats-simulator.ts first with all types, constants, and pure functions. Then create packages/core/tests/ats-simulator.test.ts with test cases matching the plan. Add export to packages/core/src/index.ts. Run npx vitest run packages/core/tests/ats-simulator.test.ts to verify, then npm test and npm run build for full verification. Follow existing code style in citation-linter.ts/metric-validator.ts. Greenhouse/Lever keyword dicts can start empty. Multi-column detection flags tabular/multi-space layouts.",
+  "commit_message": ""
+}

@@ -1,0 +1,13 @@
+{
+  "agent_name": "planner",
+  "purpose": "Read a TaskMaster task (title, description, details, subtasks, testStrategy) and produce a concrete implementation plan: which files to touch, what each change does, and a falsifiable acceptance criterion (the exact test command that must go green).\n",
+  "output_type": "PlanOutput",
+  "attempt": 1,
+  "status": "success",
+  "summary": "Created implementation plan for ATS Simulation & Readability Gate: new ats-analyzer.ts module in core/integrity, exports in index.ts, 11 test cases in integrity.test.ts, optional CLI check integration, with verification via npx vitest run packages/core/tests/integrity.test.ts and npm test/build.",
+  "artifacts": [
+    "adws/adw_data/sessions/2667eaaf/context_handoff/plan.md"
+  ],
+  "notes_for_next_agent": "Follow existing integrity engine patterns (citation-linter.ts, metric-validator.ts). Implement pure functions with schema-driven Greenhouse/Lever/Generic parsers. Key heuristics: multi-column detection via short bullet lines (<40 chars), case-insensitive section matching against STANDARD_SECTIONS, weighted scoring (sections 40%, keywords 30%, parsing 20%, structure 10%). No new dependencies. All tests must pass vitest run on integrity.test.ts.",
+  "commit_message": ""
+}

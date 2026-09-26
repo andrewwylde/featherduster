@@ -1,0 +1,13 @@
+{
+  "agent_name": "planner",
+  "purpose": "Read a TaskMaster task (title, description, details, subtasks, testStrategy) and produce a concrete implementation plan: which files to touch, what each change does, and a falsifiable acceptance criterion (the exact test command that must go green).\n",
+  "output_type": "PlanOutput",
+  "attempt": 1,
+  "status": "success",
+  "summary": "Created implementation plan for adding test coverage to 5 uncovered modules: evidence-files.ts, settings/routes.ts, tailoring/routes.ts, tailoring/store.ts, and ui/src/routing.ts",
+  "artifacts": [
+    "adws/adw_data/sessions/9077e63b/context_handoff/plan.md"
+  ],
+  "notes_for_next_agent": "Naming conflict resolved: settings/routes.ts and tailoring/routes.ts both wanted routes.test.ts; split into settings-routes.test.ts and tailoring-routes.test.ts following existing pattern (settings.test.ts, tailoring.test.ts). Existing integration tests in settings.test.ts and tailoring.test.ts cover many routes; new files should focus on unit testing route mounting functions, error mapping, and pure logic functions. All test utilities (createApp, MemoryCredentialStore, FakeRunner, temp dir patterns) already exist in codebase. Run individual tests with npx vitest run <path>, then npm test && npm run build for full verification.",
+  "commit_message": ""
+}

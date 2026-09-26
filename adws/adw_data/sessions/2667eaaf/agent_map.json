@@ -1,0 +1,7 @@
+{
+  "planner": {
+    "session_id": "sssf-2667eaaf-planner-c48b",
+    "model": "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free",
+    "coding_agent": "pi"
+  }
+}

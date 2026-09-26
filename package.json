@@ -16,7 +16,13 @@
     "build": "npm run build:core && npm run build:ui && npm run build:cli",
     "test": "vitest run",
     "walkthrough": "node scripts/run-walkthrough.mjs",
-    "walkthrough:tailoring": "node scripts/run-tailoring-walkthrough.mjs"
+    "walkthrough:tailoring": "node scripts/run-tailoring-walkthrough.mjs",
+    "ideas": "python scripts/autonomous_feature_pipeline.py",
+    "ideas:scan": "python scripts/loop_idea_scanner.py",
+    "ideas:curate": "python scripts/loop_proposal_curator.py",
+    "ideas:pipeline": "python scripts/autonomous_feature_pipeline.py",
+    "ideas:execute": "python scripts/loop_task_executor.py",
+    "ideas:adw": "uv run adws/adw_plan_build_verify_fd.py"
   },
   "devDependencies": {
     "playwright": "^1.63.0",
