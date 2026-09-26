@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wordDiff } from '../src/views/tailoring/wordDiff.js';
+import { wordDiff, sideBySideWordDiff } from '../src/views/tailoring/wordDiff.js';
 
 describe('wordDiff', () => {
   describe('basic diffing', () => {
@@ -234,4 +234,19 @@ describe('wordDiff', () => {
       }
     });
   });
+
+  describe('sideBySideWordDiff', () => {
+    it('splits into beforeParts (no added) and afterParts (no removed)', () => {
+      const before = 'Led migration of auth service';
+      const after = 'Architected zero-downtime migration of auth service reducing latency by 40%';
+      const { beforeParts, afterParts } = sideBySideWordDiff(before, after);
+
+      expect(beforeParts.every((p) => p.type !== 'added')).toBe(true);
+      expect(afterParts.every((p) => p.type !== 'removed')).toBe(true);
+      expect(beforeParts.some((p) => p.type === 'removed' && p.text.includes('Led'))).toBe(true);
+      expect(afterParts.some((p) => p.type === 'added' && p.text.includes('Architected'))).toBe(true);
+      expect(afterParts.some((p) => p.type === 'added' && p.text.includes('40%'))).toBe(true);
+    });
+  });
 });
+

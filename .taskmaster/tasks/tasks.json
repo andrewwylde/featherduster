@@ -456,7 +456,7 @@
         "description": "Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.",
         "details": "Feature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit",
         "testStrategy": "npx vitest run packages/ui/tests/tailoring.test.tsx",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": [
@@ -464,19 +464,19 @@
             "id": "60.1",
             "title": "1. Falsifiable Specification for Two-Pane Side-by-Side Tailoring Diff Inspector",
             "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/tailoring.test.tsx",
-            "status": "pending"
+            "status": "done"
           },
           {
             "id": "60.2",
             "title": "2. Implementation of Two-Pane Side-by-Side Tailoring Diff Inspector",
             "description": "Implement changes satisfying requirements: Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.\nFeature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit",
-            "status": "pending"
+            "status": "done"
           },
           {
             "id": "60.3",
             "title": "3. Verification & Monorepo Guard",
             "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
-            "status": "pending"
+            "status": "done"
           }
         ],
         "tags": [
@@ -486,12 +486,12 @@
           "tailoring",
           "promoted-from-proposals"
         ],
-        "updatedAt": "2026-09-25T19:05:31.762739+00:00"
+        "updatedAt": "2026-09-26T14:46:45.361655+00:00"
       }
     ],
     "metadata": {
       "created": "2026-09-21T13:08:00.000Z",
-      "updated": "2026-09-26T14:31:38.479098+00:00",
+      "updated": "2026-09-26T14:46:45.361655+00:00",
       "description": "Tasks for master context"
     }
   },

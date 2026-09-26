@@ -48,3 +48,21 @@ export function wordDiff(before: string, after: string): DiffPart[] {
   while (j < b.length) push('added', b[j++]);
   return parts;
 }
+
+export interface SideBySideDiff {
+  beforeParts: DiffPart[];
+  afterParts: DiffPart[];
+}
+
+/**
+ * Splits word diff into left pane (original with deletions highlighted)
+ * and right pane (tailored proposal with additions highlighted).
+ */
+export function sideBySideWordDiff(before: string, after: string): SideBySideDiff {
+  const parts = wordDiff(before, after);
+  return {
+    beforeParts: parts.filter((p) => p.type !== 'added'),
+    afterParts: parts.filter((p) => p.type !== 'removed'),
+  };
+}
+
