@@ -22,6 +22,10 @@ export interface NodeMapEvidence {
   title: string;
   status: EvidenceStatus;
   sourceIds: string[];
+  challenge?: string;
+  intervention?: string;
+  metric?: string;
+  themes?: string[];
 }
 
 export interface StoryThread {

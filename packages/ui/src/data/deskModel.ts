@@ -60,7 +60,18 @@ export function buildDeskModel(records: EvidenceRecord[]): DeskModel {
       }
       return id;
     });
-    return { id: r.id, title: r.entry.title, status, sourceIds: Array.from(new Set(sourceIds)) };
+    return {
+      id: r.id,
+      title: r.entry.title,
+      status,
+      sourceIds: Array.from(new Set(sourceIds)),
+      challenge: r.entry.summary || `Technical challenge for ${r.entry.title}`,
+      intervention: r.entry.impact ? r.entry.impact : r.entry.title,
+      metric: r.entry.metrics.length > 0 && r.entry.metrics[0].value
+        ? `${r.entry.metrics[0].name}: ${r.entry.metrics[0].value}`
+        : (r.entry.impact || 'Production outcome'),
+      themes: r.entry.themes || [],
+    };
   });
 
   const statusById = new Map(evidence.map((e) => [e.id, e.status]));

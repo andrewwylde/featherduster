@@ -1,0 +1,1901 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Add test coverage for evidence-files.ts",
+        "description": "Module packages/cli/src/evidence-files.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/evidence-files.ts\nRecommended test location: packages/cli/tests/evidence-files.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #3]:\nModule packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #4]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #6]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #8]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+        "testStrategy": "npx vitest run packages/cli/tests/evidence-files.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "1.1",
+            "title": "1. Falsifiable Specification for Add test coverage for evidence-files.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/evidence-files.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "1.2",
+            "title": "2. Implementation of Add test coverage for evidence-files.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/evidence-files.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/evidence-files.ts\nRecommended test location: packages/cli/tests/evidence-files.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #3]:\nModule packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #4]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #6]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #8]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "1.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-21T13:10:55.969140+00:00"
+      },
+      {
+        "id": 2,
+        "title": "Add test coverage for runners/demo-responder.ts",
+        "description": "Module packages/cli/src/runners/demo-responder.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/runners/demo-responder.ts\nRecommended test location: packages/cli/tests/demo-responder.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+        "testStrategy": "npx vitest run packages/cli/tests/demo-responder.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "2.1",
+            "title": "1. Falsifiable Specification for Add test coverage for runners/demo-responder.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/demo-responder.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "2.2",
+            "title": "2. Implementation of Add test coverage for runners/demo-responder.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/runners/demo-responder.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/runners/demo-responder.ts\nRecommended test location: packages/cli/tests/demo-responder.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "2.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.792140+00:00"
+      },
+      {
+        "id": 3,
+        "title": "Add test coverage for tailoring/skill-text.ts",
+        "description": "Module packages/cli/src/tailoring/skill-text.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/skill-text.ts\nRecommended test location: packages/cli/tests/skill-text.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+        "testStrategy": "npx vitest run packages/cli/tests/skill-text.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "5.1",
+            "title": "1. Falsifiable Specification for Add test coverage for tailoring/skill-text.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/skill-text.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "5.2",
+            "title": "2. Implementation of Add test coverage for tailoring/skill-text.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/tailoring/skill-text.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/skill-text.ts\nRecommended test location: packages/cli/tests/skill-text.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "5.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-21T15:49:44.099616+00:00"
+      },
+      {
+        "id": 4,
+        "title": "Add test coverage for main.tsx",
+        "description": "Module packages/ui/src/main.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/main.tsx\nRecommended test location: packages/ui/tests/main.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #9]:\nModule packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #10]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #11]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #12]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #13]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #14]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #15]:\nModule packages/ui/src/components/desk/MobileBottomNav.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/MobileBottomNav.tsx\nRecommended test location: packages/ui/tests/MobileBottomNav.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #16]:\nModule packages/ui/src/components/desk/OnboardingModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/OnboardingModal.tsx\nRecommended test location: packages/ui/tests/OnboardingModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #17]:\nModule packages/ui/src/hooks/useLiveSync.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/hooks/useLiveSync.ts\nRecommended test location: packages/ui/tests/useLiveSync.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #18]:\nModule packages/ui/src/hooks/useModalA11y.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/hooks/useModalA11y.ts\nRecommended test location: packages/ui/tests/useModalA11y.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #19]:\nModule packages/ui/src/hooks/useTailoringEvents.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/hooks/useTailoringEvents.ts\nRecommended test location: packages/ui/tests/useTailoringEvents.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #20]:\nModule packages/ui/src/views/RubricGapsPlaceholder.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/RubricGapsPlaceholder.tsx\nRecommended test location: packages/ui/tests/RubricGapsPlaceholder.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #21]:\nModule packages/ui/src/views/settings/AnthropicApiCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/AnthropicApiCard.tsx\nRecommended test location: packages/ui/tests/AnthropicApiCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #22]:\nModule packages/ui/src/views/settings/ClaudeCodeCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/ClaudeCodeCard.tsx\nRecommended test location: packages/ui/tests/ClaudeCodeCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #23]:\nModule packages/ui/src/views/settings/CodexCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/CodexCard.tsx\nRecommended test location: packages/ui/tests/CodexCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #24]:\nModule packages/ui/src/views/settings/OllamaCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/OllamaCard.tsx\nRecommended test location: packages/ui/tests/OllamaCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #25]:\nModule packages/ui/src/views/settings/shared.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/shared.tsx\nRecommended test location: packages/ui/tests/shared.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+        "testStrategy": "npx vitest run packages/ui/tests/main.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "7.1",
+            "title": "1. Falsifiable Specification for Add test coverage for main.tsx",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/main.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "7.2",
+            "title": "2. Implementation of Add test coverage for main.tsx",
+            "description": "Implement changes satisfying requirements: Module packages/ui/src/main.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/main.tsx\nRecommended test location: packages/ui/tests/main.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #9]:\nModule packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #10]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "7.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-21T16:04:44.523588+00:00"
+      },
+      {
+        "id": 5,
+        "title": "Add test coverage for tailoring/wordDiff.ts",
+        "description": "Module packages/ui/src/views/tailoring/wordDiff.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/tailoring/wordDiff.ts\nRecommended test location: packages/ui/tests/wordDiff.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #27]:\nModule packages/ui/src/views/tailoring/steps/AlignmentStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AlignmentStep.tsx\nRecommended test location: packages/ui/tests/AlignmentStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #28]:\nModule packages/ui/src/views/tailoring/steps/AnalysisStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AnalysisStep.tsx\nRecommended test location: packages/ui/tests/AnalysisStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #29]:\nModule packages/ui/src/views/tailoring/steps/BriefStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/BriefStep.tsx\nRecommended test location: packages/ui/tests/BriefStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #30]:\nModule packages/ui/src/views/tailoring/steps/ProposalsStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/ProposalsStep.tsx\nRecommended test location: packages/ui/tests/ProposalsStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+        "testStrategy": "npx vitest run packages/ui/tests/wordDiff.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "26.1",
+            "title": "1. Falsifiable Specification for Add test coverage for tailoring/wordDiff.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/wordDiff.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "26.2",
+            "title": "2. Implementation of Add test coverage for tailoring/wordDiff.ts",
+            "description": "Implement changes satisfying requirements: Module packages/ui/src/views/tailoring/wordDiff.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/wordDiff.ts\nRecommended test location: packages/ui/tests/wordDiff.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #27]:\nModule packages/ui/src/views/tailoring/steps/AlignmentStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AlignmentStep.tsx\nRecommended test location: packages/ui/tests/AlignmentStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #28]:\nModule packages/ui/src/views/tailoring/steps/AnalysisStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AnalysisStep.tsx\nRecommended test location: packages/ui/tests/AnalysisStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #29]:\nModule packages/ui/src/views/tailoring/steps/BriefStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/BriefStep.tsx\nRecommended test location: packages/ui/tests/BriefStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #30]:\nModule packages/ui/src/views/tailoring/steps/ProposalsStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/ProposalsStep.tsx\nRecommended test location: packages/ui/tests/ProposalsStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "26.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-21T16:19:44.781254+00:00"
+      },
+      {
+        "id": 6,
+        "title": "ATS Simulation & Readability Gate",
+        "description": "Add automated ATS benchmark analyzer comparing resume plain-text parsing, section header extraction, and keyword scoring across Greenhouse/Lever schemas.",
+        "details": "Feature proposal for Featherduster Integrity Engine:\n- Simulates common applicant tracking system (ATS) parsers\n- Flags multi-column parsing distortions or missing standard headings\n- Computes ATS-readability score prior to export",
+        "testStrategy": "npx vitest run packages/core/tests/integrity.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "31.1",
+            "title": "1. Falsifiable Specification for ATS Simulation & Readability Gate",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/integrity.test.ts",
+            "status": "done"
+          },
+          {
+            "id": "31.2",
+            "title": "2. Implementation of ATS Simulation & Readability Gate",
+            "description": "Implement changes satisfying requirements: Add automated ATS benchmark analyzer comparing resume plain-text parsing, section header extraction, and keyword scoring across Greenhouse/Lever schemas.\nFeature proposal for Featherduster Integrity Engine:\n- Simulates common applicant tracking system (ATS) parsers\n- Flags multi-column parsing distortions or missing standard headings\n- Computes ATS-readability score prior to export",
+            "status": "done"
+          },
+          {
+            "id": "31.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "done"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ats",
+          "integrity",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-26T13:49:31.654319+00:00"
+      },
+      {
+        "id": 7,
+        "title": "Automated Git & PR Evidence Ingestion",
+        "description": "Add 'featherduster ingest --git' command to parse repository commit history, PR descriptions, and diff metrics into structured draft evidence entries.",
+        "details": "Feature proposal for Featherduster CLI:\n- Runs git log and GitHub/GitLab PR scraper for the user\n- Identifies measurable impact statements, bug fixes, and performance PRs\n- Generates candidate YAML evidence files for quick confirmation in desk UI",
+        "testStrategy": "npx vitest run packages/cli/tests/commands.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "32.1",
+            "title": "1. Falsifiable Specification for Automated Git & PR Evidence Ingestion",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/commands.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "32.2",
+            "title": "2. Implementation of Automated Git & PR Evidence Ingestion",
+            "description": "Implement changes satisfying requirements: Add 'featherduster ingest --git' command to parse repository commit history, PR descriptions, and diff metrics into structured draft evidence entries.\nFeature proposal for Featherduster CLI:\n- Runs git log and GitHub/GitLab PR scraper for the user\n- Identifies measurable impact statements, bug fixes, and performance PRs\n- Generates candidate YAML evidence files for quick confirmation in desk UI",
+            "status": "pending"
+          },
+          {
+            "id": "32.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "cli",
+          "evidence-capture",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-21T16:49:45.449204+00:00"
+      },
+      {
+        "id": 9,
+        "title": "Interactive Interview Defense Mode with Mock Interviewer",
+        "description": "Add an interactive mock interview view to the Career Desk that challenges the user on resume bullets using evidence defense briefs.",
+        "details": "Feature proposal for Featherduster UI:\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Prompts the user with probing technical questions: 'What was your exact contribution?'\n- Scores responses against ledger citations and anti-slop rules",
+        "testStrategy": "npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "34.1",
+            "title": "1. Falsifiable Specification for Interactive Interview Defense Mode with Mock Interviewer",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "34.2",
+            "title": "2. Implementation of Interactive Interview Defense Mode with Mock Interviewer",
+            "description": "Implement changes satisfying requirements: Add an interactive mock interview view to the Career Desk that challenges the user on resume bullets using evidence defense briefs.\nFeature proposal for Featherduster UI:\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Prompts the user with probing technical questions: 'What was your exact contribution?'\n- Scores responses against ledger citations and anti-slop rules",
+            "status": "pending"
+          },
+          {
+            "id": "34.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "interview-prep",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-21T17:19:46.375674+00:00"
+      },
+      {
+        "id": 10,
+        "title": "Add test coverage for settings/routes.ts",
+        "description": "Module packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #36]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #37]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #38]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #45]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #46]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #47]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+        "testStrategy": "npx vitest run packages/cli/tests/routes.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "35.1",
+            "title": "1. Falsifiable Specification for Add test coverage for settings/routes.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/routes.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "35.2",
+            "title": "2. Implementation of Add test coverage for settings/routes.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #36]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #37]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #38]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "35.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-25T14:56:08.351944+00:00"
+      },
+      {
+        "id": 11,
+        "title": "Add test coverage for components/EvidenceDetailModal.tsx",
+        "description": "Module packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #40]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #41]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #42]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #43]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #44]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #48]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #49]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #50]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #51]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #52]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #53]:\nModule packages/ui/src/components/desk/MobileBottomNav.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/MobileBottomNav.tsx\nRecommended test location: packages/ui/tests/MobileBottomNav.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #54]:\nModule packages/ui/src/components/desk/OnboardingModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/OnboardingModal.tsx\nRecommended test location: packages/ui/tests/OnboardingModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidenceDetailModal.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "39.1",
+            "title": "1. Falsifiable Specification for Add test coverage for components/EvidenceDetailModal.tsx",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/EvidenceDetailModal.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "39.2",
+            "title": "2. Implementation of Add test coverage for components/EvidenceDetailModal.tsx",
+            "description": "Implement changes satisfying requirements: Module packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #40]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #41]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #42]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #43]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #44]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "39.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-25T14:56:20.041547+00:00"
+      },
+      {
+        "id": 12,
+        "title": "Interactive Interview Defense Simulator",
+        "description": "Add interactive mock interview defense mode that cross-examines the user on resume bullets using the Defensibility Brief and grades answers.",
+        "details": "Feature proposal for Featherduster UI & CLI (packages/ui/src/views/desk/PrivateBriefing.tsx):\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Acts as a skeptical Staff+ / Hiring Manager interviewer: 'What was your exact contribution and what trade-offs did you make?'\n- Scores user answers against ledger citations and anti-slop rules, ensuring interview preparedness",
+        "testStrategy": "npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "56.1",
+            "title": "1. Falsifiable Specification for Interactive Interview Defense Simulator",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+            "status": "done"
+          },
+          {
+            "id": "56.2",
+            "title": "2. Implementation of Interactive Interview Defense Simulator",
+            "description": "Implement changes satisfying requirements: Add interactive mock interview defense mode that cross-examines the user on resume bullets using the Defensibility Brief and grades answers.\nFeature proposal for Featherduster UI & CLI (packages/ui/src/views/desk/PrivateBriefing.tsx):\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Acts as a skeptical Staff+ / Hiring Manager interviewer: 'What was your exact contribution and what trade-offs did you make?'\n- Scores user answers against ledger citations and anti-slop rules, ensuring interview preparedness",
+            "status": "done"
+          },
+          {
+            "id": "56.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "done"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "interview-prep",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-26T14:22:33.912832+00:00"
+      },
+      {
+        "id": 13,
+        "title": "Visual Story Threads & Impact DAG Visualization",
+        "description": "Add interactive Directed Acyclic Graph (DAG) visualizing career accomplishments from technical challenges to production metrics.",
+        "details": "Feature proposal for Featherduster UI (packages/ui/src/views/desk/StoryThreadsNodeMap.tsx):\n- Graph visualization mapping Technical Challenges -> Architectural Interventions -> Measurable Outcomes\n- Allows engineers and hiring committees to interactively explore the proof trail behind resume bullets\n- Highlights skill clusters, leveling competency coverage, and architectural breadth",
+        "testStrategy": "npx vitest run packages/ui/tests/story-threads.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "59.1",
+            "title": "1. Falsifiable Specification for Visual Story Threads & Impact DAG Visualization",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/story-threads.test.tsx",
+            "status": "done"
+          },
+          {
+            "id": "59.2",
+            "title": "2. Implementation of Visual Story Threads & Impact DAG Visualization",
+            "description": "Implement changes satisfying requirements: Add interactive Directed Acyclic Graph (DAG) visualizing career accomplishments from technical challenges to production metrics.\nFeature proposal for Featherduster UI (packages/ui/src/views/desk/StoryThreadsNodeMap.tsx):\n- Graph visualization mapping Technical Challenges -> Architectural Interventions -> Measurable Outcomes\n- Allows engineers and hiring committees to interactively explore the proof trail behind resume bullets\n- Highlights skill clusters, leveling competency coverage, and architectural breadth",
+            "status": "done"
+          },
+          {
+            "id": "59.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "done"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "visualization",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-26T14:31:38.479098+00:00"
+      },
+      {
+        "id": 14,
+        "title": "Two-Pane Side-by-Side Tailoring Diff Inspector",
+        "description": "Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.",
+        "details": "Feature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit",
+        "testStrategy": "npx vitest run packages/ui/tests/tailoring.test.tsx",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "60.1",
+            "title": "1. Falsifiable Specification for Two-Pane Side-by-Side Tailoring Diff Inspector",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/tailoring.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "60.2",
+            "title": "2. Implementation of Two-Pane Side-by-Side Tailoring Diff Inspector",
+            "description": "Implement changes satisfying requirements: Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.\nFeature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit",
+            "status": "pending"
+          },
+          {
+            "id": "60.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "tailoring",
+          "promoted-from-proposals"
+        ],
+        "updatedAt": "2026-09-25T19:05:31.762739+00:00"
+      }
+    ],
+    "metadata": {
+      "created": "2026-09-21T13:08:00.000Z",
+      "updated": "2026-09-26T14:31:38.479098+00:00",
+      "description": "Tasks for master context"
+    }
+  },
+  "proposals": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Add test coverage for evidence-files.ts",
+        "description": "Module packages/cli/src/evidence-files.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/evidence-files.ts\nRecommended test location: packages/cli/tests/evidence-files.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #3]:\nModule packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #4]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #6]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #8]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Promoted to #1 in 'master']",
+        "testStrategy": "npx vitest run packages/cli/tests/evidence-files.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "1.1",
+            "title": "1. Falsifiable Specification for Add test coverage for evidence-files.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/evidence-files.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "1.2",
+            "title": "2. Implementation of Add test coverage for evidence-files.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/evidence-files.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/evidence-files.ts\nRecommended test location: packages/cli/tests/evidence-files.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #3]:\nModule packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #4]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #6]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #8]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "1.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-21T13:10:55.986532+00:00"
+      },
+      {
+        "id": 2,
+        "title": "Add test coverage for runners/demo-responder.ts",
+        "description": "Module packages/cli/src/runners/demo-responder.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/runners/demo-responder.ts\nRecommended test location: packages/cli/tests/demo-responder.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Promoted to #2 in 'master']",
+        "testStrategy": "npx vitest run packages/cli/tests/demo-responder.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "2.1",
+            "title": "1. Falsifiable Specification for Add test coverage for runners/demo-responder.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/demo-responder.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "2.2",
+            "title": "2. Implementation of Add test coverage for runners/demo-responder.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/runners/demo-responder.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/runners/demo-responder.ts\nRecommended test location: packages/cli/tests/demo-responder.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "2.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.808495+00:00"
+      },
+      {
+        "id": 3,
+        "title": "Add test coverage for settings/routes.ts",
+        "description": "Module packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #1 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/cli/tests/routes.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-21T13:10:29.276996+00:00"
+      },
+      {
+        "id": 4,
+        "title": "Add test coverage for tailoring/routes.ts",
+        "description": "Module packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #1 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/cli/tests/routes.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-21T13:10:29.315242+00:00"
+      },
+      {
+        "id": 5,
+        "title": "Add test coverage for tailoring/skill-text.ts",
+        "description": "Module packages/cli/src/tailoring/skill-text.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/skill-text.ts\nRecommended test location: packages/cli/tests/skill-text.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Promoted to #3 in 'master']",
+        "testStrategy": "npx vitest run packages/cli/tests/skill-text.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "5.1",
+            "title": "1. Falsifiable Specification for Add test coverage for tailoring/skill-text.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/skill-text.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "5.2",
+            "title": "2. Implementation of Add test coverage for tailoring/skill-text.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/tailoring/skill-text.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/skill-text.ts\nRecommended test location: packages/cli/tests/skill-text.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "5.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-21T15:49:44.130951+00:00"
+      },
+      {
+        "id": 6,
+        "title": "Add test coverage for tailoring/store.ts",
+        "description": "Module packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #1 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/cli/tests/store.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-21T13:10:29.350346+00:00"
+      },
+      {
+        "id": 7,
+        "title": "Add test coverage for main.tsx",
+        "description": "Module packages/ui/src/main.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/main.tsx\nRecommended test location: packages/ui/tests/main.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #9]:\nModule packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #10]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #11]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #12]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #13]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #14]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #15]:\nModule packages/ui/src/components/desk/MobileBottomNav.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/MobileBottomNav.tsx\nRecommended test location: packages/ui/tests/MobileBottomNav.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #16]:\nModule packages/ui/src/components/desk/OnboardingModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/OnboardingModal.tsx\nRecommended test location: packages/ui/tests/OnboardingModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #17]:\nModule packages/ui/src/hooks/useLiveSync.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/hooks/useLiveSync.ts\nRecommended test location: packages/ui/tests/useLiveSync.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #18]:\nModule packages/ui/src/hooks/useModalA11y.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/hooks/useModalA11y.ts\nRecommended test location: packages/ui/tests/useModalA11y.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #19]:\nModule packages/ui/src/hooks/useTailoringEvents.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/hooks/useTailoringEvents.ts\nRecommended test location: packages/ui/tests/useTailoringEvents.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #20]:\nModule packages/ui/src/views/RubricGapsPlaceholder.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/RubricGapsPlaceholder.tsx\nRecommended test location: packages/ui/tests/RubricGapsPlaceholder.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #21]:\nModule packages/ui/src/views/settings/AnthropicApiCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/AnthropicApiCard.tsx\nRecommended test location: packages/ui/tests/AnthropicApiCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #22]:\nModule packages/ui/src/views/settings/ClaudeCodeCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/ClaudeCodeCard.tsx\nRecommended test location: packages/ui/tests/ClaudeCodeCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #23]:\nModule packages/ui/src/views/settings/CodexCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/CodexCard.tsx\nRecommended test location: packages/ui/tests/CodexCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #24]:\nModule packages/ui/src/views/settings/OllamaCard.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/OllamaCard.tsx\nRecommended test location: packages/ui/tests/OllamaCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #25]:\nModule packages/ui/src/views/settings/shared.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/settings/shared.tsx\nRecommended test location: packages/ui/tests/shared.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Promoted to #4 in 'master']",
+        "testStrategy": "npx vitest run packages/ui/tests/main.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "7.1",
+            "title": "1. Falsifiable Specification for Add test coverage for main.tsx",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/main.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "7.2",
+            "title": "2. Implementation of Add test coverage for main.tsx",
+            "description": "Implement changes satisfying requirements: Module packages/ui/src/main.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/main.tsx\nRecommended test location: packages/ui/tests/main.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #9]:\nModule packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #10]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "7.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T16:04:44.545684+00:00"
+      },
+      {
+        "id": 8,
+        "title": "Add test coverage for routing.ts",
+        "description": "Module packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #1 (similarity: 0.60)",
+        "testStrategy": "npx vitest run packages/ui/tests/routing.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T13:10:29.387744+00:00"
+      },
+      {
+        "id": 9,
+        "title": "Add test coverage for components/EvidenceDetailModal.tsx",
+        "description": "Module packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.70)",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidenceDetailModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T13:10:29.428236+00:00"
+      },
+      {
+        "id": 10,
+        "title": "Add test coverage for components/EvidencePickerModal.tsx",
+        "description": "Module packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.70)",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidencePickerModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T13:10:29.467124+00:00"
+      },
+      {
+        "id": 11,
+        "title": "Add test coverage for components/IntegrityModal.tsx",
+        "description": "Module packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.70)",
+        "testStrategy": "npx vitest run packages/ui/tests/IntegrityModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.443542+00:00"
+      },
+      {
+        "id": 12,
+        "title": "Add test coverage for desk/DeskHeader.tsx",
+        "description": "Module packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/DeskHeader.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.480284+00:00"
+      },
+      {
+        "id": 13,
+        "title": "Add test coverage for desk/DeskSidebar.tsx",
+        "description": "Module packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/DeskSidebar.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.510001+00:00"
+      },
+      {
+        "id": 14,
+        "title": "Add test coverage for desk/EvidenceBadge.tsx",
+        "description": "Module packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidenceBadge.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.542396+00:00"
+      },
+      {
+        "id": 15,
+        "title": "Add test coverage for desk/MobileBottomNav.tsx",
+        "description": "Module packages/ui/src/components/desk/MobileBottomNav.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/MobileBottomNav.tsx\nRecommended test location: packages/ui/tests/MobileBottomNav.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/MobileBottomNav.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.571897+00:00"
+      },
+      {
+        "id": 16,
+        "title": "Add test coverage for desk/OnboardingModal.tsx",
+        "description": "Module packages/ui/src/components/desk/OnboardingModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/OnboardingModal.tsx\nRecommended test location: packages/ui/tests/OnboardingModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/OnboardingModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.601828+00:00"
+      },
+      {
+        "id": 17,
+        "title": "Add test coverage for hooks/useLiveSync.ts",
+        "description": "Module packages/ui/src/hooks/useLiveSync.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/hooks/useLiveSync.ts\nRecommended test location: packages/ui/tests/useLiveSync.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.60)",
+        "testStrategy": "npx vitest run packages/ui/tests/useLiveSync.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.637677+00:00"
+      },
+      {
+        "id": 18,
+        "title": "Add test coverage for hooks/useModalA11y.ts",
+        "description": "Module packages/ui/src/hooks/useModalA11y.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/hooks/useModalA11y.ts\nRecommended test location: packages/ui/tests/useModalA11y.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.60)",
+        "testStrategy": "npx vitest run packages/ui/tests/useModalA11y.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.673447+00:00"
+      },
+      {
+        "id": 19,
+        "title": "Add test coverage for hooks/useTailoringEvents.ts",
+        "description": "Module packages/ui/src/hooks/useTailoringEvents.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/hooks/useTailoringEvents.ts\nRecommended test location: packages/ui/tests/useTailoringEvents.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.60)",
+        "testStrategy": "npx vitest run packages/ui/tests/useTailoringEvents.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.714340+00:00"
+      },
+      {
+        "id": 20,
+        "title": "Add test coverage for views/RubricGapsPlaceholder.tsx",
+        "description": "Module packages/ui/src/views/RubricGapsPlaceholder.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/RubricGapsPlaceholder.tsx\nRecommended test location: packages/ui/tests/RubricGapsPlaceholder.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.70)",
+        "testStrategy": "npx vitest run packages/ui/tests/RubricGapsPlaceholder.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:34:42.754675+00:00"
+      },
+      {
+        "id": 21,
+        "title": "Add test coverage for settings/AnthropicApiCard.tsx",
+        "description": "Module packages/ui/src/views/settings/AnthropicApiCard.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/settings/AnthropicApiCard.tsx\nRecommended test location: packages/ui/tests/AnthropicApiCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/AnthropicApiCard.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.573509+00:00"
+      },
+      {
+        "id": 22,
+        "title": "Add test coverage for settings/ClaudeCodeCard.tsx",
+        "description": "Module packages/ui/src/views/settings/ClaudeCodeCard.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/settings/ClaudeCodeCard.tsx\nRecommended test location: packages/ui/tests/ClaudeCodeCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/ClaudeCodeCard.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.634220+00:00"
+      },
+      {
+        "id": 23,
+        "title": "Add test coverage for settings/CodexCard.tsx",
+        "description": "Module packages/ui/src/views/settings/CodexCard.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/settings/CodexCard.tsx\nRecommended test location: packages/ui/tests/CodexCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/CodexCard.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.691675+00:00"
+      },
+      {
+        "id": 24,
+        "title": "Add test coverage for settings/OllamaCard.tsx",
+        "description": "Module packages/ui/src/views/settings/OllamaCard.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/settings/OllamaCard.tsx\nRecommended test location: packages/ui/tests/OllamaCard.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/OllamaCard.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.743828+00:00"
+      },
+      {
+        "id": 25,
+        "title": "Add test coverage for settings/shared.tsx",
+        "description": "Module packages/ui/src/views/settings/shared.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/settings/shared.tsx\nRecommended test location: packages/ui/tests/shared.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #7 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/ui/tests/shared.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.797547+00:00"
+      },
+      {
+        "id": 26,
+        "title": "Add test coverage for tailoring/wordDiff.ts",
+        "description": "Module packages/ui/src/views/tailoring/wordDiff.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/tailoring/wordDiff.ts\nRecommended test location: packages/ui/tests/wordDiff.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #27]:\nModule packages/ui/src/views/tailoring/steps/AlignmentStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AlignmentStep.tsx\nRecommended test location: packages/ui/tests/AlignmentStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #28]:\nModule packages/ui/src/views/tailoring/steps/AnalysisStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AnalysisStep.tsx\nRecommended test location: packages/ui/tests/AnalysisStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #29]:\nModule packages/ui/src/views/tailoring/steps/BriefStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/BriefStep.tsx\nRecommended test location: packages/ui/tests/BriefStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #30]:\nModule packages/ui/src/views/tailoring/steps/ProposalsStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/ProposalsStep.tsx\nRecommended test location: packages/ui/tests/ProposalsStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Promoted to #5 in 'master']",
+        "testStrategy": "npx vitest run packages/ui/tests/wordDiff.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "26.1",
+            "title": "1. Falsifiable Specification for Add test coverage for tailoring/wordDiff.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/wordDiff.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "26.2",
+            "title": "2. Implementation of Add test coverage for tailoring/wordDiff.ts",
+            "description": "Implement changes satisfying requirements: Module packages/ui/src/views/tailoring/wordDiff.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/wordDiff.ts\nRecommended test location: packages/ui/tests/wordDiff.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #27]:\nModule packages/ui/src/views/tailoring/steps/AlignmentStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AlignmentStep.tsx\nRecommended test location: packages/ui/tests/AlignmentStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #28]:\nModule packages/ui/src/views/tailoring/steps/AnalysisStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/AnalysisStep.tsx\nRecommended test location: packages/ui/tests/AnalysisStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #29]:\nModule packages/ui/src/views/tailoring/steps/BriefStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/BriefStep.tsx\nRecommended test location: packages/ui/tests/BriefStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #30]:\nModule packages/ui/src/views/tailoring/steps/ProposalsStep.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/views/tailoring/steps/ProposalsStep.tsx\nRecommended test location: packages/ui/tests/ProposalsStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "26.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T16:19:44.801685+00:00"
+      },
+      {
+        "id": 27,
+        "title": "Add test coverage for steps/AlignmentStep.tsx",
+        "description": "Module packages/ui/src/views/tailoring/steps/AlignmentStep.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/tailoring/steps/AlignmentStep.tsx\nRecommended test location: packages/ui/tests/AlignmentStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #26 (similarity: 0.67)",
+        "testStrategy": "npx vitest run packages/ui/tests/AlignmentStep.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.852492+00:00"
+      },
+      {
+        "id": 28,
+        "title": "Add test coverage for steps/AnalysisStep.tsx",
+        "description": "Module packages/ui/src/views/tailoring/steps/AnalysisStep.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/tailoring/steps/AnalysisStep.tsx\nRecommended test location: packages/ui/tests/AnalysisStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #26 (similarity: 0.67)",
+        "testStrategy": "npx vitest run packages/ui/tests/AnalysisStep.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.912650+00:00"
+      },
+      {
+        "id": 29,
+        "title": "Add test coverage for steps/BriefStep.tsx",
+        "description": "Module packages/ui/src/views/tailoring/steps/BriefStep.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/tailoring/steps/BriefStep.tsx\nRecommended test location: packages/ui/tests/BriefStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #26 (similarity: 0.67)",
+        "testStrategy": "npx vitest run packages/ui/tests/BriefStep.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:43.966455+00:00"
+      },
+      {
+        "id": 30,
+        "title": "Add test coverage for steps/ProposalsStep.tsx",
+        "description": "Module packages/ui/src/views/tailoring/steps/ProposalsStep.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/views/tailoring/steps/ProposalsStep.tsx\nRecommended test location: packages/ui/tests/ProposalsStep.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #26 (similarity: 0.67)",
+        "testStrategy": "npx vitest run packages/ui/tests/ProposalsStep.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-21T15:49:44.018226+00:00"
+      },
+      {
+        "id": 31,
+        "title": "ATS Simulation & Readability Gate",
+        "description": "Add automated ATS benchmark analyzer comparing resume plain-text parsing, section header extraction, and keyword scoring across Greenhouse/Lever schemas.",
+        "details": "Feature proposal for Featherduster Integrity Engine:\n- Simulates common applicant tracking system (ATS) parsers\n- Flags multi-column parsing distortions or missing standard headings\n- Computes ATS-readability score prior to export\n[Promoted to #6 in 'master']",
+        "testStrategy": "npx vitest run packages/core/tests/integrity.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "31.1",
+            "title": "1. Falsifiable Specification for ATS Simulation & Readability Gate",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/integrity.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "31.2",
+            "title": "2. Implementation of ATS Simulation & Readability Gate",
+            "description": "Implement changes satisfying requirements: Add automated ATS benchmark analyzer comparing resume plain-text parsing, section header extraction, and keyword scoring across Greenhouse/Lever schemas.\nFeature proposal for Featherduster Integrity Engine:\n- Simulates common applicant tracking system (ATS) parsers\n- Flags multi-column parsing distortions or missing standard headings\n- Computes ATS-readability score prior to export",
+            "status": "pending"
+          },
+          {
+            "id": "31.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ats",
+          "integrity"
+        ],
+        "updatedAt": "2026-09-21T16:34:45.157924+00:00"
+      },
+      {
+        "id": 32,
+        "title": "Automated Git & PR Evidence Ingestion",
+        "description": "Add 'featherduster ingest --git' command to parse repository commit history, PR descriptions, and diff metrics into structured draft evidence entries.",
+        "details": "Feature proposal for Featherduster CLI:\n- Runs git log and GitHub/GitLab PR scraper for the user\n- Identifies measurable impact statements, bug fixes, and performance PRs\n- Generates candidate YAML evidence files for quick confirmation in desk UI\n[Promoted to #7 in 'master']",
+        "testStrategy": "npx vitest run packages/cli/tests/commands.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "32.1",
+            "title": "1. Falsifiable Specification for Automated Git & PR Evidence Ingestion",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/commands.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "32.2",
+            "title": "2. Implementation of Automated Git & PR Evidence Ingestion",
+            "description": "Implement changes satisfying requirements: Add 'featherduster ingest --git' command to parse repository commit history, PR descriptions, and diff metrics into structured draft evidence entries.\nFeature proposal for Featherduster CLI:\n- Runs git log and GitHub/GitLab PR scraper for the user\n- Identifies measurable impact statements, bug fixes, and performance PRs\n- Generates candidate YAML evidence files for quick confirmation in desk UI",
+            "status": "pending"
+          },
+          {
+            "id": "32.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "cli",
+          "evidence-capture"
+        ],
+        "updatedAt": "2026-09-21T16:49:45.473415+00:00"
+      },
+      {
+        "id": 33,
+        "title": "Docx / Word Resume Compiler Integration",
+        "description": "Implement Word (.docx) compiler target in packages/core/src/compilers alongside Typst, LaTeX, Markdown, and HTML.",
+        "details": "Feature proposal for Featherduster Compilers:\n- Some traditional corporate and agency recruiters require editable .docx formats\n- Generate clean styled docx output with active bullet selection and redaction guarantees\n[Promoted to #8 in 'master']",
+        "testStrategy": "npx vitest run packages/core/tests/compilers.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "33.1",
+            "title": "1. Falsifiable Specification for Docx / Word Resume Compiler Integration",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/compilers.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "33.2",
+            "title": "2. Implementation of Docx / Word Resume Compiler Integration",
+            "description": "Implement changes satisfying requirements: Implement Word (.docx) compiler target in packages/core/src/compilers alongside Typst, LaTeX, Markdown, and HTML.\nFeature proposal for Featherduster Compilers:\n- Some traditional corporate and agency recruiters require editable .docx formats\n- Generate clean styled docx output with active bullet selection and redaction guarantees",
+            "status": "pending"
+          },
+          {
+            "id": "33.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "compilers",
+          "export"
+        ],
+        "updatedAt": "2026-09-21T17:04:45.932153+00:00"
+      },
+      {
+        "id": 34,
+        "title": "Interactive Interview Defense Mode with Mock Interviewer",
+        "description": "Add an interactive mock interview view to the Career Desk that challenges the user on resume bullets using evidence defense briefs.",
+        "details": "Feature proposal for Featherduster UI:\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Prompts the user with probing technical questions: 'What was your exact contribution?'\n- Scores responses against ledger citations and anti-slop rules\n[Promoted to #9 in 'master']",
+        "testStrategy": "npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "34.1",
+            "title": "1. Falsifiable Specification for Interactive Interview Defense Mode with Mock Interviewer",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "34.2",
+            "title": "2. Implementation of Interactive Interview Defense Mode with Mock Interviewer",
+            "description": "Implement changes satisfying requirements: Add an interactive mock interview view to the Career Desk that challenges the user on resume bullets using evidence defense briefs.\nFeature proposal for Featherduster UI:\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Prompts the user with probing technical questions: 'What was your exact contribution?'\n- Scores responses against ledger citations and anti-slop rules",
+            "status": "pending"
+          },
+          {
+            "id": "34.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "interview-prep"
+        ],
+        "updatedAt": "2026-09-21T17:19:46.404040+00:00"
+      },
+      {
+        "id": 35,
+        "title": "Add test coverage for settings/routes.ts",
+        "description": "Module packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #36]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #37]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #38]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #45]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #46]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #47]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Promoted to #10 in 'master']",
+        "testStrategy": "npx vitest run packages/cli/tests/routes.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "35.1",
+            "title": "1. Falsifiable Specification for Add test coverage for settings/routes.ts",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/routes.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "35.2",
+            "title": "2. Implementation of Add test coverage for settings/routes.ts",
+            "description": "Implement changes satisfying requirements: Module packages/cli/src/settings/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/settings/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #36]:\nModule packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #37]:\nModule packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.\nTarget module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #38]:\nModule packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "35.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-25T14:56:08.373886+00:00"
+      },
+      {
+        "id": 36,
+        "title": "Add test coverage for tailoring/routes.ts",
+        "description": "Module packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #35 (similarity: 0.80)",
+        "testStrategy": "npx vitest run packages/cli/tests/routes.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.074734+00:00"
+      },
+      {
+        "id": 37,
+        "title": "Add test coverage for tailoring/store.ts",
+        "description": "Module packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #35 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/cli/tests/store.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.102766+00:00"
+      },
+      {
+        "id": 38,
+        "title": "Add test coverage for routing.ts",
+        "description": "Module packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #35 (similarity: 0.60)",
+        "testStrategy": "npx vitest run packages/ui/tests/routing.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.134041+00:00"
+      },
+      {
+        "id": 39,
+        "title": "Add test coverage for components/EvidenceDetailModal.tsx",
+        "description": "Module packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #40]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #41]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #42]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #43]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #44]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #48]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #49]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #50]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #51]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #52]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #53]:\nModule packages/ui/src/components/desk/MobileBottomNav.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/MobileBottomNav.tsx\nRecommended test location: packages/ui/tests/MobileBottomNav.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #54]:\nModule packages/ui/src/components/desk/OnboardingModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/OnboardingModal.tsx\nRecommended test location: packages/ui/tests/OnboardingModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Promoted to #11 in 'master']",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidenceDetailModal.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": "39.1",
+            "title": "1. Falsifiable Specification for Add test coverage for components/EvidenceDetailModal.tsx",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/EvidenceDetailModal.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "39.2",
+            "title": "2. Implementation of Add test coverage for components/EvidenceDetailModal.tsx",
+            "description": "Implement changes satisfying requirements: Module packages/ui/src/components/EvidenceDetailModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidenceDetailModal.tsx\nRecommended test location: packages/ui/tests/EvidenceDetailModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #40]:\nModule packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #41]:\nModule packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #42]:\nModule packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #43]:\nModule packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n\n[Merged context from duplicate #44]:\nModule packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.\nTarget module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.",
+            "status": "pending"
+          },
+          {
+            "id": "39.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T14:56:20.066586+00:00"
+      },
+      {
+        "id": 40,
+        "title": "Add test coverage for components/EvidencePickerModal.tsx",
+        "description": "Module packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.80)",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidencePickerModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.169515+00:00"
+      },
+      {
+        "id": 41,
+        "title": "Add test coverage for components/IntegrityModal.tsx",
+        "description": "Module packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.80)",
+        "testStrategy": "npx vitest run packages/ui/tests/IntegrityModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.207482+00:00"
+      },
+      {
+        "id": 42,
+        "title": "Add test coverage for desk/DeskHeader.tsx",
+        "description": "Module packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/DeskHeader.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.242451+00:00"
+      },
+      {
+        "id": 43,
+        "title": "Add test coverage for desk/DeskSidebar.tsx",
+        "description": "Module packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/DeskSidebar.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.271731+00:00"
+      },
+      {
+        "id": 44,
+        "title": "Add test coverage for desk/EvidenceBadge.tsx",
+        "description": "Module packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidenceBadge.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-23T15:46:50.300550+00:00"
+      },
+      {
+        "id": 45,
+        "title": "Add test coverage for tailoring/routes.ts",
+        "description": "Module packages/cli/src/tailoring/routes.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/routes.ts\nRecommended test location: packages/cli/tests/routes.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #35 (similarity: 0.80)",
+        "testStrategy": "npx vitest run packages/cli/tests/routes.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-25T04:30:40.665258+00:00"
+      },
+      {
+        "id": 46,
+        "title": "Add test coverage for tailoring/store.ts",
+        "description": "Module packages/cli/src/tailoring/store.ts has no dedicated test file and its exports are not referenced in cli tests.",
+        "details": "Target module: packages/cli/src/tailoring/store.ts\nRecommended test location: packages/cli/tests/store.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #35 (similarity: 0.64)",
+        "testStrategy": "npx vitest run packages/cli/tests/store.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "cli"
+        ],
+        "updatedAt": "2026-09-25T04:30:40.714372+00:00"
+      },
+      {
+        "id": 47,
+        "title": "Add test coverage for routing.ts",
+        "description": "Module packages/ui/src/routing.ts has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/routing.ts\nRecommended test location: packages/ui/tests/routing.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #35 (similarity: 0.60)",
+        "testStrategy": "npx vitest run packages/ui/tests/routing.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:40.762638+00:00"
+      },
+      {
+        "id": 48,
+        "title": "Add test coverage for components/EvidencePickerModal.tsx",
+        "description": "Module packages/ui/src/components/EvidencePickerModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/EvidencePickerModal.tsx\nRecommended test location: packages/ui/tests/EvidencePickerModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.80)",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidencePickerModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:40.811007+00:00"
+      },
+      {
+        "id": 49,
+        "title": "Add test coverage for components/IntegrityModal.tsx",
+        "description": "Module packages/ui/src/components/IntegrityModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/IntegrityModal.tsx\nRecommended test location: packages/ui/tests/IntegrityModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.80)",
+        "testStrategy": "npx vitest run packages/ui/tests/IntegrityModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:40.856979+00:00"
+      },
+      {
+        "id": 50,
+        "title": "Add test coverage for desk/DeskHeader.tsx",
+        "description": "Module packages/ui/src/components/desk/DeskHeader.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/DeskHeader.tsx\nRecommended test location: packages/ui/tests/DeskHeader.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/DeskHeader.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:40.905821+00:00"
+      },
+      {
+        "id": 51,
+        "title": "Add test coverage for desk/DeskSidebar.tsx",
+        "description": "Module packages/ui/src/components/desk/DeskSidebar.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/DeskSidebar.tsx\nRecommended test location: packages/ui/tests/DeskSidebar.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/DeskSidebar.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:40.955475+00:00"
+      },
+      {
+        "id": 52,
+        "title": "Add test coverage for desk/EvidenceBadge.tsx",
+        "description": "Module packages/ui/src/components/desk/EvidenceBadge.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/EvidenceBadge.tsx\nRecommended test location: packages/ui/tests/EvidenceBadge.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/EvidenceBadge.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:41.003434+00:00"
+      },
+      {
+        "id": 53,
+        "title": "Add test coverage for desk/MobileBottomNav.tsx",
+        "description": "Module packages/ui/src/components/desk/MobileBottomNav.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/MobileBottomNav.tsx\nRecommended test location: packages/ui/tests/MobileBottomNav.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/MobileBottomNav.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:41.052391+00:00"
+      },
+      {
+        "id": 54,
+        "title": "Add test coverage for desk/OnboardingModal.tsx",
+        "description": "Module packages/ui/src/components/desk/OnboardingModal.tsx has no dedicated test file and its exports are not referenced in ui tests.",
+        "details": "Target module: packages/ui/src/components/desk/OnboardingModal.tsx\nRecommended test location: packages/ui/tests/OnboardingModal.test.ts\nImplement test cases verifying exported functions, edge cases, and failure modes.\n[Cancelled]: Duplicate of proposal #39 (similarity: 0.73)",
+        "testStrategy": "npx vitest run packages/ui/tests/OnboardingModal.test.ts",
+        "status": "cancelled",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "test-gap",
+          "ui"
+        ],
+        "updatedAt": "2026-09-25T04:30:41.103094+00:00"
+      },
+      {
+        "id": 55,
+        "title": "Leveling Matrix Trajectory & Promotion Packet Generator",
+        "description": "Add multi-cycle career leveling trajectory analyzer and automated promotion dossier compiler mapping evidence to L4/L5/L6 competency ladders.",
+        "details": "Feature proposal for Featherduster Rubric & Compilers (packages/core/src/rubric):\n- Analyzes evidence timeline against SWE-IC rubric competencies (Architecture, Execution, Leadership, Mentorship)\n- Generates promotion delta heatmap highlighting under-represented competencies\n- Compiles comprehensive audit-proof promotion packet with cited evidence and impact narrative",
+        "testStrategy": "npx vitest run packages/core/tests/rubric.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "55.1",
+            "title": "1. Falsifiable Specification for Leveling Matrix Trajectory & Promotion Packet Generator",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/rubric.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "55.2",
+            "title": "2. Implementation of Leveling Matrix Trajectory & Promotion Packet Generator",
+            "description": "Implement changes satisfying requirements: Add multi-cycle career leveling trajectory analyzer and automated promotion dossier compiler mapping evidence to L4/L5/L6 competency ladders.\nFeature proposal for Featherduster Rubric & Compilers (packages/core/src/rubric):\n- Analyzes evidence timeline against SWE-IC rubric competencies (Architecture, Execution, Leadership, Mentorship)\n- Generates promotion delta heatmap highlighting under-represented competencies\n- Compiles comprehensive audit-proof promotion packet with cited evidence and impact narrative",
+            "status": "pending"
+          },
+          {
+            "id": "55.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "rubric",
+          "promotion",
+          "core"
+        ],
+        "updatedAt": "2026-09-25T14:56:08.253582+00:00"
+      },
+      {
+        "id": 56,
+        "title": "Interactive Interview Defense Simulator",
+        "description": "Add interactive mock interview defense mode that cross-examines the user on resume bullets using the Defensibility Brief and grades answers.",
+        "details": "Feature proposal for Featherduster UI & CLI (packages/ui/src/views/desk/PrivateBriefing.tsx):\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Acts as a skeptical Staff+ / Hiring Manager interviewer: 'What was your exact contribution and what trade-offs did you make?'\n- Scores user answers against ledger citations and anti-slop rules, ensuring interview preparedness\n[Promoted to #12 in 'master']",
+        "testStrategy": "npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "56.1",
+            "title": "1. Falsifiable Specification for Interactive Interview Defense Simulator",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "56.2",
+            "title": "2. Implementation of Interactive Interview Defense Simulator",
+            "description": "Implement changes satisfying requirements: Add interactive mock interview defense mode that cross-examines the user on resume bullets using the Defensibility Brief and grades answers.\nFeature proposal for Featherduster UI & CLI (packages/ui/src/views/desk/PrivateBriefing.tsx):\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Acts as a skeptical Staff+ / Hiring Manager interviewer: 'What was your exact contribution and what trade-offs did you make?'\n- Scores user answers against ledger citations and anti-slop rules, ensuring interview preparedness",
+            "status": "pending"
+          },
+          {
+            "id": "56.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "interview-prep"
+        ],
+        "updatedAt": "2026-09-25T19:05:31.647024+00:00"
+      },
+      {
+        "id": 57,
+        "title": "Local Air-Gapped Vector Search for Evidence Retrieval",
+        "description": "Implement local semantic vector search over past evidence ledger entries for rapid retrieval during job tailoring.",
+        "details": "Feature proposal for Featherduster Core (packages/core/src/parsers/vector-index.ts):\n- Generates offline, local embeddings of evidence summaries, problem contexts, and outcomes\n- Allows instant semantic nearest-neighbor retrieval when pasting a target job description\n- 100% local-first and zero-cloud to preserve confidential career data",
+        "testStrategy": "npx vitest run packages/core/tests/evidence-parser.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "57.1",
+            "title": "1. Falsifiable Specification for Local Air-Gapped Vector Search for Evidence Retrieval",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/evidence-parser.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "57.2",
+            "title": "2. Implementation of Local Air-Gapped Vector Search for Evidence Retrieval",
+            "description": "Implement changes satisfying requirements: Implement local semantic vector search over past evidence ledger entries for rapid retrieval during job tailoring.\nFeature proposal for Featherduster Core (packages/core/src/parsers/vector-index.ts):\n- Generates offline, local embeddings of evidence summaries, problem contexts, and outcomes\n- Allows instant semantic nearest-neighbor retrieval when pasting a target job description\n- 100% local-first and zero-cloud to preserve confidential career data",
+            "status": "pending"
+          },
+          {
+            "id": "57.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "local-first",
+          "search",
+          "core"
+        ],
+        "updatedAt": "2026-09-25T14:56:08.302249+00:00"
+      },
+      {
+        "id": 58,
+        "title": "Linear & Jira Local Sprint Export Ingester",
+        "description": "Add 'featherduster ingest --jira / --linear' command to parse exported CSV/JSON sprint histories into draft evidence entries.",
+        "details": "Feature proposal for Featherduster CLI (packages/cli/src/commands/ingest.ts):\n- Ingests exported sprint retrospectives and resolved ticket exports\n- Automatically parses technical problem descriptions and resolutions\n- Sanitizes internal ticket IDs according to privacy-rules.yaml before staging evidence",
+        "testStrategy": "npx vitest run packages/cli/tests/commands.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "58.1",
+            "title": "1. Falsifiable Specification for Linear & Jira Local Sprint Export Ingester",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/cli/tests/commands.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "58.2",
+            "title": "2. Implementation of Linear & Jira Local Sprint Export Ingester",
+            "description": "Implement changes satisfying requirements: Add 'featherduster ingest --jira / --linear' command to parse exported CSV/JSON sprint histories into draft evidence entries.\nFeature proposal for Featherduster CLI (packages/cli/src/commands/ingest.ts):\n- Ingests exported sprint retrospectives and resolved ticket exports\n- Automatically parses technical problem descriptions and resolutions\n- Sanitizes internal ticket IDs according to privacy-rules.yaml before staging evidence",
+            "status": "pending"
+          },
+          {
+            "id": "58.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "cli",
+          "ingest",
+          "integrations"
+        ],
+        "updatedAt": "2026-09-25T14:56:19.936338+00:00"
+      },
+      {
+        "id": 59,
+        "title": "Visual Story Threads & Impact DAG Visualization",
+        "description": "Add interactive Directed Acyclic Graph (DAG) visualizing career accomplishments from technical challenges to production metrics.",
+        "details": "Feature proposal for Featherduster UI (packages/ui/src/views/desk/StoryThreadsNodeMap.tsx):\n- Graph visualization mapping Technical Challenges -> Architectural Interventions -> Measurable Outcomes\n- Allows engineers and hiring committees to interactively explore the proof trail behind resume bullets\n- Highlights skill clusters, leveling competency coverage, and architectural breadth\n[Promoted to #13 in 'master']",
+        "testStrategy": "npx vitest run packages/ui/tests/story-threads.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "59.1",
+            "title": "1. Falsifiable Specification for Visual Story Threads & Impact DAG Visualization",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/story-threads.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "59.2",
+            "title": "2. Implementation of Visual Story Threads & Impact DAG Visualization",
+            "description": "Implement changes satisfying requirements: Add interactive Directed Acyclic Graph (DAG) visualizing career accomplishments from technical challenges to production metrics.\nFeature proposal for Featherduster UI (packages/ui/src/views/desk/StoryThreadsNodeMap.tsx):\n- Graph visualization mapping Technical Challenges -> Architectural Interventions -> Measurable Outcomes\n- Allows engineers and hiring committees to interactively explore the proof trail behind resume bullets\n- Highlights skill clusters, leveling competency coverage, and architectural breadth",
+            "status": "pending"
+          },
+          {
+            "id": "59.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "visualization"
+        ],
+        "updatedAt": "2026-09-25T19:05:31.718602+00:00"
+      },
+      {
+        "id": 60,
+        "title": "Two-Pane Side-by-Side Tailoring Diff Inspector",
+        "description": "Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.",
+        "details": "Feature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit\n[Promoted to #14 in 'master']",
+        "testStrategy": "npx vitest run packages/ui/tests/tailoring.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "60.1",
+            "title": "1. Falsifiable Specification for Two-Pane Side-by-Side Tailoring Diff Inspector",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/tailoring.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "60.2",
+            "title": "2. Implementation of Two-Pane Side-by-Side Tailoring Diff Inspector",
+            "description": "Implement changes satisfying requirements: Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.\nFeature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit",
+            "status": "pending"
+          },
+          {
+            "id": "60.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "tailoring"
+        ],
+        "updatedAt": "2026-09-25T19:05:31.786761+00:00"
+      },
+      {
+        "id": 61,
+        "title": "JSON Resume Standard Interoperability Gateway",
+        "description": "Add bidirectional schema adapter between Featherduster verified evidence ledger and the open JSON Resume (jsonresume.org) schema.",
+        "details": "Feature proposal for Featherduster Compilers (packages/core/src/compilers/json-resume-adapter.ts):\n- Export tailored or baseline resumes to valid schema.jsonresume.org format\n- Import existing JSON Resumes, mapping bullets into structured draft evidence entries\n- Preserves verification flags and metric status across ecosystem tools",
+        "testStrategy": "npx vitest run packages/core/tests/compilers.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "61.1",
+            "title": "1. Falsifiable Specification for JSON Resume Standard Interoperability Gateway",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/compilers.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "61.2",
+            "title": "2. Implementation of JSON Resume Standard Interoperability Gateway",
+            "description": "Implement changes satisfying requirements: Add bidirectional schema adapter between Featherduster verified evidence ledger and the open JSON Resume (jsonresume.org) schema.\nFeature proposal for Featherduster Compilers (packages/core/src/compilers/json-resume-adapter.ts):\n- Export tailored or baseline resumes to valid schema.jsonresume.org format\n- Import existing JSON Resumes, mapping bullets into structured draft evidence entries\n- Preserves verification flags and metric status across ecosystem tools",
+            "status": "pending"
+          },
+          {
+            "id": "61.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "compilers",
+          "standards",
+          "core"
+        ],
+        "updatedAt": "2026-09-25T14:56:35.465939+00:00"
+      }
+    ],
+    "metadata": {
+      "created": "2026-09-21T13:08:00.000Z",
+      "updated": "2026-09-25T19:05:31.786761+00:00",
+      "description": "Tasks for proposals context"
+    }
+  }
+}

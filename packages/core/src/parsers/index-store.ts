@@ -40,7 +40,7 @@ export interface EvidenceQueryFilters {
  */
 export function hasMissingMetrics(entry: EvidenceEntry, narrative = ''): boolean {
   const hasMetricNeeded = entry.metrics.some((m) => {
-    const status = m.status.toLowerCase();
+    const status = m.status?.toLowerCase() || '';
     return (
       status === 'metric needed' ||
       status.includes('needed') ||
