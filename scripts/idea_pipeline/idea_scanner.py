@@ -481,6 +481,62 @@ def scan_opportunities(repo_root: Path) -> list[ScannedIdea]:
             suggested_priority="medium",
             tags=["codebase-scan", "opportunity", "compilers", "standards", "core"],
         ),
+        ScannedIdea(
+            category="opportunity",
+            title="Real-Time Competency Match Radar & Role Fit Visualizer",
+            description="Add multi-dimensional radar chart visualizing candidate evidence strength vs target job requirements across engineering competency axes.",
+            details=(
+                "Feature proposal for Featherduster UI (packages/ui/src/views/tailoring/CompetencyRadar.tsx):\n"
+                "- Interactive radar/spider chart mapping candidate evidence against 6 core axes (Architecture, Distributed Systems, Reliability, Performance, Leadership, Mentorship)\n"
+                "- Calculates quantified fit index score (%) for job postings before tailoring\n"
+                "- Pinpoints exact competency gaps with direct links to ledger entries"
+            ),
+            test_strategy="npx vitest run packages/ui/tests/competency-radar.test.tsx",
+            suggested_priority="high",
+            tags=["codebase-scan", "opportunity", "ui", "visualization", "matching"],
+        ),
+        ScannedIdea(
+            category="opportunity",
+            title="Interactive Career Trajectory Timeline & Employer Arc",
+            description="Add visual interactive career milestone and impact timeline mapping scope progression, promotions, and major system architectures.",
+            details=(
+                "Feature proposal for Featherduster UI (packages/ui/src/views/desk/CareerTimeline.tsx):\n"
+                "- Chronological multi-track visual timeline showing company tenures, promotions, and system breakthroughs\n"
+                "- Filterable by technical theme (#platform, #distributed-systems, #database) and evidence confidence\n"
+                "- Provides hiring committees and peers with an instant holistic bird's-eye view of engineering maturity"
+            ),
+            test_strategy="npx vitest run packages/ui/tests/career-timeline.test.tsx",
+            suggested_priority="high",
+            tags=["codebase-scan", "opportunity", "ui", "timeline", "portfolio"],
+        ),
+        ScannedIdea(
+            category="opportunity",
+            title="Standalone Defensibility Brief PDF & Markdown Exporter",
+            description="Generate dedicated interview defense dossier containing anticipated skeptical interviewer follow-ups, trade-offs, and ledger proof trails.",
+            details=(
+                "Feature proposal for Featherduster Compilers & UI (packages/core/src/compilers/defense-brief-compiler.ts):\n"
+                "- Compiles standalone one-page defense brief per tailored resume or role\n"
+                "- Anticipates hard Staff+ interview probes ('Why this architecture? What failed? What trade-offs?') with cited proof\n"
+                "- Provides candidate cheat-sheet for rapid interview recall and defensibility verification"
+            ),
+            test_strategy="npx vitest run packages/core/tests/defense-brief.test.ts",
+            suggested_priority="high",
+            tags=["codebase-scan", "opportunity", "compilers", "interview-prep", "export"],
+        ),
+        ScannedIdea(
+            category="opportunity",
+            title="Automated Secret & Confidentiality Leak Scanner",
+            description="Add deterministic pre-flight scanner detecting internal hostnames, credentials, unredacted partner names, and private metric disclosures.",
+            details=(
+                "Feature proposal for Featherduster Integrity Engine (packages/core/src/integrity/confidentiality-scanner.ts):\n"
+                "- Audits all compiled resume outputs, defense briefs, and exported packets against privacy-rules.yaml\n"
+                "- Flags internal domain patterns (*.corp.*, *.internal.*), private repo URLs, internal server names, and API keys\n"
+                "- Enforces zero unintentional confidential data leakage from private ledgers into external recruiter documents"
+            ),
+            test_strategy="npx vitest run packages/core/tests/confidentiality.test.ts",
+            suggested_priority="high",
+            tags=["codebase-scan", "opportunity", "privacy", "integrity", "security"],
+        ),
     ]
     return opportunities
 

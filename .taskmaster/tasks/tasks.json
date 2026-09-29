@@ -1890,11 +1890,274 @@
           "core"
         ],
         "updatedAt": "2026-09-25T14:56:35.465939+00:00"
+      },
+      {
+        "id": 62,
+        "title": "ATS Simulation & Readability Gate",
+        "description": "Add automated ATS benchmark analyzer comparing resume plain-text parsing, section header extraction, and keyword scoring across Greenhouse/Lever/Workday schemas.",
+        "details": "Feature proposal for Featherduster Integrity Engine (packages/core/src/integrity):\n- Simulates common applicant tracking system (ATS) parsers (Workday, Greenhouse, Lever, Taleo)\n- Flags multi-column parsing distortions, table collapse, or missing standard headings\n- Evaluates keyword density and computes an ATS-readability score prior to export\n- Integrated into pre-flight checks before PDF/Typst compilation",
+        "testStrategy": "npx vitest run packages/core/tests/integrity.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "62.1",
+            "title": "1. Falsifiable Specification for ATS Simulation & Readability Gate",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/integrity.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "62.2",
+            "title": "2. Implementation of ATS Simulation & Readability Gate",
+            "description": "Implement changes satisfying requirements: Add automated ATS benchmark analyzer comparing resume plain-text parsing, section header extraction, and keyword scoring across Greenhouse/Lever/Workday schemas.\nFeature proposal for Featherduster Integrity Engine (packages/core/src/integrity):\n- Simulates common applicant tracking system (ATS) parsers (Workday, Greenhouse, Lever, Taleo)\n- Flags multi-column parsing distortions, table collapse, or missing standard headings\n- Evaluates keyword density and computes an ATS-readability score prior to export\n- Integrated into pre-flight checks before PDF/Typst compilation",
+            "status": "pending"
+          },
+          {
+            "id": "62.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ats",
+          "integrity",
+          "core"
+        ],
+        "updatedAt": "2026-09-26T15:34:35.923029+00:00"
+      },
+      {
+        "id": 63,
+        "title": "Interactive Interview Defense Simulator",
+        "description": "Add interactive mock interview defense mode that cross-examines the user on resume bullets using the Defensibility Brief and grades answers.",
+        "details": "Feature proposal for Featherduster UI & CLI (packages/ui/src/views/desk/PrivateBriefing.tsx):\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Acts as a skeptical Staff+ / Hiring Manager interviewer: 'What was your exact contribution and what trade-offs did you make?'\n- Scores user answers against ledger citations and anti-slop rules, ensuring interview preparedness",
+        "testStrategy": "npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "63.1",
+            "title": "1. Falsifiable Specification for Interactive Interview Defense Simulator",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/desk-briefing.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "63.2",
+            "title": "2. Implementation of Interactive Interview Defense Simulator",
+            "description": "Implement changes satisfying requirements: Add interactive mock interview defense mode that cross-examines the user on resume bullets using the Defensibility Brief and grades answers.\nFeature proposal for Featherduster UI & CLI (packages/ui/src/views/desk/PrivateBriefing.tsx):\n- Utilizes the compiled Defense Brief for selected resume bullets\n- Acts as a skeptical Staff+ / Hiring Manager interviewer: 'What was your exact contribution and what trade-offs did you make?'\n- Scores user answers against ledger citations and anti-slop rules, ensuring interview preparedness",
+            "status": "pending"
+          },
+          {
+            "id": "63.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "interview-prep"
+        ],
+        "updatedAt": "2026-09-26T15:34:35.953711+00:00"
+      },
+      {
+        "id": 64,
+        "title": "Docx / Word Resume Compiler Integration",
+        "description": "Implement Word (.docx) compiler target in packages/core/src/compilers alongside Typst, LaTeX, Markdown, and HTML.",
+        "details": "Feature proposal for Featherduster Compilers (packages/core/src/compilers/docx-compiler.ts):\n- Many corporate recruiters and agency headhunters require editable .docx formats\n- Generate clean, styled docx output preserving typography, margins, and active bullet selections\n- Enforces strict privacy redaction rules during docx compilation",
+        "testStrategy": "npx vitest run packages/core/tests/compilers.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "64.1",
+            "title": "1. Falsifiable Specification for Docx / Word Resume Compiler Integration",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/compilers.test.ts",
+            "status": "pending"
+          },
+          {
+            "id": "64.2",
+            "title": "2. Implementation of Docx / Word Resume Compiler Integration",
+            "description": "Implement changes satisfying requirements: Implement Word (.docx) compiler target in packages/core/src/compilers alongside Typst, LaTeX, Markdown, and HTML.\nFeature proposal for Featherduster Compilers (packages/core/src/compilers/docx-compiler.ts):\n- Many corporate recruiters and agency headhunters require editable .docx formats\n- Generate clean, styled docx output preserving typography, margins, and active bullet selections\n- Enforces strict privacy redaction rules during docx compilation",
+            "status": "pending"
+          },
+          {
+            "id": "64.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "compilers",
+          "export",
+          "core"
+        ],
+        "updatedAt": "2026-09-26T15:34:35.986276+00:00"
+      },
+      {
+        "id": 65,
+        "title": "Visual Story Threads & Impact DAG Visualization",
+        "description": "Add interactive Directed Acyclic Graph (DAG) visualizing career accomplishments from technical challenges to production metrics.",
+        "details": "Feature proposal for Featherduster UI (packages/ui/src/views/desk/StoryThreadsNodeMap.tsx):\n- Graph visualization mapping Technical Challenges -> Architectural Interventions -> Measurable Outcomes\n- Allows engineers and hiring committees to interactively explore the proof trail behind resume bullets\n- Highlights skill clusters, leveling competency coverage, and architectural breadth",
+        "testStrategy": "npx vitest run packages/ui/tests/story-threads.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "65.1",
+            "title": "1. Falsifiable Specification for Visual Story Threads & Impact DAG Visualization",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/story-threads.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "65.2",
+            "title": "2. Implementation of Visual Story Threads & Impact DAG Visualization",
+            "description": "Implement changes satisfying requirements: Add interactive Directed Acyclic Graph (DAG) visualizing career accomplishments from technical challenges to production metrics.\nFeature proposal for Featherduster UI (packages/ui/src/views/desk/StoryThreadsNodeMap.tsx):\n- Graph visualization mapping Technical Challenges -> Architectural Interventions -> Measurable Outcomes\n- Allows engineers and hiring committees to interactively explore the proof trail behind resume bullets\n- Highlights skill clusters, leveling competency coverage, and architectural breadth",
+            "status": "pending"
+          },
+          {
+            "id": "65.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "visualization"
+        ],
+        "updatedAt": "2026-09-26T15:34:36.015284+00:00"
+      },
+      {
+        "id": 66,
+        "title": "Two-Pane Side-by-Side Tailoring Diff Inspector",
+        "description": "Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.",
+        "details": "Feature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit",
+        "testStrategy": "npx vitest run packages/ui/tests/tailoring.test.tsx",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": "66.1",
+            "title": "1. Falsifiable Specification for Two-Pane Side-by-Side Tailoring Diff Inspector",
+            "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/ui/tests/tailoring.test.tsx",
+            "status": "pending"
+          },
+          {
+            "id": "66.2",
+            "title": "2. Implementation of Two-Pane Side-by-Side Tailoring Diff Inspector",
+            "description": "Implement changes satisfying requirements: Add interactive side-by-side diff visualizer comparing original evidence bullets against tailored proposals before applying.\nFeature proposal for Featherduster UI Tailoring View (packages/ui/src/views/tailoring/wordDiff.ts):\n- Side-by-side visual diff editor highlighting word-level additions, deletions, and citation rewrites\n- Direct inline linter showing de-slop compliance and metric groundings\n- One-click accept/reject per bullet edit",
+            "status": "pending"
+          },
+          {
+            "id": "66.3",
+            "title": "3. Verification & Monorepo Guard",
+            "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
+            "status": "pending"
+          }
+        ],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "tailoring"
+        ],
+        "updatedAt": "2026-09-26T15:34:36.042902+00:00"
+      },
+      {
+        "id": 67,
+        "title": "Real-Time Competency Match Radar & Role Fit Visualizer",
+        "description": "Add multi-dimensional radar chart visualizing candidate evidence strength vs target job requirements across engineering competency axes.",
+        "details": "Feature proposal for Featherduster UI (packages/ui/src/views/tailoring/CompetencyRadar.tsx):\n- Interactive radar/spider chart mapping candidate evidence against 6 core axes (Architecture, Distributed Systems, Reliability, Performance, Leadership, Mentorship)\n- Calculates quantified fit index score (%) for job postings before tailoring\n- Pinpoints exact competency gaps with direct links to ledger entries",
+        "testStrategy": "npx vitest run packages/ui/tests/competency-radar.test.tsx",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "visualization",
+          "matching"
+        ],
+        "updatedAt": "2026-09-26T15:34:35.705611+00:00"
+      },
+      {
+        "id": 68,
+        "title": "Interactive Career Trajectory Timeline & Employer Arc",
+        "description": "Add visual interactive career milestone and impact timeline mapping scope progression, promotions, and major system architectures.",
+        "details": "Feature proposal for Featherduster UI (packages/ui/src/views/desk/CareerTimeline.tsx):\n- Chronological multi-track visual timeline showing company tenures, promotions, and system breakthroughs\n- Filterable by technical theme (#platform, #distributed-systems, #database) and evidence confidence\n- Provides hiring committees and peers with an instant holistic bird's-eye view of engineering maturity",
+        "testStrategy": "npx vitest run packages/ui/tests/career-timeline.test.tsx",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "ui",
+          "timeline",
+          "portfolio"
+        ],
+        "updatedAt": "2026-09-26T15:34:35.743971+00:00"
+      },
+      {
+        "id": 69,
+        "title": "Standalone Defensibility Brief PDF & Markdown Exporter",
+        "description": "Generate dedicated interview defense dossier containing anticipated skeptical interviewer follow-ups, trade-offs, and ledger proof trails.",
+        "details": "Feature proposal for Featherduster Compilers & UI (packages/core/src/compilers/defense-brief-compiler.ts):\n- Compiles standalone one-page defense brief per tailored resume or role\n- Anticipates hard Staff+ interview probes ('Why this architecture? What failed? What trade-offs?') with cited proof\n- Provides candidate cheat-sheet for rapid interview recall and defensibility verification",
+        "testStrategy": "npx vitest run packages/core/tests/defense-brief.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "compilers",
+          "interview-prep",
+          "export"
+        ],
+        "updatedAt": "2026-09-26T15:34:35.775090+00:00"
+      },
+      {
+        "id": 70,
+        "title": "Automated Secret & Confidentiality Leak Scanner",
+        "description": "Add deterministic pre-flight scanner detecting internal hostnames, credentials, unredacted partner names, and private metric disclosures.",
+        "details": "Feature proposal for Featherduster Integrity Engine (packages/core/src/integrity/confidentiality-scanner.ts):\n- Audits all compiled resume outputs, defense briefs, and exported packets against privacy-rules.yaml\n- Flags internal domain patterns (*.corp.*, *.internal.*), private repo URLs, internal server names, and API keys\n- Enforces zero unintentional confidential data leakage from private ledgers into external recruiter documents",
+        "testStrategy": "npx vitest run packages/core/tests/confidentiality.test.ts",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "codebase-scan",
+          "opportunity",
+          "privacy",
+          "integrity",
+          "security"
+        ],
+        "updatedAt": "2026-09-26T15:34:35.803277+00:00"
       }
     ],
     "metadata": {
       "created": "2026-09-21T13:08:00.000Z",
-      "updated": "2026-09-25T19:05:31.786761+00:00",
+      "updated": "2026-09-26T15:34:36.042902+00:00",
       "description": "Tasks for proposals context"
     }
   }
