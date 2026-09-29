@@ -485,17 +485,17 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
       </div>
 
       {hasOutput && !isRunning && (
-        <div className="mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 pt-4 dark:border-slate-800/80">
+        <div className="sticky bottom-0 -mx-5 -mb-5 mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-white/95 p-3.5 backdrop-blur pb-safe dark:border-slate-800/80 dark:bg-[#121622]/95 sm:static sm:mx-0 sm:mb-0 sm:p-0 sm:pt-4 sm:bg-transparent sm:backdrop-none z-10">
           {approveDisabledReason && <span className="mr-auto text-xs text-slate-500">{approveDisabledReason}</span>}
           {prevApproved && (
-            <button type="button" className={secondaryButton} disabled={anyRunning || !!busy} onClick={() => runStep(activeStep)}>
+            <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} disabled={anyRunning || !!busy} onClick={() => runStep(activeStep)}>
               <RotateCcw className="h-4 w-4" aria-hidden="true" /> Re-run
             </button>
           )}
           {record.status === 'done' && stepMeta.next && (
             <button
               type="button"
-              className={primaryButton}
+              className={`${primaryButton} min-h-[44px] sm:min-h-0`}
               disabled={!!approveDisabledReason || !!busy || anyRunning}
               onClick={() => approveAndContinue(activeStep)}
             >
@@ -503,7 +503,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
             </button>
           )}
           {record.status === 'approved' && NEXT_STEP[activeStep] && (
-            <button type="button" className={secondaryButton} onClick={() => setActiveStep(NEXT_STEP[activeStep]!)}>
+            <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} onClick={() => setActiveStep(NEXT_STEP[activeStep]!)}>
               Next step
             </button>
           )}
@@ -528,7 +528,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
       </header>
 
       {/* Narrow screens: tabs between panes */}
-      <div role="tablist" aria-label="Run panes" className="flex gap-1 rounded-desk bg-slate-100 p-1 dark:bg-slate-900 lg:hidden">
+      <div role="tablist" aria-label="Run panes" className="sticky top-14 sm:top-16 z-20 flex gap-1 rounded-desk bg-slate-100/95 p-1 backdrop-blur dark:bg-slate-900/95 lg:hidden shadow-sm">
         {(['steps', 'work', 'context'] as const).map((pane) => (
           <button
             key={pane}
@@ -536,8 +536,8 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
             type="button"
             aria-selected={mobilePane === pane}
             onClick={() => setMobilePane(pane)}
-            className={`flex-1 rounded-md px-3 py-1.5 text-sm capitalize ${
-              mobilePane === pane ? 'bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-600 dark:text-slate-400'
+            className={`flex-1 rounded-md px-3 py-2 text-sm capitalize min-h-[44px] flex items-center justify-center transition-colors ${
+              mobilePane === pane ? 'bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
             }`}
           >
             {pane === 'work' ? 'Current step' : pane}

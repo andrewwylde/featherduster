@@ -33,7 +33,7 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/70 backdrop-blur-sm animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -41,11 +41,11 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="integrity-audit-title"
-        className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-2xl bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] animate-slideUp sm:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center space-x-3">
             <div className={`p-2 rounded-lg ${isClean ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
               {isClean ? <ShieldCheck className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
@@ -175,13 +175,13 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-950/80">
-          <div className="text-xs text-slate-400">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950/80 pb-safe">
+          <div className="text-[11px] sm:text-xs text-slate-400 text-center sm:text-left">
             Protected by Git Push Defense and local-first offline enforcement.
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-slate-100 bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors min-h-[44px] flex items-center justify-center"
           >
             Close
           </button>

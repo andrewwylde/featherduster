@@ -119,6 +119,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showSkillsEditor, setShowSkillsEditor] = useState(false);
   const [showEduEditor, setShowEduEditor] = useState(false);
+  const [mobilePane, setMobilePane] = useState<'bullets' | 'matcher'>('bullets');
 
   // Build current active spec containing only included bullets
   const currentSpec: ResumeSpec = useMemo(() => {
@@ -627,12 +628,46 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
         </div>
       </div>
 
+      {/* Mobile pane selector tablist (< xl) */}
+      <div
+        role="tablist"
+        aria-label="Resume Tailor Panes"
+        className="flex xl:hidden rounded-desk bg-slate-900 border border-slate-800 p-1 mb-2"
+      >
+        <button
+          role="tab"
+          type="button"
+          aria-selected={mobilePane === 'bullets'}
+          onClick={() => setMobilePane('bullets')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors min-h-[40px] ${
+            mobilePane === 'bullets'
+              ? 'bg-purple-600 text-white shadow-sm font-bold'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Experiences & Bullets
+        </button>
+        <button
+          role="tab"
+          type="button"
+          aria-selected={mobilePane === 'matcher'}
+          onClick={() => setMobilePane('matcher')}
+          className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition-colors min-h-[40px] ${
+            mobilePane === 'matcher'
+              ? 'bg-purple-600 text-white shadow-sm font-bold'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          Job Matcher & Variant
+        </button>
+      </div>
+
       {/* 2-Column Split-Screen Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* ========================================================================= */}
         {/* LEFT PANE: Target Job & Matcher (Col span 5) */}
         {/* ========================================================================= */}
-        <div className="xl:col-span-5 space-y-5">
+        <div className={`xl:col-span-5 space-y-5 ${mobilePane === 'matcher' ? 'block' : 'hidden xl:block'}`}>
           {/* Variant Loader Dropdown */}
           <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3 shadow-md">
             <div className="flex items-center justify-between">
@@ -851,7 +886,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
         {/* ========================================================================= */}
         {/* RIGHT PANE: Modular Section & Bullet Builder (Col span 7) */}
         {/* ========================================================================= */}
-        <div className="xl:col-span-7 space-y-5">
+        <div className={`xl:col-span-7 space-y-5 ${mobilePane === 'bullets' ? 'block' : 'hidden xl:block'}`}>
           {/* Header Controls for Middle Pane */}
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">

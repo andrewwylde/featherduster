@@ -42,7 +42,7 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
 
   return (
     <aside
-      className="w-64 flex-shrink-0 flex flex-col justify-between border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f131d] p-6 select-none"
+      className="hidden md:flex w-64 flex-shrink-0 flex-col justify-between border-r border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0f131d] p-6 select-none"
       aria-label="Main Navigation"
     >
       <div>

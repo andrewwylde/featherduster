@@ -13,7 +13,7 @@ interface EvidenceStrengthenerProps {
 }
 
 const field =
-  'mt-1 w-full rounded-desk border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-vermilion-500/40';
+  'mt-1 w-full rounded-desk border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-base sm:text-sm text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-vermilion-500/40';
 const card = 'rounded-desk border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121622] p-5 shadow-sm';
 
 export const EvidenceStrengthener: React.FC<EvidenceStrengthenerProps> = ({ record, onBack, onSaved }) => {
@@ -163,8 +163,8 @@ export const EvidenceStrengthener: React.FC<EvidenceStrengthenerProps> = ({ reco
             <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">Saved to {savedPath}.</p>
           )}
 
-          <div className="flex justify-end">
-            <button type="submit" disabled={saving || !!ledgerPath} className="rounded-desk bg-vermilion-500 px-4 py-2 text-sm font-semibold text-white hover:bg-vermilion-600 disabled:opacity-40">
+          <div className="sticky bottom-0 -mx-5 -mb-5 mt-4 flex justify-end bg-white/95 p-3.5 backdrop-blur pb-safe dark:bg-[#121622]/95 border-t border-slate-100 dark:border-slate-800/80 sm:static sm:mx-0 sm:mb-0 sm:p-0 sm:bg-transparent sm:border-0 z-10">
+            <button type="submit" disabled={saving || !!ledgerPath} className="rounded-desk bg-vermilion-500 px-4 py-2 text-sm font-semibold text-white hover:bg-vermilion-600 disabled:opacity-40 min-h-[44px] flex items-center justify-center">
               {saving ? 'Saving…' : 'Save to ledger file'}
             </button>
           </div>

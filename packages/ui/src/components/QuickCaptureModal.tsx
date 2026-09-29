@@ -198,7 +198,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -206,11 +206,11 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="quick-capture-title"
-        className="relative w-full max-w-3xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"
+        className="relative w-full max-w-3xl bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] animate-slideUp sm:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-800 bg-slate-950/70">
           <div className="flex items-center space-x-3">
             <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
               <Sparkles className="w-5 h-5" />
@@ -236,7 +236,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form id="quick-capture-form" onSubmit={handleSubmit} className="p-6 overflow-y-auto flex-1 space-y-5">
+        <form id="quick-capture-form" onSubmit={handleSubmit} className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 sm:space-y-5">
           {error && (
             <div className="flex items-start space-x-2.5 p-3 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-sm">
               <AlertCircle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
@@ -252,7 +252,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 type="text"
                 value={id}
                 onChange={(e) => setId(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-emerald-400 font-mono focus:border-emerald-500 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-emerald-400 font-mono focus:border-emerald-500 focus:outline-none"
                 placeholder="ev-001"
                 required
               />
@@ -263,7 +263,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
                 placeholder="e.g. Zero-Downtime Session Migration"
                 required
               />
@@ -275,7 +275,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 list="company-list"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
                 placeholder="e.g. acme"
                 required
               />
@@ -295,7 +295,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 type="date"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:border-emerald-500 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-white focus:border-emerald-500 focus:outline-none"
                 required
               />
             </div>
@@ -306,14 +306,14 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 onChange={(e) =>
                   setConfidence(e.target.value as 'verified' | 'provisional' | 'retracted')
                 }
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:border-emerald-500 focus:outline-none"
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-white focus:border-emerald-500 focus:outline-none min-h-[44px] sm:min-h-0"
               >
                 <option value="verified">Verified (backed by concrete metrics)</option>
                 <option value="provisional">Provisional (work completed, pending final metrics)</option>
                 <option value="retracted">Retracted</option>
               </select>
             </div>
-            <div className="flex items-center space-x-3 pt-6">
+            <div className="flex items-center space-x-3 pt-2 sm:pt-6">
               <input
                 type="checkbox"
                 id="in-flight"
@@ -336,7 +336,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               value={summary}
               onChange={(e) => setSummary(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
               placeholder="Architected token rotation protocol eliminating session invalidations during DB switch..."
               required
             />
@@ -351,7 +351,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               value={impact}
               onChange={(e) => setImpact(e.target.value)}
               rows={2}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
               placeholder="Reduced user re-auth events by 99.4% across 140k active daily sessions..."
               required
             />
@@ -366,7 +366,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               type="text"
               value={themesInput}
               onChange={(e) => setThemesInput(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-sm text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
               placeholder="e.g. distributed-systems, reliability, auth, rust"
             />
           </div>
@@ -381,7 +381,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               <button
                 type="button"
                 onClick={handleAddMetric}
-                className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-2 py-1 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20"
+                className="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-2.5 py-1.5 min-h-[36px] sm:min-h-0 rounded bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Metric
@@ -391,45 +391,48 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             {metrics.length === 0 ? (
               <p className="text-xs text-slate-500 italic">No quantitative metrics specified yet.</p>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-2.5">
                 {metrics.map((m, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
+                  <div key={idx} className="p-2.5 rounded-xl border border-slate-800 bg-slate-950/60 space-y-2">
                     <input
                       type="text"
                       placeholder="Metric Name (e.g. p99 latency)"
                       value={m.name}
                       onChange={(e) => handleUpdateMetric(idx, 'name', e.target.value)}
-                      className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                      className="w-full px-2.5 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-xs text-white placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
                     />
-                    <input
-                      type="text"
-                      placeholder="Value (e.g. 12ms or -85%)"
-                      value={m.value}
-                      onChange={(e) => handleUpdateMetric(idx, 'value', e.target.value)}
-                      className="w-36 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-emerald-400 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
-                    />
-                    <select
-                      value={m.status}
-                      onChange={(e) =>
-                        handleUpdateMetric(
-                          idx,
-                          'status',
-                          e.target.value as 'verified' | 'provisional' | 'missing'
-                        )
-                      }
-                      className="px-2 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:border-emerald-500 focus:outline-none"
-                    >
-                      <option value="verified">Verified</option>
-                      <option value="provisional">Provisional</option>
-                      <option value="missing">Missing</option>
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveMetric(idx)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Value (e.g. 12ms or -85%)"
+                        value={m.value}
+                        onChange={(e) => handleUpdateMetric(idx, 'value', e.target.value)}
+                        className="flex-1 px-2.5 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-xs font-mono text-emerald-400 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                      />
+                      <select
+                        value={m.status}
+                        onChange={(e) =>
+                          handleUpdateMetric(
+                            idx,
+                            'status',
+                            e.target.value as 'verified' | 'provisional' | 'missing'
+                          )
+                        }
+                        className="px-2 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-xs text-white focus:border-emerald-500 focus:outline-none min-h-[44px] sm:min-h-0"
+                      >
+                        <option value="verified">Verified</option>
+                        <option value="provisional">Provisional</option>
+                        <option value="missing">Missing</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMetric(idx)}
+                        aria-label="Delete metric"
+                        className="p-2 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -446,7 +449,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               <button
                 type="button"
                 onClick={handleAddRef}
-                className="text-xs font-medium text-slate-400 hover:text-slate-200 flex items-center gap-1 px-2 py-1 rounded bg-slate-800 hover:bg-slate-700"
+                className="text-xs font-medium text-slate-400 hover:text-slate-200 flex items-center gap-1 px-2.5 py-1.5 min-h-[36px] sm:min-h-0 rounded bg-slate-800 hover:bg-slate-700"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add Reference
@@ -456,11 +459,11 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             {internalRefs.length > 0 && (
               <div className="space-y-2">
                 {internalRefs.map((r, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
+                  <div key={idx} className="p-2 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center gap-2">
                     <select
                       value={r.type}
                       onChange={(e) => handleUpdateRef(idx, 'type', e.target.value)}
-                      className="px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white focus:border-emerald-500 focus:outline-none"
+                      className="px-2.5 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-xs text-white focus:border-emerald-500 focus:outline-none min-h-[44px] sm:min-h-0"
                     >
                       <option value="linear">Linear</option>
                       <option value="jira">Jira</option>
@@ -472,12 +475,13 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                       placeholder="Ticket or Ref (e.g. AUTH-892)"
                       value={r.ref}
                       onChange={(e) => handleUpdateRef(idx, 'ref', e.target.value)}
-                      className="flex-1 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-200 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
+                      className="flex-1 px-2.5 py-2 sm:py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-xs font-mono text-slate-200 placeholder-slate-500 focus:border-emerald-500 focus:outline-none"
                     />
                     <button
                       type="button"
                       onClick={() => handleRemoveRef(idx)}
-                      className="p-1.5 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded"
+                      aria-label="Delete reference"
+                      className="p-2 text-slate-500 hover:text-rose-400 hover:bg-slate-800 rounded min-h-[44px] min-w-[44px] flex items-center justify-center"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
@@ -496,22 +500,22 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               value={narrative}
               onChange={(e) => setNarrative(e.target.value)}
               rows={5}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 placeholder-slate-600 focus:border-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base sm:text-xs font-mono text-slate-300 placeholder-slate-600 focus:border-emerald-500 focus:outline-none"
               placeholder="In-depth explanation, architecture trade-offs, and technical notes..."
             />
           </div>
         </form>
 
         {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-950/80">
-          <div className="text-xs text-slate-500">
-            Files are saved to disk under <span className="font-mono text-slate-400">evidence/{company || 'general'}/{id}.md</span>
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950/90 backdrop-blur pb-safe">
+          <div className="text-[11px] sm:text-xs text-slate-500 text-center sm:text-left">
+            Files saved to <span className="font-mono text-slate-400">evidence/{company || 'general'}/{id}.md</span>
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
+              className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors min-h-[44px] flex items-center justify-center"
             >
               Cancel
             </button>
@@ -519,7 +523,7 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
               type="submit"
               form="quick-capture-form"
               disabled={isSubmitting}
-              className="px-5 py-2 text-sm font-semibold text-slate-950 bg-emerald-500 hover:bg-emerald-400 rounded-lg shadow-md shadow-emerald-500/20 transition-all disabled:opacity-50"
+              className="flex-1 sm:flex-none px-5 py-2 text-sm font-semibold text-slate-950 bg-emerald-500 hover:bg-emerald-400 rounded-lg shadow-md shadow-emerald-500/20 transition-all disabled:opacity-50 min-h-[44px] flex items-center justify-center"
             >
               {isSubmitting ? 'Saving to Disk...' : 'Save Evidence Card'}
             </button>

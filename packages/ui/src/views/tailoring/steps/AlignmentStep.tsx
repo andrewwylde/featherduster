@@ -80,7 +80,7 @@ export const AlignmentStep: React.FC<AlignmentStepProps> = ({
                   value={row.classification}
                   disabled={readOnly}
                   onChange={(e) => updateRow(row.requirement_id, { classification: e.target.value as AlignmentClassification })}
-                  className={`rounded-desk border bg-transparent px-2 py-1 text-xs font-semibold ${CLASS_STYLE[row.classification]}`}
+                  className={`rounded-desk border bg-transparent px-2.5 py-1.5 min-h-[36px] sm:min-h-0 text-xs font-semibold ${CLASS_STYLE[row.classification]}`}
                 >
                   <option value="backed">Backed</option>
                   <option value="transferable">Transferable</option>
@@ -104,7 +104,7 @@ export const AlignmentStep: React.FC<AlignmentStepProps> = ({
                     aria-label={`Add evidence to ${row.requirement_id}`}
                     value=""
                     onChange={(e) => e.target.value && updateRow(row.requirement_id, { citations: [...row.citations, e.target.value] })}
-                    className="rounded border border-dashed border-slate-300 dark:border-slate-700 bg-transparent px-1.5 py-0.5 text-[11px] text-slate-600 dark:text-slate-400"
+                    className="rounded border border-dashed border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1 min-h-[36px] sm:min-h-0 text-xs text-slate-600 dark:text-slate-400"
                   >
                     <option value="">+ cite evidence</option>
                     {available.map((e) => (
@@ -124,17 +124,17 @@ export const AlignmentStep: React.FC<AlignmentStepProps> = ({
                       value={row.adjacent_tool}
                       readOnly={readOnly}
                       onChange={(e) => updateRow(row.requirement_id, { adjacent_tool: e.target.value })}
-                      className={`${inputClass} w-40 py-1 text-xs`}
+                      className={`${inputClass} w-full sm:w-40 py-1 min-h-[36px] sm:min-h-0 text-base sm:text-xs`}
                     />
                   </label>
                 )}
-                <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+                <label className="flex items-center gap-1.5 py-1 text-xs text-slate-600 dark:text-slate-400">
                   <input
                     type="checkbox"
                     checked={row.candidate_confirmed}
                     disabled={readOnly}
                     onChange={(e) => updateRow(row.requirement_id, { candidate_confirmed: e.target.checked })}
-                    className="accent-vermilion-500"
+                    className="h-4 w-4 accent-vermilion-500"
                   />
                   Confirmed by me (not yet in the ledger)
                 </label>
@@ -147,7 +147,7 @@ export const AlignmentStep: React.FC<AlignmentStepProps> = ({
 
       {!readOnly && dirty && (
         <div className="flex justify-end">
-          <button type="button" className={secondaryButton} disabled={saving} onClick={() => onSave(draft)}>
+          <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} disabled={saving} onClick={() => onSave(draft)}>
             {saving ? 'Saving…' : 'Save alignment edits'}
           </button>
         </div>

@@ -181,7 +181,7 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
       onClick={onClose}
     >
       <div
@@ -189,11 +189,11 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="brag-doc-title"
-        className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-scaleIn"
+        className="bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl w-full max-w-5xl max-h-[92dvh] flex flex-col shadow-2xl overflow-hidden animate-slideUp sm:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/50">
           <div className="flex items-center space-x-3">
             <div className="p-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
               <FileText className="w-5 h-5" />
@@ -215,7 +215,7 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
         </div>
 
         {/* Configuration Bar */}
-        <div className="px-6 py-3.5 bg-slate-950/80 border-b border-slate-800 grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        <div className="px-4 py-3 sm:px-6 sm:py-3.5 bg-slate-950/80 border-b border-slate-800 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 items-end">
           {/* Rubric Selector */}
           <div>
             <label className="block text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-1">
@@ -366,16 +366,16 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="px-6 py-4 border-t border-slate-800 bg-slate-950/50 flex items-center justify-between">
-          <div className="text-xs text-slate-500">
+        <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950/50 flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 pb-safe">
+          <div className="text-xs text-slate-500 text-center sm:text-left">
             {markdownOutput ? `${markdownOutput.split('\n').length} lines · Markdown format` : ''}
           </div>
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <button
               type="button"
               onClick={handleCopy}
               disabled={!markdownOutput}
-              className="px-4 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors flex items-center space-x-1.5"
+              className="flex-1 sm:flex-none px-4 py-2 text-sm sm:text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors flex items-center justify-center space-x-1.5 min-h-[44px]"
             >
               {copied ? (
                 <>
@@ -393,7 +393,7 @@ export const BragDocModal: React.FC<BragDocModalProps> = ({
               type="button"
               onClick={handleDownload}
               disabled={!markdownOutput}
-              className="px-5 py-2 text-xs font-semibold text-slate-950 bg-teal-400 hover:bg-teal-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors flex items-center space-x-1.5 shadow-lg shadow-teal-500/10"
+              className="flex-1 sm:flex-none px-5 py-2 text-sm sm:text-xs font-semibold text-slate-950 bg-teal-400 hover:bg-teal-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors flex items-center justify-center space-x-1.5 shadow-lg shadow-teal-500/10 min-h-[44px]"
             >
               <Download className="w-3.5 h-3.5" />
               <span>Download .md</span>

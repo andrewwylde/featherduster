@@ -6,13 +6,13 @@ export const cardClass =
   'rounded-desk border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#121622] shadow-sm';
 
 export const primaryButton =
-  'inline-flex items-center justify-center gap-1.5 rounded-desk bg-vermilion-500 px-3.5 py-2 text-sm font-semibold text-white hover:bg-vermilion-600 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vermilion-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0c0f17]';
+  'inline-flex items-center justify-center gap-1.5 rounded-desk bg-vermilion-500 px-3.5 py-2 min-h-[44px] sm:min-h-0 text-sm font-semibold text-white hover:bg-vermilion-600 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vermilion-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-[#0c0f17]';
 
 export const secondaryButton =
-  'inline-flex items-center justify-center gap-1.5 rounded-desk border border-slate-300 dark:border-slate-700 bg-white dark:bg-transparent px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vermilion-500';
+  'inline-flex items-center justify-center gap-1.5 rounded-desk border border-slate-300 dark:border-slate-700 bg-white dark:bg-transparent px-3 py-2 min-h-[44px] sm:min-h-0 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/60 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-vermilion-500';
 
 export const inputClass =
-  'w-full rounded-desk border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-vermilion-500/40 focus:border-vermilion-500';
+  'w-full rounded-desk border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-3 py-2 text-base sm:text-sm text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-vermilion-500/40 focus:border-vermilion-500';
 
 export const eyebrowClass =
   'text-xs font-mono uppercase tracking-widest text-vermilion-600 dark:text-vermilion-400 font-semibold';

@@ -145,7 +145,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
       onClick={onClose}
     >
       <div
@@ -153,11 +153,11 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-labelledby="preflight-modal-title"
-        className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-2xl bg-slate-900 border-t sm:border border-slate-800 rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92dvh] animate-slideUp sm:animate-none"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/70">
+        <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-800 bg-slate-950/70">
           <div className="flex items-center space-x-3">
             <div
               className={`p-2 rounded-xl border ${
@@ -534,19 +534,19 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between px-6 py-4 border-t border-slate-800 bg-slate-950/60">
+        <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-800 bg-slate-950/60 pb-safe">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors"
+            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition-colors min-h-[44px] flex items-center justify-center"
           >
             Close
           </button>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             <button
               onClick={handleCopy}
               disabled={!previewText}
-              className="px-4 py-2 text-sm font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 rounded-xl transition-colors inline-flex items-center gap-2"
+              className="flex-1 sm:flex-none px-4 py-2 text-sm font-medium text-slate-200 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 rounded-xl transition-colors inline-flex items-center justify-center gap-2 min-h-[44px]"
             >
               {copied ? (
                 <>
@@ -564,7 +564,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
             <button
               onClick={handleDownload}
               disabled={!previewText}
-              className="px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 rounded-xl shadow-lg shadow-emerald-900/30 transition-all inline-flex items-center gap-2"
+              className="flex-1 sm:flex-none px-5 py-2 text-sm font-semibold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 rounded-xl shadow-lg shadow-emerald-900/30 transition-all inline-flex items-center justify-center gap-2 min-h-[44px]"
             >
               <Download className="w-4 h-4" />
               <span>Redact & Download</span>

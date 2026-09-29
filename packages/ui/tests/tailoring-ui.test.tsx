@@ -209,6 +209,26 @@ describe('Tailoring run workspace', () => {
     await waitFor(() => expect(grant).toHaveBeenCalledWith('claude-code'));
     await waitFor(() => expect(run).toHaveBeenCalledTimes(2));
   });
+
+  it('renders mobile sticky pane switcher and mobile-optimized action ledge', async () => {
+    vi.spyOn(apiClient, 'getTailoringRun').mockResolvedValue(baseDetail());
+    render(<TailoringRun slug="acme-staff" onBack={vi.fn()} onOpenInCanvas={vi.fn()} />);
+
+    // Pane tabs for mobile
+    const tablist = await screen.findByRole('tablist', { name: 'Run panes' });
+    expect(tablist).toHaveClass('sticky');
+    const tabs = within(tablist).getAllByRole('tab');
+    expect(tabs).toHaveLength(3);
+
+    // Classification dropdown has touch-friendly class
+    const select = screen.getByLabelText('Classification for r1');
+    expect(select).toHaveClass('min-h-[36px]');
+
+    // Step action bar has sticky bottom styling
+    const approveBtn = screen.getByRole('button', { name: 'Approve & draft edits' });
+    expect(approveBtn.parentElement).toHaveClass('sticky');
+    expect(approveBtn.parentElement).toHaveClass('bottom-0');
+  });
 });
 
 describe('Tailor routes', () => {

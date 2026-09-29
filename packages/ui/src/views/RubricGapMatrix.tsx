@@ -231,10 +231,10 @@ export const RubricGapMatrix: React.FC = () => {
           )}
         </div>
 
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <button
             onClick={() => setIsImporterOpen(true)}
-            className="px-3.5 py-2 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors flex items-center space-x-1.5 border border-slate-700/60"
+            className="px-3.5 py-2 min-h-[44px] sm:min-h-0 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors flex items-center space-x-1.5 border border-slate-700/60"
           >
             <Upload className="w-3.5 h-3.5 text-teal-400" />
             <span>Import Rubric</span>
@@ -242,7 +242,7 @@ export const RubricGapMatrix: React.FC = () => {
           <button
             onClick={() => setIsBragDocOpen(true)}
             disabled={!currentRubric}
-            className="px-4 py-2 text-xs font-semibold text-slate-950 bg-teal-400 hover:bg-teal-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors flex items-center space-x-1.5 shadow-lg shadow-teal-500/10"
+            className="px-4 py-2 min-h-[44px] sm:min-h-0 text-xs font-semibold text-slate-950 bg-teal-400 hover:bg-teal-300 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-colors flex items-center space-x-1.5 shadow-lg shadow-teal-500/10"
           >
             <FileText className="w-3.5 h-3.5" />
             <span>Generate Brag Doc</span>
@@ -264,7 +264,7 @@ export const RubricGapMatrix: React.FC = () => {
             <select
               value={selectedRubricId}
               onChange={(e) => setSelectedRubricId(e.target.value)}
-              className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-teal-500 transition-colors"
+              className="w-full px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-0 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-teal-500 transition-colors"
             >
               {rubrics.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -277,18 +277,18 @@ export const RubricGapMatrix: React.FC = () => {
 
         {/* Target Level Pills */}
         {currentRubric && currentRubric.levels.length > 0 && (
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-1">
               Target Level:
             </span>
-            <div className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800">
+            <div className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar">
               {currentRubric.levels.map((lvl) => {
                 const isSelected = lvl.id === selectedLevel;
                 return (
                   <button
                     key={lvl.id}
                     onClick={() => setSelectedLevel(lvl.id)}
-                    className={`px-3 py-1 text-xs font-mono font-bold rounded-lg transition-all ${
+                    className={`px-3 py-1.5 min-h-[36px] sm:min-h-0 text-xs font-mono font-bold rounded-lg transition-all flex items-center justify-center ${
                       isSelected
                         ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
                         : 'text-slate-400 hover:text-white hover:bg-slate-800'
