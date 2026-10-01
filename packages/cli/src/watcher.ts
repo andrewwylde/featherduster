@@ -40,6 +40,7 @@ export class WorkspaceWatcher extends EventEmitter {
       path.join(this.workspaceDir, 'resumes'),
       path.join(this.workspaceDir, '.featherduster'),
       path.join(this.workspaceDir, 'tailoring'),
+      path.join(this.workspaceDir, 'tailoring-drafts'),
     ];
 
     this.watcher = chokidar.watch(watchTargets, {
@@ -51,6 +52,8 @@ export class WorkspaceWatcher extends EventEmitter {
         '**/node_modules/**',
         '**/.git/**',
         '**/*.tmp',
+        '**/tailoring-drafts/operations/**',
+        '**/tailoring-drafts/*.lock*/**',
       ],
     });
 
@@ -64,6 +67,8 @@ export class WorkspaceWatcher extends EventEmitter {
       const relativePath = normalizedPath.startsWith(normalizedWorkspace)
         ? normalizedPath.slice(normalizedWorkspace.length).replace(/^\//, '')
         : path.relative(this.workspaceDir, filePath).replace(/\\/g, '/');
+
+      if (relativePath.startsWith('tailoring-drafts/') && !/^tailoring-drafts\/[0-9a-f-]{36}\.json$/i.test(relativePath)) return;
 
       const changeEvent: WatcherChangeEvent = {
         type,

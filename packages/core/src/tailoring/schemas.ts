@@ -115,6 +115,8 @@ export const ProposalSchema = z.object({
   decision: ProposalDecisionSchema.default('pending'),
   /** User-edited replacement for `after`. */
   edited_after: z.string().optional(),
+  /** Candidate override to waive blocking checks on this proposal. */
+  override: z.boolean().optional(),
   checks: z.array(ValidationIssueSchema).default([]),
 });
 export type Proposal = z.infer<typeof ProposalSchema>;
@@ -193,6 +195,7 @@ export const StepRecordSchema = z.object({
 export type StepRecord = z.infer<typeof StepRecordSchema>;
 
 export const RunManifestSchema = z.object({
+  draft_id: z.string().uuid().optional(),
   slug: z.string().min(1),
   title: z.string().default(''),
   created: z.string(),

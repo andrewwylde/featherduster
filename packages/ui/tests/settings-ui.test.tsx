@@ -188,7 +188,7 @@ describe('SettingsView', () => {
 describe('Settings navigation', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: 'C:/ws' });
+    vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: 'C:/ws', workspaceId: 'workspace' });
     vi.spyOn(apiClient, 'getIntegrityCheck').mockResolvedValue({ isClean: true, issues: [] });
     vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
     vi.spyOn(apiClient, 'getRubrics').mockResolvedValue([]);

@@ -1,8 +1,10 @@
 import type { Context, Hono } from 'hono';
+import { DraftRepositoryError } from './drafts/errors.js';
 import { RunStoreError } from './store.js';
 import { TailoringError, type TailoringOrchestrator } from './orchestrator.js';
 
 function handleError(c: Context, err: unknown) {
+  if (err instanceof DraftRepositoryError) return c.json({ error: err.detail, code: err.code }, err.status as any);
   if (err instanceof TailoringError) {
     return c.json({ error: err.message, code: err.code, detail: err.detail }, err.status as any);
   }

@@ -4,8 +4,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import type { RunManifest } from '@featherduster/core';
+import type { DraftEnvelope, RunManifest } from '@featherduster/core';
 import { ApiError, apiClient, type TailoringRunDetail } from '../src/api/client';
+import { TailoringDraftRoute } from '../src/views/tailoring/TailoringDraftRoute';
 import { TailoringRunList } from '../src/views/tailoring/TailoringRunList';
 import { TailoringRun } from '../src/views/tailoring/TailoringRun';
 import { App } from '../src/App';
@@ -41,7 +42,7 @@ const analysis = {
   boilerplate: [],
 } as any;
 
-const baseDetail = (): TailoringRunDetail => ({
+const baseDetail = (): TailoringRunDetail => { const detail: TailoringRunDetail = ({
   manifest: manifest(),
   posting: 'Staff Engineer at Acme\nWe need strong Go and Kafka at scale.',
   base_resume: {
@@ -64,10 +65,20 @@ const baseDetail = (): TailoringRunDetail => ({
   resume: null,
   brief_markdown: null,
 });
+  Object.defineProperty(detail, 'draft', { enumerable: true, get: () => {
+    const now = '2026-09-30T10:00:00.000Z';
+    const appliedContent = { ...(detail.analysis ? { analysis: detail.analysis } : {}), ...(detail.alignment ? { alignment: detail.alignment } : {}), ...(detail.proposals ? { proposals: { proposals: detail.proposals } } : {}) };
+    return { record: { schemaVersion: 1, id: '22222222-2222-4222-8222-222222222222', kind: 'run', lifecycle: 'draft', revision: 1, createdAt: now, editedAt: now, savedAt: now, runSlug: detail.manifest.slug, base: { resumeId: 'base', fingerprint: 'base', spec: detail.base_resume! }, context: {}, appliedContent, payload: { ...appliedContent, proposalTextById: {}, artifactTokens: {} } }, token: { revision: 1, fingerprint: 'fixture' } } as DraftEnvelope;
+  } });
+  return detail;
+};
 
 describe('Tailoring run list', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
+    vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: '/workspace', workspaceId: 'workspace' });
+    vi.spyOn(apiClient, 'listTailoringDrafts').mockResolvedValue({ workspaceId: 'workspace', records: [], recoveryErrors: [] });
     vi.spyOn(apiClient, 'listTailoringRuns').mockResolvedValue([{ ...manifest(), needs_review: true }]);
     vi.spyOn(apiClient, 'getRunners').mockResolvedValue({
       runners: [
@@ -93,29 +104,36 @@ describe('Tailoring run list', () => {
   });
 
   it('creates a run from a handed-off posting with the default available runner', async () => {
-    const create = vi.spyOn(apiClient, 'createTailoringRun').mockResolvedValue({ slug: 'new-run', manifest: manifest({ slug: 'new-run' }) });
-    const onOpenRun = vi.fn();
+    let saved: any;
+    vi.spyOn(apiClient, 'createTailoringDraft').mockImplementation(async input => {
+      const now = new Date().toISOString();
+      saved = { record: { ...input.record, schemaVersion: 1, lifecycle: 'draft', revision: 1, createdAt: now, editedAt: now, savedAt: now, base: null, context: {}, appliedContent: {} }, token: { revision: 1, fingerprint: 'saved' } };
+      return { ...saved, mutationId: input.mutationId };
+    });
+    const create = vi.spyOn(apiClient, 'createRunFromDraft').mockImplementation(async () => ({ ...saved, slug: 'new-run' }));
+    const navigate = vi.fn();
     const consumed = vi.fn();
     const posting = 'Senior Platform Engineer at Globex. Must know Go and Kubernetes.';
-    render(<TailoringRunList onOpenRun={onOpenRun} initialPosting={posting} onInitialPostingConsumed={consumed} />);
+    render(<TailoringDraftRoute navigate={navigate} registerGuard={() => {}} onOpenCanvas={() => {}} onOpenSettings={() => {}} initialPosting={posting} onInitialPostingConsumed={consumed} />);
 
     const textarea = await screen.findByLabelText('Job posting');
     expect(textarea).toHaveValue(posting);
     expect(consumed).toHaveBeenCalled();
     await waitFor(() => expect(screen.getByLabelText('Model runner')).toHaveValue('claude-code'));
     expect(screen.getByText(/evidence is redacted with your privacy rules/)).toBeInTheDocument();
-
     fireEvent.click(screen.getByRole('button', { name: /Create run/ }));
-    await waitFor(() =>
-      expect(create).toHaveBeenCalledWith({ posting, base_resume: 'template-master', runner: 'claude-code', label: undefined })
-    );
-    expect(onOpenRun).toHaveBeenCalledWith('new-run');
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.any(String), { expected: { revision: 1, fingerprint: 'saved' }, operationId: expect.any(String) }));
+    expect(saved.record.payload).toEqual({ posting, baseResumeId: 'template-master', runner: 'claude-code', label: '' });
+    expect(navigate).toHaveBeenLastCalledWith('/tailor/new-run');
   });
 });
 
 describe('Tailoring run workspace', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
+    vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: '/workspace', workspaceId: 'workspace' });
+    vi.spyOn(apiClient, 'saveTailoringDraft').mockImplementation(async (_, input) => ({ record: { ...baseDetail().draft!.record, payload: input.payload ?? baseDetail().draft!.record.payload, context: input.context ?? {} } as any, token: { revision: 2, fingerprint: 'saved' }, mutationId: input.mutationId }));
     vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([
       { id: 'ev-002', title: 'Gateway rewrite', company: 'SampleCorp', date: '2025-01-01', summary: 'Rewrote gateway.', impact: 'Cut CPU 30%.', themes: [], entry: { confidence: 'verified', metrics: [] } } as any,
       { id: 'ev-001', title: 'Async ingestion', company: 'SampleCorp', date: '2025-01-01', summary: 'RabbitMQ.', impact: '50k msgs/s.', themes: [], entry: { confidence: 'verified', metrics: [] } } as any,
@@ -123,10 +141,36 @@ describe('Tailoring run workspace', () => {
   });
   afterEach(cleanup);
 
-  it('edits the alignment matrix and requires saving before approval', async () => {
+  it.each(['query', 'draft context'] as const)('honors the explicit %s step on initial mount and a changed run slug', async source => {
+    const detail = baseDetail();
+    detail.manifest.steps.analysis.status = 'done';
+    vi.mocked(apiClient.getEvidence).mockResolvedValue([]);
+    vi.spyOn(apiClient, 'getTailoringRun').mockResolvedValue(detail);
+    vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: '/workspace', workspaceId: 'workspace' });
+    vi.spyOn(apiClient, 'getIntegrityCheck').mockResolvedValue({ isClean: true, issues: [] });
+    vi.spyOn(apiClient, 'getResumes').mockResolvedValue([]);
+    vi.spyOn(apiClient, 'getRubrics').mockResolvedValue([]);
+    const id = detail.draft!.record.id;
+    const envelope = { ...detail.draft!, record: { ...detail.draft!.record, context: { activeStep: 'alignment' as const } } };
+    localStorage.clear();
+    vi.spyOn(apiClient, 'listTailoringDrafts').mockResolvedValue({ workspaceId: 'workspace', records: [], recoveryErrors: [] });
+    vi.spyOn(apiClient, 'getTailoringDraft').mockResolvedValue(envelope);
+    vi.mocked(apiClient.getTailoringRun).mockResolvedValue({ ...detail, draft: envelope });
+    window.history.replaceState({}, '', source === 'query' ? '/tailor/acme?step=alignment' : `/tailor/drafts/${id}`);
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: 'Match your evidence' })).toBeInTheDocument();
+    window.history.pushState({}, '', '/tailor/another-run?step=alignment');
+    fireEvent(window, new PopStateEvent('popstate'));
+    await waitFor(() => expect(apiClient.getTailoringRun).toHaveBeenCalledWith('another-run'));
+    expect(await screen.findByRole('heading', { name: 'Match your evidence' })).toBeInTheDocument();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('recovers alignment edits and applies them explicitly', async () => {
     const detail = baseDetail();
     vi.spyOn(apiClient, 'getTailoringRun').mockResolvedValue(detail);
-    const save = vi.spyOn(apiClient, 'saveTailoringStep').mockResolvedValue(detail);
+    const save = vi.mocked(apiClient.saveTailoringDraft);
+    vi.spyOn(apiClient, 'applyTailoringDraft').mockResolvedValue({ ...detail.draft!, mutationId: 'apply', run: detail });
     render(<TailoringRun slug="acme-staff" onBack={vi.fn()} onOpenInCanvas={vi.fn()} />);
 
     expect(await screen.findByRole('heading', { name: 'Match your evidence' })).toBeInTheDocument();
@@ -135,14 +179,13 @@ describe('Tailoring run workspace', () => {
 
     fireEvent.change(screen.getByLabelText('Classification for r2'), { target: { value: 'transferable' } });
     fireEvent.change(screen.getByLabelText('Add evidence to r2'), { target: { value: 'ev-001' } });
-    expect(screen.getByRole('button', { name: 'Approve & draft edits' })).toBeDisabled();
-    expect(screen.getByText('Save your edits first')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve & draft edits' })).toBeEnabled();
+    expect(screen.getByText(/Unapplied edits/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Save alignment edits' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Apply alignment edits' }));
     await waitFor(() => expect(save).toHaveBeenCalled());
-    const [, stepName, payload] = save.mock.calls[0] as [string, string, any];
-    expect(stepName).toBe('alignment');
-    expect(payload.rows[1]).toMatchObject({ classification: 'transferable', citations: ['ev-001'] });
+    const payload = save.mock.calls[0][1].payload as any;
+    expect(payload.alignment.rows[1]).toMatchObject({ classification: 'transferable', citations: ['ev-001'] });
   });
 
   it('shows evidence detail when a citation chip is clicked', async () => {
@@ -169,7 +212,8 @@ describe('Tailoring run workspace', () => {
       },
     ] as any;
     vi.spyOn(apiClient, 'getTailoringRun').mockResolvedValue(detail);
-    const save = vi.spyOn(apiClient, 'saveTailoringStep').mockResolvedValue(detail);
+    const save = vi.mocked(apiClient.saveTailoringDraft);
+    vi.spyOn(apiClient, 'applyTailoringDraft').mockResolvedValue({ ...detail.draft!, mutationId: 'apply', run: detail });
     render(<TailoringRun slug="acme-staff" onBack={vi.fn()} onOpenInCanvas={vi.fn()} />);
 
     const blocked = await screen.findByRole('listitem', { name: /Proposal p2/ });
@@ -181,7 +225,7 @@ describe('Tailoring run workspace', () => {
     expect(within(ok).getByText('the API')).toBeInTheDocument(); // inserted words highlighted in the diff
     fireEvent.click(within(ok).getByRole('button', { name: /Accept/ }));
     await waitFor(() => expect(save).toHaveBeenCalled());
-    const payload = save.mock.calls[0][2] as any;
+    const payload = (save.mock.calls[0][1].payload as any).proposals;
     expect(payload.proposals.find((p: any) => p.id === 'p1').decision).toBe('accepted');
   });
 
@@ -234,7 +278,7 @@ describe('Tailoring run workspace', () => {
 describe('Tailor routes', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: 'C:/workspace' });
+    vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: 'C:/workspace', workspaceId: 'workspace' });
     vi.spyOn(apiClient, 'getIntegrityCheck').mockResolvedValue({ isClean: true, issues: [] });
     vi.spyOn(apiClient, 'getRubrics').mockResolvedValue([]);
     vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
@@ -261,5 +305,6 @@ describe('Tailor routes', () => {
     expect(await screen.findByRole('heading', { name: 'Acme — Staff Engineer' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /All runs/ }));
     expect(window.location.pathname).toBe('/tailor');
+    await screen.findByRole('heading', { name: 'Tailor your resume to a job' });
   });
 });

@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import type { JobAnalysis, JobRequirement, RequirementTier } from '@featherduster/core';
 import { inputClass, secondaryButton } from '../ui';
 
 interface AnalysisStepProps {
-  analysis: JobAnalysis;
+  value: JobAnalysis;
   readOnly: boolean;
-  saving: boolean;
-  onDirtyChange?: (dirty: boolean) => void;
-  onSave: (analysis: JobAnalysis) => void;
+  applying: boolean;
+  applyDisabled?: boolean;
+  unapplied: boolean;
+  onChange: (analysis: JobAnalysis) => void;
+  onApply: () => Promise<void>;
   onHighlightQuote: (quote: string | null) => void;
 }
 
@@ -18,24 +20,7 @@ const TIERS: Array<{ id: RequirementTier; label: string; hint: string }> = [
   { id: 'vocabulary', label: 'Company vocabulary', hint: 'Tier 3: their terms for things' },
 ];
 
-export const AnalysisStep: React.FC<AnalysisStepProps> = ({ analysis, readOnly, saving, onDirtyChange, onSave, onHighlightQuote }) => {
-  const [draft, setDraft] = useState<JobAnalysis>(analysis);
-  const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
-
-  useEffect(() => {
-    setDraft(analysis);
-    setDirty(false);
-  }, [analysis]);
-
-  const update = (next: JobAnalysis) => {
-    setDraft(next);
-    setDirty(true);
-  };
-
+export const AnalysisStep: React.FC<AnalysisStepProps> = ({ value: draft, readOnly, applying, applyDisabled, unapplied, onChange: update, onApply, onHighlightQuote }) => {
   const updateReq = (id: string, patch: Partial<JobRequirement>) =>
     update({ ...draft, requirements: draft.requirements.map((r) => (r.id === id ? { ...r, ...patch } : r)) });
 
@@ -151,15 +136,15 @@ export const AnalysisStep: React.FC<AnalysisStepProps> = ({ analysis, readOnly, 
         </p>
       )}
 
-      {!readOnly && dirty && (
+      {!readOnly && unapplied && (
         <div className="flex justify-end">
           <button
             type="button"
             className={secondaryButton}
-            disabled={saving || draft.requirements.some((r) => !r.text.trim())}
-            onClick={() => onSave(draft)}
+            disabled={applying || applyDisabled || draft.requirements.some((r) => !r.text.trim())}
+            onClick={() => void onApply().catch(() => undefined)}
           >
-            {saving ? 'Saving…' : 'Save requirement edits'}
+            {applying ? 'Applying…' : 'Apply requirement edits'}
           </button>
         </div>
       )}

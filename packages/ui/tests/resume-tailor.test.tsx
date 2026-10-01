@@ -8,6 +8,53 @@ import { ResumeTailor } from '../src/views/ResumeTailor';
 import { PreFlightModal } from '../src/components/PreFlightModal';
 import { apiClient, ApiError, type ResumeRecord, type PreflightResult } from '../src/api/client';
 import type { EvidenceRecord } from '@featherduster/core';
+import { manualFromSpec } from '../src/tailoring-drafts/manual-model';
+import { cleanSlop } from '@featherduster/core';
+
+it('keeps both same-event de-slop updates and accepts an explicit replacement of the hydrated payload', async () => {
+  const slop = 'Make no mistake, this reduced cloud costs by 20%.';
+  const payload = manualFromSpec({ profile: { name: 'Recovered', title: 'Engineer', email: 'a@b.c' }, summary: slop, experiences: [{ company: 'Company', role: 'Role', startDate: '2020', endDate: 'Present', bullets: [{ text: slop }] }], education: [], skills: [] }, 'second');
+  vi.spyOn(apiClient, 'getResumes').mockResolvedValue([]);
+  vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
+  vi.spyOn(apiClient, 'compileResume').mockResolvedValue({ output: '', violations: [], isClean: true });
+  const changed = vi.fn();
+  const view = render(<ResumeTailor initialPayload={payload} onPayloadChange={changed} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'De-Slop' }));
+  const cleaned = cleanSlop(slop).cleanedText;
+  expect(cleaned).not.toBe(slop);
+  expect(changed.mock.lastCall?.[0]).toMatchObject({ summary: cleaned, experiences: [{ bullets: [{ text: cleaned }] }] });
+  view.rerender(<ResumeTailor initialPayload={{ ...payload, jobDescription: 'Explicit newer version' }} onPayloadChange={changed} />);
+  expect(await screen.findByDisplayValue('Explicit newer version')).toBeInTheDocument();
+  cleanup(); vi.restoreAllMocks();
+});
+
+it('keeps a recovered manual editor available during a resume-list outage', async () => {
+  const payload = manualFromSpec({ profile: { name: 'Recovered', title: '', email: '' }, experiences: [], education: [], skills: [] }, 'second');
+  payload.jobDescription = 'Offline recovery';
+  vi.spyOn(apiClient, 'getResumes').mockRejectedValue(Error('Offline'));
+  vi.spyOn(apiClient, 'getEvidence').mockRejectedValue(Error('Offline'));
+  vi.spyOn(apiClient, 'compileResume').mockResolvedValue({ output: '', violations: [], isClean: true });
+  render(<ResumeTailor initialPayload={payload} />);
+  expect(await screen.findByDisplayValue('Offline recovery')).toBeInTheDocument();
+  cleanup(); vi.restoreAllMocks();
+});
+
+it('hydrates full manual content without selecting the first or preferred source and persists edits synchronously', async () => {
+  const spec = { profile: { name: 'Recovered editor', title: '', email: '' }, summary: '', experiences: [], education: [], skills: [] };
+  const payload = manualFromSpec(spec, 'second');
+  payload.jobDescription = 'Recovered target posting';
+  vi.spyOn(apiClient, 'getResumes').mockResolvedValue([{ id: 'first', name: 'First', type: 'template', filePath: '', spec: { ...spec, profile: { ...spec.profile, name: 'Wrong default' } } }]);
+  vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
+  vi.spyOn(apiClient, 'compileResume').mockResolvedValue({ output: '', violations: [], isClean: true });
+  const changed = vi.fn();
+  render(<ResumeTailor initialPayload={payload} preferredResumeId="first" onPayloadChange={changed} />);
+  const posting = await screen.findByDisplayValue('Recovered target posting');
+  expect(screen.getByLabelText('Select resume variant')).toHaveValue('second');
+  fireEvent.change(posting, { target: { value: 'Edited posting' } });
+  expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ selectedResumeId: 'second', profile: expect.objectContaining({ name: 'Recovered editor' }), jobDescription: 'Edited posting' }), undefined);
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe('Resume Tailor & Pre-Flight Gate Tests', () => {
   const sampleResumeRecord: ResumeRecord = {

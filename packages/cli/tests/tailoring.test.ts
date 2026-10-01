@@ -213,8 +213,8 @@ describe('Tailoring runs API', () => {
 
     const fin = await call('POST', `/api/tailoring/${slug}/finalize`);
     expect(fin.status).toBe(200);
-    expect(fin.json.filePath).toBe('resumes/tailored/acme-staff.yaml');
-    expect(fs.existsSync(path.join(ws, 'resumes', 'tailored', 'acme-staff.yaml'))).toBe(true);
+    expect(fin.json.filePath).toMatch(/^resumes\/tailored\/acme-staff-[0-9a-f-]{36}\.yaml$/);
+    expect(fs.existsSync(path.join(ws, fin.json.filePath))).toBe(true);
     expect(fin.json.preflight.danglingCitations).toEqual([]);
 
     // Run files on disk

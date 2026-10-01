@@ -1,4 +1,8 @@
+import { randomUUID } from 'node:crypto';
 import {
+  canonicalJson,
+  hasUnappliedChanges,
+  type RevisionToken,
   AlignmentMatrixSchema,
   DefensibilityBriefSchema,
   JobAnalysisSchema,
@@ -26,6 +30,7 @@ import {
   validateAnalysis,
   validateMetrics,
   validateProposals,
+  type DraftEnvelope,
   type AlignmentMatrix,
   type DefensibilityBrief,
   type EvidenceStore,
@@ -36,7 +41,6 @@ import {
   type ResumeSpec,
   type RunManifest,
   type RunState,
-  type StepRecord,
   type TailoringStep,
 } from '@featherduster/core';
 import crypto from 'node:crypto';
@@ -48,7 +52,9 @@ import { RunnerError, type ModelRunner, type RunnerId } from '../runners/types.j
 import { detectRunners, type RunnerFactory, type RunnerInfo } from '../runners/registry.js';
 import { loadTailoringConfig, recordRunnerConsent, type TailoringConfig } from './config.js';
 import { loadTailoringSkill } from './skill-text.js';
-import { RUN_FILES, RunStore, RunStoreError } from './store.js';
+import { DraftRepositoryError } from './drafts/errors.js';
+import { DraftService } from './drafts/service.js';
+import { RUN_FILES, RunStore, RunStoreError, writeRunArtifactAtomic } from './store.js';
 
 export interface TailoringEvent {
   slug: string;
@@ -65,6 +71,7 @@ export interface BaseResumeRef {
 }
 
 export interface OrchestratorDeps {
+  drafts?: DraftService;
   workspaceDir: string;
   runnerFactory: RunnerFactory;
   loadEvidence: () => EvidenceStore;
@@ -124,15 +131,13 @@ export function deriveRunState(manifest: RunManifest): RunState {
   return 'draft';
 }
 
-function emptyStep(): StepRecord {
-  return { status: 'pending', completed_at: null, input_hash: null, error: null, raw_output: null };
-}
-
 function hash(text: string): string {
   return crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
 }
 
 export interface RunDetail {
+  draft?: DraftEnvelope;
+  base_notice?: string;
   manifest: RunManifest;
   posting: string;
   base_resume: ResumeSpec | null;
@@ -154,11 +159,22 @@ interface InFlight {
 
 export class TailoringOrchestrator {
   readonly store: RunStore;
+  readonly drafts: DraftService;
   private inFlight: InFlight | null = null;
+  private settledWriteGuard: (() => void) | undefined;
   private readonly now: () => Date;
 
   constructor(private readonly deps: OrchestratorDeps) {
-    this.store = new RunStore(deps.workspaceDir);
+    this.store = new RunStore(deps.workspaceDir, (slug, action) => {
+      this.drafts.assertRunMutationAvailable(slug);
+      const manifest = this.store.exists(slug) ? this.store.readManifest(slug) : undefined;
+      const write = () => action(() => this.assertRunAssociationUnchanged(slug, manifest?.draft_id));
+      return manifest?.draft_id ? this.drafts.repository.withRunMutation(manifest.draft_id, write) : write();
+    });
+    this.drafts = deps.drafts ?? new DraftService(deps);
+    if (!deps.drafts) this.drafts.recover();
+    this.drafts.prepareCompletion = slug => this.prepareCompletion(slug);
+    this.drafts.completionPreflight = spec => this.completionPreflight(spec);
     this.now = deps.now ?? (() => new Date());
     this.recoverInterrupted();
   }
@@ -202,7 +218,7 @@ export class TailoringOrchestrator {
 
 
   getRun(slug: string): RunDetail {
-    const manifest = this.store.readManifest(slug);
+    const manifest = this.associatedManifest(slug);
     const analysis = this.store.readJson(slug, RUN_FILES.analysis, (raw) => JobAnalysisSchema.parse(raw));
     const alignment = this.store.readJson(slug, RUN_FILES.alignment, (raw) => AlignmentMatrixSchema.parse(raw));
     const proposalSet = this.store.readJson(slug, RUN_FILES.proposals, (raw) => ProposalSetSchema.parse(raw));
@@ -212,8 +228,11 @@ export class TailoringOrchestrator {
       const parsed = ResumeSpecSchema.safeParse(yaml.load(resumeText));
       resume = parsed.success ? parsed.data : null;
     }
-    const base = this.findBaseResume(manifest.base_resume);
+    const draft = manifest.draft_id ? this.drafts.adoptRun(slug) : undefined;
+    const base = draft?.record.base;
     return {
+      ...(draft ? { draft } : {}),
+      ...(draft?.record.kind === 'run' && draft.record.legacyBaseNotice ? { base_notice: draft.record.legacyBaseNotice } : !base ? { base_notice: 'Legacy run: base is missing and the historical base is unknown. Restore the source to continue.' } : {}),
       manifest,
       posting: this.store.readText(slug, RUN_FILES.posting) ?? '',
       base_resume: base?.spec ?? null,
@@ -232,40 +251,7 @@ export class TailoringOrchestrator {
   // -------------------------------------------------------------------------
 
   createRun(input: { posting: unknown; base_resume: unknown; runner: unknown; label?: unknown }): RunManifest {
-    const posting = typeof input.posting === 'string' ? input.posting.trim() : '';
-    if (posting.length < 20) throw new TailoringError(400, 'invalid_posting', 'Paste the job posting text (at least 20 characters).');
-    if (posting.length > 100_000) throw new TailoringError(400, 'invalid_posting', 'Job posting is too long (100k character limit).');
-
-    const baseId = typeof input.base_resume === 'string' ? input.base_resume : '';
-    const base = this.findBaseResume(baseId);
-    if (!base) throw new TailoringError(400, 'invalid_base_resume', `Base resume "${baseId}" not found.`);
-
-    const config = this.config();
-    const runnerId = (typeof input.runner === 'string' && input.runner ? input.runner : config.runner.default) as RunnerId;
-    const runner = this.deps.runnerFactory(runnerId, config.runner);
-    if (!runner) throw new TailoringError(400, 'invalid_runner', `Unknown or disabled runner "${runnerId}".`);
-
-    const now = this.now();
-    const label = typeof input.label === 'string' ? input.label : undefined;
-    const slug = this.store.allocateSlug(label, now);
-    this.store.create(slug);
-    const iso = now.toISOString();
-    const manifest: RunManifest = {
-      slug,
-      title: label?.trim() || '',
-      created: iso,
-      updated: iso,
-      runner: runnerId,
-      model: runner.model,
-      base_resume: base.id,
-      state: 'draft',
-      error: null,
-      finalized_path: null,
-      steps: { analysis: emptyStep(), alignment: emptyStep(), proposals: emptyStep(), brief: emptyStep() },
-    };
-    this.store.writeText(slug, RUN_FILES.posting, posting + '\n');
-    this.store.writeManifest(manifest);
-    return manifest;
+    return this.drafts.createLegacyRun(input);
   }
 
   recordConsent(runnerId: unknown): void {
@@ -281,7 +267,8 @@ export class TailoringOrchestrator {
    */
   async startStep(slug: string, stepName: string): Promise<{ started: true; step: TailoringStep }> {
     const step = this.parseStep(stepName);
-    const manifest = this.store.readManifest(slug);
+    const manifest = this.associatedManifest(slug);
+    const startingDraft = this.assertSettled(manifest);
 
     if (this.inFlight) {
       throw new TailoringError(409, 'busy', `Another step is already running (${this.inFlight.slug} / ${this.inFlight.step}).`);
@@ -291,6 +278,7 @@ export class TailoringOrchestrator {
       throw new TailoringError(409, 'previous_step_not_approved', `Approve the ${prev} step before running ${step}.`);
     }
 
+    this.requireBaseResume(manifest);
     const config = this.config();
     const runner = this.deps.runnerFactory(manifest.runner as RunnerId, config.runner);
     if (!runner) throw new TailoringError(409, 'runner_unavailable', `Runner "${manifest.runner}" is not available.`);
@@ -304,6 +292,10 @@ export class TailoringOrchestrator {
       });
     }
 
+    const currentManifest = this.associatedManifest(slug);
+    const currentDraft = this.assertSettled(currentManifest);
+    if (canonicalJson(currentDraft?.token ?? null) !== canonicalJson(startingDraft?.token ?? null)) throw new DraftRepositoryError(409, 'stale_revision', 'Draft changed while checking runner availability');
+    if (prev && currentManifest.steps[prev].status !== 'approved') throw new TailoringError(409, 'previous_step_not_approved', `Approve the ${prev} step before running ${step}.`);
     const { system, prompt } = this.buildInput(slug, step, runner);
 
     // Claim the lock before any await-free state write.
@@ -318,7 +310,8 @@ export class TailoringOrchestrator {
     fresh.steps[step] = { ...fresh.steps[step], status: 'running', error: null, raw_output: null };
     fresh.error = null;
     fresh.state = 'draft';
-    this.saveManifest(fresh, step);
+    try { this.withSettledWrites(slug, () => this.saveManifest(fresh, step), startingDraft); }
+    catch (error) { this.inFlight = null; throw error; }
 
     void this.execute(flight, runner, system, prompt, config.runner.step_timeout_seconds * 1000);
     return { started: true, step };
@@ -327,13 +320,16 @@ export class TailoringOrchestrator {
   /** Returns the exact (redacted, for cloud runners) model input for a step without running it. */
   previewInput(slug: string, stepName: string): { runner: string; locality: 'local' | 'cloud'; system: string; prompt: string } {
     const step = this.parseStep(stepName);
-    const manifest = this.store.readManifest(slug);
+    const manifest = this.associatedManifest(slug);
+    this.assertSettled(manifest);
     const prev = PREVIOUS_STEP[step];
     if (prev && manifest.steps[prev].status !== 'approved') {
       throw new TailoringError(409, 'previous_step_not_approved', `Approve the ${prev} step before previewing ${step}.`);
     }
+    this.requireBaseResume(manifest);
     const runner = this.deps.runnerFactory(manifest.runner as RunnerId, this.config().runner);
     if (!runner) throw new TailoringError(409, 'runner_unavailable', `Runner "${manifest.runner}" is not available.`);
+    this.assertSettled(this.associatedManifest(slug));
     const { system, prompt } = this.buildInput(slug, step, runner);
     return { runner: runner.label, locality: runner.locality, system, prompt };
   }
@@ -348,34 +344,18 @@ export class TailoringOrchestrator {
   saveStep(slug: string, stepName: string, body: unknown): RunDetail {
     const step = this.parseStep(stepName);
     this.assertNotRunning(slug);
-    const manifest = this.store.readManifest(slug);
+    const manifest = this.associatedManifest(slug);
+    const draft = this.assertSettled(manifest);
+    if (!draft) throw new TailoringError(409, 'base_resume_missing', 'Restore the missing base resume before editing this legacy run.');
     if (!HAS_OUTPUT.has(manifest.steps[step].status)) {
       throw new TailoringError(409, 'no_output', `The ${step} step has no output to edit yet.`);
     }
     const payload = (body && typeof body === 'object' && 'data' in (body as any) ? (body as any).data : body) as unknown;
 
-    switch (step) {
-      case 'analysis': {
-        const analysis = this.parseOr400(JobAnalysisSchema, payload);
-        const posting = this.store.readText(slug, RUN_FILES.posting) ?? '';
-        this.store.writeJson(slug, RUN_FILES.analysis, validateAnalysis(analysis, posting));
-        break;
-      }
-      case 'alignment': {
-        const alignment = this.parseOr400(AlignmentMatrixSchema, payload);
-        const analysis = this.requireAnalysis(slug);
-        this.store.writeJson(slug, RUN_FILES.alignment, validateAlignment(alignment, analysis, this.deps.loadEvidence().getAll()));
-        break;
-      }
-      case 'proposals': {
-        const set = this.parseOr400(ProposalSetSchema, payload);
-        this.store.writeJson(slug, RUN_FILES.proposals, { proposals: this.revalidateProposals(slug, manifest, set.proposals) });
-        break;
-      }
-      case 'brief':
-        throw new TailoringError(400, 'not_editable', 'The brief is regenerated, not edited. Edit brief.md directly if needed.');
-    }
-
+    if (step === 'brief') throw new TailoringError(400, 'not_editable', 'The brief is regenerated, not edited.');
+    const sources = this.captureSources(slug);
+    this.drafts.assertArtifactTokens(draft, sources);
+    const data = this.prepareStepData(slug, manifest, step, payload);
     const fresh = this.store.readManifest(slug);
     const wasApproved = fresh.steps[step].status === 'approved';
     fresh.steps[step] = { ...fresh.steps[step], status: 'done', completed_at: this.now().toISOString() };
@@ -383,14 +363,120 @@ export class TailoringOrchestrator {
     if (wasApproved || step !== 'proposals') this.markDownstreamStale(fresh, step);
     fresh.error = null;
     fresh.state = 'draft';
-    this.saveManifest(fresh, step);
+    fresh.updated = this.now().toISOString(); fresh.state = deriveRunState(fresh);
+    this.drafts.publishStep({ draft, step, data, manifest: fresh, operationId: crypto.randomUUID(), command: 'sync', request: { origin: 'legacy-save', step }, sources });
+    this.deps.emit({ slug, step, kind: 'state', state: fresh.state });
     return this.getRun(slug);
   }
 
+  applyDraft(id: string, input: { expected: RevisionToken; artifactToken: RevisionToken | null; operationId: string; step: 'analysis' | 'alignment' | 'proposals' }) {
+    const request = { step: input.step, artifactToken: input.artifactToken };
+    const prior = this.drafts.operations.lookup(input.operationId);
+    if (prior) {
+      if (prior.operation.command !== 'apply' || prior.operation.draftId !== id.toLowerCase() || canonicalJson(prior.operation.expected) !== canonicalJson(input.expected) || canonicalJson(prior.operation.request) !== canonicalJson(request))
+        throw new DraftRepositoryError(409, 'operation_conflict', 'Operation id was used for a different request');
+      const receipt = this.drafts.operations.execute(prior.operation);
+      return { ...receipt.acknowledgement, run: (receipt.result as unknown as { run: RunDetail }).run };
+    }
+    const draft = this.drafts.get(id);
+    if (draft.record.kind !== 'run' || !draft.record.runSlug) throw new DraftRepositoryError(409, 'invalid_kind', 'Apply requires a run draft');
+    if (canonicalJson(draft.token) !== canonicalJson(input.expected)) throw new DraftRepositoryError(409, 'stale_revision', 'Draft changed before Apply');
+    const record = draft.record, slug = record.runSlug!;
+    const sources = this.captureSources(slug);
+    this.assertNotRunning(slug);
+    const manifest = this.associatedManifest(slug);
+    if (Object.values(manifest.steps).some((state) => state.status === 'running')) throw new DraftRepositoryError(409, 'busy', 'A step is running');
+    if (canonicalJson(record.payload.artifactTokens[input.step] ?? null) !== canonicalJson(input.artifactToken)) throw new DraftRepositoryError(409, 'artifact_conflict', 'Artifact token changed');
+    const target = sources.find((source) => source.path.endsWith('/' + STEP_FILE[input.step]))!;
+    if (target.expectedHash !== (input.artifactToken?.fingerprint ?? null)) throw new DraftRepositoryError(409, 'artifact_conflict', 'Artifact changed outside the draft');
+    this.drafts.assertArtifactTokens(draft, sources, TAILORING_STEPS.slice(0, TAILORING_STEPS.indexOf(input.step) + 1));
+    // Applying downstream content must not validate against unapplied upstream recovery.
+    for (const upstream of (['analysis', 'alignment', 'proposals'] as const).slice(0, TAILORING_STEPS.indexOf(input.step))) {
+      if (canonicalJson(record.payload[upstream] ?? null) !== canonicalJson(record.appliedContent[upstream] ?? null)) throw new DraftRepositoryError(409, 'unapplied_changes', 'Apply unapplied upstream edits first');
+    }
+    let payload = record.payload[input.step];
+    if (input.step === 'proposals' && record.payload.proposals) {
+      const proposals = structuredClone(record.payload.proposals.proposals);
+      for (const [proposalId, text] of Object.entries(record.payload.proposalTextById)) {
+        const proposal = proposals.find((item) => item.id === proposalId);
+        if (!proposal || !text.trim()) throw new DraftRepositoryError(422, 'invalid_apply', 'Finish or discard unfinished inline edits before Apply');
+        proposal.edited_after = text;
+      }
+      payload = { proposals };
+    }
+    let data: unknown;
+    try { data = this.prepareStepData(slug, manifest, input.step, payload); }
+    catch (error) {
+      if (error instanceof TailoringError && error.code === 'invalid_payload') throw new DraftRepositoryError(422, 'invalid_apply', 'Draft is not valid for Apply');
+      throw error;
+    }
+    const wasApproved = manifest.steps[input.step].status === 'approved';
+    manifest.steps[input.step] = { ...manifest.steps[input.step], status: 'done', completed_at: this.now().toISOString(), error: null };
+    if (wasApproved || input.step !== 'proposals') this.markDownstreamStale(manifest, input.step);
+    manifest.error = null; manifest.state = deriveRunState({ ...manifest, state: 'draft' }); manifest.updated = this.now().toISOString();
+    const { draft: previousDraft, ...run } = this.getRun(slug);
+    run.manifest = manifest;
+    if (input.step === 'analysis') run.analysis = data as JobAnalysis;
+    if (input.step === 'alignment') { run.alignment = data as AlignmentMatrix; run.alignment_summary = alignmentSummary(run.alignment); }
+    if (input.step === 'proposals') { run.proposals = (data as ProposalSet).proposals; run.page_budget = pageBudgetOverruns(record.base.spec, run.proposals); }
+    const result = this.drafts.publishStep({ draft, result: JSON.parse(JSON.stringify({ run })), step: input.step, data, manifest, operationId: input.operationId, command: 'apply', request, sources, consumeBuffers: input.step === 'proposals' });
+    this.deps.emit({ slug, step: input.step, kind: 'state', state: manifest.state });
+    return { ...result, run };
+  }
+
+  private captureSources(slug: string) {
+    return [RUN_FILES.manifest, RUN_FILES.posting, RUN_FILES.analysis, RUN_FILES.alignment, RUN_FILES.proposals, RUN_FILES.briefData, RUN_FILES.brief].map((file) => {
+      const bytes = this.store.readText(slug, file);
+      return { path: `tailoring/${slug}/${file}`, expectedHash: bytes === null ? null : crypto.createHash('sha256').update(bytes).digest('hex') };
+    });
+  }
+
+  private prepareStepData(slug: string, manifest: RunManifest, step: 'analysis' | 'alignment' | 'proposals', payload: unknown): unknown {
+    switch (step) {
+      case 'analysis': return validateAnalysis(this.parseOr400(JobAnalysisSchema, payload), this.store.readText(slug, RUN_FILES.posting) ?? '');
+      case 'alignment': return validateAlignment(this.parseOr400(AlignmentMatrixSchema, payload), this.requireAnalysis(slug), this.deps.loadEvidence().getAll());
+      case 'proposals': return { proposals: this.revalidateProposals(slug, manifest, this.parseOr400(ProposalSetSchema, payload).proposals) };
+    }
+  }
+
+  private assertSettled(manifest: RunManifest): DraftEnvelope | undefined {
+    this.drafts.assertRunMutationAvailable(manifest.slug);
+    const draft = manifest.draft_id ? this.drafts.get(manifest.draft_id) : undefined;
+    if (draft && hasUnappliedChanges(draft.record)) throw new DraftRepositoryError(409, 'unapplied_changes', 'Apply unapplied draft edits before continuing');
+    if (draft) this.drafts.assertArtifactTokens(draft, this.captureSources(manifest.slug));
+    return draft;
+  }
+
+  private withSettledWrites<T>(slug: string, action: () => T, expectedDraft?: DraftEnvelope): T {
+    const manifest = this.associatedManifest(slug);
+    const draft = manifest.draft_id
+      ? this.drafts.repository.withRunMutation(manifest.draft_id, () => this.assertSettled(manifest))
+      : this.assertSettled(manifest);
+    if (expectedDraft && canonicalJson(draft?.token ?? null) !== canonicalJson(expectedDraft.token)) throw new DraftRepositoryError(409, 'stale_revision', 'Draft changed while preparing workflow inputs');
+    const previous = this.settledWriteGuard;
+    this.settledWriteGuard = () => {
+      const current = this.assertSettled(manifest);
+      if (draft && canonicalJson(current?.token ?? null) !== canonicalJson(draft.token)) throw new DraftRepositoryError(409, 'stale_revision', 'Draft changed during workflow command');
+    };
+    try { return action(); } finally { this.settledWriteGuard = previous; }
+  }
+
   approveStep(slug: string, stepName: string): RunDetail {
+    return this.withSettledWrites(slug, () => this.approveSettledStep(slug, stepName));
+  }
+
+  private assertUpstreamReviewed(manifest: RunManifest, step: TailoringStep): void {
+    const record = manifest.draft_id ? this.drafts.get(manifest.draft_id).record : undefined;
+    if (record?.kind !== 'run' || !record.upstreamSync) return;
+    const prior = TAILORING_STEPS.slice(0, TAILORING_STEPS.indexOf(step) + 1);
+    if (record.upstreamSync.staleSteps.some(stale => prior.includes(stale)) || (prior.includes('proposals') && record.upstreamSync.reviewProposalIds.length)) throw new DraftRepositoryError(409, 'upstream_review', 'Upstream changed the base. Review and Apply or regenerate stale outputs and reject or replace ambiguous proposals before approval.');
+  }
+  private approveSettledStep(slug: string, stepName: string): RunDetail {
     const step = this.parseStep(stepName);
     this.assertNotRunning(slug);
-    const manifest = this.store.readManifest(slug);
+    const manifest = this.associatedManifest(slug);
+    this.assertUpstreamReviewed(manifest, step);
+    this.assertSettled(manifest);
     const status = manifest.steps[step].status;
     if (status === 'approved') return this.getRun(slug);
     if (status !== 'done') {
@@ -433,8 +519,21 @@ export class TailoringOrchestrator {
   }
 
   finalize(slug: string): { filePath: string; preflight: Record<string, unknown> } {
+    const draft = this.drafts.adoptRun(slug);
+    if (!draft) throw new TailoringError(409, 'missing_base', 'Base resume is missing');
+    if (draft.record.lifecycle === 'completed' && draft.record.completion) return { filePath: draft.record.completion.path, preflight: this.completionPreflight(draft.record.completion.spec) };
+    const result = this.drafts.complete(draft.record.id, draft.token, randomUUID());
+    return { filePath: result.completion.path, preflight: this.completionPreflight(result.completion.spec) };
+  }
+
+  private prepareCompletion(slug: string): { spec: ResumeSpec; preflight: Record<string, unknown> } {
+    const associated = this.associatedManifest(slug);
+    if (associated.draft_id) this.drafts.repository.withRunMutation(associated.draft_id, () => undefined);
     this.assertNotRunning(slug);
-    const manifest = this.store.readManifest(slug);
+    const manifest = this.associatedManifest(slug);
+    this.assertUpstreamReviewed(manifest, 'brief');
+    this.assertSettled(manifest);
+    this.requireBaseResume(manifest);
     if (manifest.steps.proposals.status !== 'approved') {
       throw new TailoringError(409, 'not_ready', 'Approve the proposals step before saving the resume.');
     }
@@ -443,15 +542,10 @@ export class TailoringOrchestrator {
     if (!parsed || !parsed.success) throw new TailoringError(409, 'not_ready', 'Applied resume is missing; re-approve proposals.');
     const spec = parsed.data;
 
-    const targetDir = path.join(this.deps.workspaceDir, 'resumes', 'tailored');
-    const targetFile = path.join(targetDir, `${slug}.yaml`);
-    if (fs.existsSync(targetFile) && fs.lstatSync(targetFile).isSymbolicLink()) {
-      throw new TailoringError(403, 'symlink', 'Cannot overwrite symbolic links');
-    }
-    fs.mkdirSync(targetDir, { recursive: true });
-    fs.writeFileSync(targetFile, yaml.dump(spec, { indent: 2, lineWidth: 120 }), 'utf-8');
-    const rel = path.relative(this.deps.workspaceDir, targetFile).replace(/\\/g, '/');
+    return { spec, preflight: this.completionPreflight(spec) };
+  }
 
+  private completionPreflight(spec: ResumeSpec): Record<string, unknown> {
     const store = this.deps.loadEvidence();
     const rules = this.deps.loadPrivacyRules();
     let markdown = compileMarkdownResume(spec);
@@ -470,10 +564,7 @@ export class TailoringOrchestrator {
       slop: { score: slop.score, band: slop.slopBand, summary: slop.summary },
     };
 
-    const fresh = this.store.readManifest(slug);
-    fresh.finalized_path = rel;
-    this.saveManifest(fresh, null);
-    return { filePath: rel, preflight };
+    return preflight;
   }
 
   // -------------------------------------------------------------------------
@@ -501,8 +592,8 @@ export class TailoringOrchestrator {
         }
       }
 
-      this.persistStepOutput(slug, step, validated.data);
-      const manifest = this.store.readManifest(slug);
+      const sources = this.captureSources(slug);
+      const manifest = this.associatedManifest(slug);
       manifest.steps[step] = {
         status: 'done',
         completed_at: this.now().toISOString(),
@@ -513,7 +604,8 @@ export class TailoringOrchestrator {
       this.markDownstreamStale(manifest, step);
       manifest.error = null;
       manifest.state = 'draft';
-      this.saveManifest(manifest, step);
+      manifest.updated = this.now().toISOString(); manifest.state = deriveRunState(manifest);
+      this.persistStepOutput(slug, step, validated.data, manifest, sources);
     } catch (err) {
       const aborted = controller.signal.aborted;
       const manifest = this.safeReadManifest(slug);
@@ -537,7 +629,13 @@ export class TailoringOrchestrator {
         };
         manifest.error = flight.cancelled ? null : message;
         manifest.state = flight.cancelled ? 'cancelled' : 'error';
-        this.saveManifest(manifest, step, true);
+        try { this.saveManifest(manifest, step, true); }
+        catch (publicationError) {
+          // An interrupted journal owns its planned status and output. Recovery must
+          // finish it before any ordinary error-status write can touch those files.
+          if (!(publicationError instanceof DraftRepositoryError)) throw publicationError;
+          this.deps.emit({ slug, step, kind: 'status', text: publicationError.detail });
+        }
       }
     } finally {
       clearTimeout(timer);
@@ -556,12 +654,15 @@ export class TailoringOrchestrator {
     };
   }
 
-  private persistStepOutput(slug: string, step: TailoringStep, data: unknown): void {
-    const manifest = this.store.readManifest(slug);
+  private persistStepOutput(slug: string, step: TailoringStep, data: unknown, manifest: RunManifest, sources: ReturnType<TailoringOrchestrator['captureSources']>): void {
+    const publish = (value: unknown, briefMarkdown?: string) => {
+      this.drafts.publishStep({ draft: this.drafts.get(manifest.draft_id!), step, data: value, manifest, operationId: crypto.randomUUID(), command: 'sync', request: { origin: 'generation', step }, sources, briefMarkdown });
+      this.deps.emit({ slug, step, kind: 'state', state: manifest.state });
+    };
     switch (step) {
       case 'analysis': {
         const posting = this.store.readText(slug, RUN_FILES.posting) ?? '';
-        this.store.writeJson(slug, RUN_FILES.analysis, validateAnalysis(data as JobAnalysis, posting));
+        publish(validateAnalysis(data as JobAnalysis, posting));
         return;
       }
       case 'alignment': {
@@ -571,21 +672,20 @@ export class TailoringOrchestrator {
         const previous = this.store.readJson(slug, RUN_FILES.alignment, (raw) => AlignmentMatrixSchema.parse(raw));
         const confirmed = new Set(previous?.rows.filter((r) => r.candidate_confirmed).map((r) => r.requirement_id) ?? []);
         matrix.rows = matrix.rows.map((r) => ({ ...r, candidate_confirmed: confirmed.has(r.requirement_id) }));
-        this.store.writeJson(slug, RUN_FILES.alignment, validateAlignment(matrix, analysis, this.deps.loadEvidence().getAll()));
+        publish(validateAlignment(matrix, analysis, this.deps.loadEvidence().getAll()));
         return;
       }
       case 'proposals': {
         const set = data as ProposalSet;
         const fresh = set.proposals.map((p) => ({ ...p, decision: 'pending' as const, edited_after: undefined, checks: [] }));
-        this.store.writeJson(slug, RUN_FILES.proposals, { proposals: this.revalidateProposals(slug, manifest, fresh) });
+        publish({ proposals: this.revalidateProposals(slug, manifest, fresh) });
         return;
       }
       case 'brief': {
         const brief = data as DefensibilityBrief;
-        this.store.writeJson(slug, RUN_FILES.briefData, brief);
         const analysis = this.requireAnalysis(slug);
         const alignment = this.requireAlignment(slug);
-        this.store.writeText(slug, RUN_FILES.brief, renderBriefMarkdown(brief, analysis, alignment));
+        publish(brief, renderBriefMarkdown(brief, analysis, alignment));
         return;
       }
     }
@@ -628,7 +728,7 @@ export class TailoringOrchestrator {
       rules: this.deps.loadPrivacyRules(),
       evidenceIds: all.map((r) => r.id),
     };
-    const manifest = this.store.readManifest(slug);
+    const manifest = this.associatedManifest(slug);
     try {
       let prompt: string;
       switch (step) {
@@ -693,7 +793,11 @@ export class TailoringOrchestrator {
       }
       if (changed) {
         manifest.updated = this.now().toISOString();
-        this.store.writeManifest(manifest);
+        try { this.store.writeManifest(manifest); }
+        catch (error) {
+          // Pending/corrupt draft intent is exposed by the recovery list, and must retain its files.
+          if (!(error instanceof DraftRepositoryError)) throw error;
+        }
       }
     }
   }
@@ -707,7 +811,7 @@ export class TailoringOrchestrator {
   }
 
   private assertNotRunning(slug: string): void {
-    if (this.inFlight && this.inFlight.slug === slug) {
+    if ((this.inFlight && this.inFlight.slug === slug) || Object.values(this.store.readManifest(slug).steps).some((step) => step.status === 'running')) {
       throw new TailoringError(409, 'busy', 'A step is running for this run; wait or cancel it first.');
     }
   }
@@ -727,12 +831,22 @@ export class TailoringOrchestrator {
     return result.data;
   }
 
-  private findBaseResume(id: string): BaseResumeRef | undefined {
-    return this.deps.loadResumes().find((r) => r.id === id);
+  /** Pure reads only: called with artifact ownership, after any required draft lock. */
+  private assertRunAssociationUnchanged(slug: string, expectedDraftId: string | undefined): void {
+    this.drafts.assertRunMutationAvailable(slug);
+    this.settledWriteGuard?.();
+    const current = this.store.exists(slug) ? this.store.readManifest(slug) : undefined;
+    if (current?.draft_id !== expectedDraftId) throw new DraftRepositoryError(409, 'association_conflict', 'Run association changed; retry after reloading');
+  }
+
+  private associatedManifest(slug: string): RunManifest {
+    this.drafts.adoptRun(slug);
+    return this.store.readManifest(slug);
   }
 
   private requireBaseResume(manifest: RunManifest): BaseResumeRef {
-    const base = this.findBaseResume(manifest.base_resume);
+    const draft = this.drafts.adoptRun(manifest.slug);
+    const base = draft?.record.base ? { id: draft.record.base.resumeId, name: draft.record.base.resumeId, spec: draft.record.base.spec } : undefined;
     if (!base) throw new TailoringError(409, 'base_resume_missing', `Base resume "${manifest.base_resume}" no longer exists.`);
     return base;
   }

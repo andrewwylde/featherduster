@@ -1,6 +1,7 @@
+import { CompletedTailoring, ParentCompletionLink } from './CompletedTailoring';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, CheckCircle2, Cloud, ExternalLink, HardDrive, Loader2, Play, RotateCcw, ShieldCheck, Square } from 'lucide-react';
-import type { AlignmentMatrix, EvidenceRecord, JobAnalysis, Proposal, TailoringStep } from '@featherduster/core';
+import { canonicalJson, hasUnappliedChanges, type EvidenceRecord, type TailoringStep } from '@featherduster/core';
 import {
   ApiError,
   apiClient,
@@ -11,6 +12,10 @@ import {
 } from '../../api/client';
 import { useTailoringEvents } from '../../hooks/useTailoringEvents';
 import { useModalA11y } from '../../hooks/useModalA11y';
+import { DraftControls } from './DraftConflictDialog';
+import { DraftStatus } from './DraftStatus';
+import { useRunRecovery } from './useRunRecovery';
+import type { DraftCoordinator } from '../../tailoring-drafts/coordinator';
 import { AnalysisStep } from './steps/AnalysisStep';
 import { AlignmentStep } from './steps/AlignmentStep';
 import { ProposalsStep } from './steps/ProposalsStep';
@@ -19,7 +24,11 @@ import { StatusPill, cardClass, eyebrowClass, primaryButton, secondaryButton, st
 
 interface TailoringRunProps {
   slug: string;
+  selectedStep?: TailoringStep;
+  coordinator?: DraftCoordinator;
+  registerGuard?: (guard: () => boolean) => void;
   onBack: () => void;
+  onOpenDraft?: (id: string) => void;
   onOpenInCanvas: (resumeId: string) => void;
 }
 
@@ -56,60 +65,78 @@ const PostingWithHighlight: React.FC<{ posting: string; highlight: string | null
   );
 };
 
-export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpenInCanvas }) => {
+export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, selectedStep, coordinator, registerGuard, onBack, onOpenInCanvas, onOpenDraft }) => {
+  const recovery = useRunRecovery(slug, coordinator, registerGuard);
   const [detail, setDetail] = useState<TailoringRunDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeStep, setActiveStep] = useState<TailoringStep | null>(null);
+  const [activeStep, setActiveStep] = useState<TailoringStep | null>(selectedStep ?? null);
+  useEffect(() => { setActiveStep(selectedStep ?? null); }, [slug, selectedStep]);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [statusLine, setStatusLine] = useState<string>('');
   const [tokenTail, setTokenTail] = useState<string>('');
   const [runningSince, setRunningSince] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
-  const [dirty, setDirty] = useState(false);
   const [highlight, setHighlight] = useState<string | null>(null);
   const [evidence, setEvidence] = useState<EvidenceRecord[]>([]);
   const [evidenceFocus, setEvidenceFocus] = useState<string | null>(null);
   const [consent, setConsent] = useState<{ runner: RunnerId; step: TailoringStep; preview: string; label: string } | null>(null);
+  const completionOperation = useRef<{ saved: import('@featherduster/core').DraftEnvelope; request: { expected: import('@featherduster/core').RevisionToken; operationId: string } }>();
   const [finalized, setFinalized] = useState<FinalizeResponse | null>(null);
-  const [mobilePane, setMobilePane] = useState<'steps' | 'work' | 'context'>('work');
+  const mobilePane = recovery.context.mobilePane ?? 'work';
+  const setMobilePane = (mobilePane: 'steps' | 'work' | 'context') => recovery.updateContext({ mobilePane });
+  const selectStep = (step: TailoringStep) => {
+    setActiveStep(step); recovery.updateContext({ activeStep: step });
+    const url = new URL(window.location.href);
+    url.searchParams.set('step', step);
+    window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+  };
 
   const consentRef = useRef<HTMLDivElement | null>(null);
   useModalA11y({ isOpen: !!consent, onClose: () => setConsent(null), containerRef: consentRef });
 
+  const refreshSequence = useRef(0);
+  const commandActive = useRef(false);
+  const refreshPending = useRef(false);
   const refresh = useCallback(async () => {
+    if (commandActive.current) { refreshPending.current = true; return null; }
+    const generation = recovery.current();
+    const request = ++refreshSequence.current;
     try {
+      await recovery.verifyIdentity();
+      if (!recovery.isCurrent(generation)) return null;
       const next = await apiClient.getTailoringRun(slug);
+      if (!recovery.isCurrent(generation) || request !== refreshSequence.current) return null;
+      if (commandActive.current) { refreshPending.current = true; return null; }
+      await recovery.receive(next);
+      if (!recovery.isCurrent(generation) || request !== refreshSequence.current) return null;
       setDetail(next);
       setLoadError(null);
       return next;
     } catch (err: any) {
-      setLoadError(err?.message || 'Failed to load run');
+      if (recovery.isCurrent(generation)) setLoadError(err?.message || 'Failed to load run');
       return null;
     }
   }, [slug]);
 
   useEffect(() => {
+    commandActive.current = false; refreshPending.current = false; completionOperation.current = undefined;
     setDetail(null);
-    setActiveStep(null);
-    setFinalized(null);
+    setFinalized(null); setConsent(null); setActionError(null); setBusy(null); setHighlight(null); setEvidenceFocus(null);
     refresh();
     apiClient.getEvidence().then(setEvidence).catch(() => undefined);
   }, [refresh]);
 
   const manifest = detail?.manifest;
 
-  useEffect(() => {
-    setDirty(false);
-  }, [activeStep]);
   const runningStep = manifest ? STEPS.find((s) => manifest.steps[s.id].status === 'running')?.id ?? null : null;
 
   // Default the active step to the first step that isn't approved yet.
   useEffect(() => {
     if (!manifest || activeStep) return;
     const firstOpen = STEPS.find((s) => manifest.steps[s.id].status !== 'approved');
-    setActiveStep(firstOpen?.id ?? 'brief');
-  }, [manifest, activeStep]);
+    setActiveStep(recovery.context.activeStep ?? firstOpen?.id ?? 'brief');
+  }, [manifest, activeStep, recovery.context.activeStep]);
 
   useEffect(() => {
     if (runningStep) {
@@ -135,6 +162,10 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
           if (evt.kind === 'token' && evt.text) setTokenTail((prev) => (prev + evt.text).slice(-600));
           if (evt.kind === 'state') refresh();
         },
+        onReconnect: () => { void refresh(); },
+        onDraftChange: (event: { draftId: string }) => {
+          if (event.draftId === recovery.coordinator.current?.getSnapshot().record?.id) void refresh();
+        },
         onFileChange: (rel: string) => {
           if (rel.replace(/\\/g, '/').startsWith(`tailoring/${slug}/`)) refresh();
         },
@@ -150,72 +181,147 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
     return () => clearInterval(timer);
   }, [runningStep, refresh]);
 
-  const guard = async <T,>(label: string, fn: () => Promise<T>): Promise<T | undefined> => {
+  const guard = async <T,>(label: string, fn: () => Promise<T>, consentStep?: TailoringStep): Promise<T | undefined> => {
+    if (commandActive.current) return undefined;
+    const generation = recovery.current();
+    commandActive.current = true;
+    refreshSequence.current++;
     setBusy(label);
     setActionError(null);
     try {
       return await fn();
     } catch (err: any) {
+      if (!recovery.isCurrent(generation)) return undefined;
       if (err instanceof ApiError && err.code === 'consent_required' && manifest) {
-        const step = (label.split(':')[1] as TailoringStep) ?? 'analysis';
+        const step = consentStep ?? (label.split(':')[1] as TailoringStep) ?? 'analysis';
         try {
           const preview = await apiClient.previewTailoringStep(slug, step);
+          if (!recovery.isCurrent(generation)) return undefined;
           setConsent({ runner: manifest.runner as RunnerId, step, preview: preview.prompt, label: preview.runner });
         } catch {
-          setActionError(err.message);
+          if (recovery.isCurrent(generation)) setActionError(err.message);
         }
       } else {
         setActionError(err?.message || 'Something went wrong');
       }
       return undefined;
     } finally {
-      setBusy(null);
+      if (recovery.isCurrent(generation)) {
+        commandActive.current = false; setBusy(null);
+        if (refreshPending.current) { refreshPending.current = false; void refresh(); }
+      }
     }
   };
 
+  const awaitSaved = async () => {
+    await recovery.verifyCommandIdentity();
+    const writer = recovery.coordinator.current;
+    if (!writer) throw Error('Recovery unavailable. Reconnect before continuing.');
+    const saved = await writer.awaitSaved();
+    await recovery.verifyCommandIdentity();
+    return saved;
+  };
+  const pendingStep = (step: TailoringStep) => {
+    const record = recovery.coordinator.current?.getSnapshot().record;
+    if (record?.kind !== 'run' || step === 'brief') return false;
+    return canonicalJson(record.payload[step] ?? null) !== canonicalJson(record.appliedContent[step] ?? null)
+      || (step === 'proposals' && Object.entries(record.payload.proposalTextById).some(([id, text]) => {
+        const p = record.payload.proposals?.proposals.find(p => p.id === id);
+        return !p || text !== (p.edited_after ?? p.after);
+      }));
+  };
+  const apply = async (step: TailoringStep) => {
+    if (step === 'brief') return;
+    if (runningStep) throw Error('Wait for generation to finish before applying edits.');
+    const generation = recovery.current();
+    const saved = await awaitSaved();
+    if (!recovery.isCurrent(generation)) throw Error('Run changed');
+    if (saved.record.kind !== 'run') throw Error('Run draft unavailable');
+    const result = await apiClient.applyTailoringDraft(saved.record.id, step, {
+      expected: saved.token, artifactToken: saved.record.payload.artifactTokens[step] ?? null, operationId: crypto.randomUUID(),
+    });
+    if (!recovery.isCurrent(generation)) throw Error('Run changed');
+    await recovery.verifyIdentity();
+    if (!recovery.isCurrent(generation)) throw Error('Run changed');
+    recovery.reconcile(result, true);
+    // Invalidate refreshes that started before the command acknowledgement.
+    refreshSequence.current++;
+    setDetail(result.run);
+  };
+  const applyEdits = async (step: TailoringStep) => {
+    const result = await guard(`apply:${step}`, async () => { await apply(step); return true; });
+    if (!result) throw Error('Apply did not succeed');
+  };
   const runStep = (step: TailoringStep) =>
     guard(`run:${step}`, async () => {
-      setStatusLine('Starting…');
-      setTokenTail('');
-      setElapsed(0);
+      const generation = recovery.current();
+      selectStep(step);
+      await awaitSaved();
+      if (!recovery.isCurrent(generation)) return;
+      setStatusLine('Starting…'); setTokenTail(''); setElapsed(0);
       await apiClient.runTailoringStep(slug, step);
-      setActiveStep(step);
+      if (!recovery.isCurrent(generation)) return;
       await refresh();
     });
 
-  const approveAndContinue = async (step: TailoringStep) => {
-    const approved = await guard(`approve:${step}`, async () => {
-      await apiClient.approveTailoringStep(slug, step);
-      await refresh();
-      return true;
-    });
+  const approveAndContinue = (step: TailoringStep) => guard(`approve:${step}`, async () => {
+    const generation = recovery.current();
+    if (pendingStep(step)) await apply(step);
+    await awaitSaved();
+    if (!recovery.isCurrent(generation)) return;
+    const approved = await apiClient.approveTailoringStep(slug, step);
+    if (!recovery.isCurrent(generation)) return;
+    await recovery.receive(approved);
+    if (!recovery.isCurrent(generation)) return;
+    setDetail(approved);
     const next = NEXT_STEP[step];
-    if (approved && next) {
-      setActiveStep(next);
-      await runStep(next);
+    if (next) {
+      selectStep(next);
+      await awaitSaved();
+      if (!recovery.isCurrent(generation)) return;
+      // Keep one guarded chain so any failure stops the next command.
+      await apiClient.runTailoringStep(slug, next);
+      if (!recovery.isCurrent(generation)) return;
     }
-  };
-
-  const save = (step: TailoringStep, data: unknown) =>
-    guard(`save:${step}`, async () => {
-      const next = await apiClient.saveTailoringStep(slug, step, data);
-      setDetail(next);
-    });
+    await refresh();
+  }, NEXT_STEP[step]);
 
   const grantConsentAndRun = async () => {
     if (!consent) return;
     const { runner, step } = consent;
     setConsent(null);
-    await guard(`consent:${step}`, () => apiClient.grantRunnerConsent(runner));
-    await runStep(step);
+    const generation = recovery.current();
+    const granted = await guard(`consent:${step}`, async () => { await awaitSaved(); await apiClient.grantRunnerConsent(runner); return true; });
+    if (granted && recovery.isCurrent(generation)) await runStep(step);
   };
 
   const finalize = () =>
     guard('finalize', async () => {
-      setFinalized(await apiClient.finalizeTailoringRun(slug));
-      await refresh();
+      const generation = recovery.current();
+      await recovery.verifyCommandIdentity();
+      const saved = completionOperation.current?.saved ?? await awaitSaved();
+      if (!recovery.isCurrent(generation)) return;
+      completionOperation.current ??= { saved, request: { expected: saved.token, operationId: crypto.randomUUID() } };
+      const writer = recovery.coordinator.current!;
+      const current = writer.getSnapshot().record;
+      const newerEdits = canonicalJson([current?.payload, current?.context]) !== canonicalJson([saved.record.payload, saved.record.context]);
+      const command = async () => {
+        const result = await apiClient.completeTailoringDraft(saved.record.id, completionOperation.current!.request);
+        await recovery.verifyCommandIdentity();
+        return result;
+      };
+      const result = newerEdits ? await command() : await writer.resolveConflict(command);
+      if (newerEdits && recovery.isCurrent(generation)) writer.enterConflict();
+      if (!recovery.isCurrent(generation)) return;
+      if (writer.getSnapshot().record?.lifecycle !== 'completed') throw Error('Completed version saved; newer edits remain in recovery. Resolve them before leaving.');
+      completionOperation.current = undefined;
+      writer.dispose();
+      setDetail(previous => previous ? { ...previous, draft: result } : previous);
+      if (onOpenDraft) onOpenDraft(result.record.id);
+
     });
 
+  if (recovery.identityError && !detail) return <div role="alert"><p>{recovery.identityError}</p><p>Further edits and commands are paused.</p></div>;
   if (loadError && !detail) {
     return (
       <div role="alert" className="rounded-desk border border-rose-200 bg-rose-50 p-6 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/20 dark:text-rose-200">
@@ -228,6 +334,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
       </div>
     );
   }
+  if (detail?.draft?.record.lifecycle === 'completed') return <CompletedTailoring key={detail.draft.record.id} draft={detail.draft} workspaceId={recovery.workspaceId!} verifyWorkspace={recovery.verifyIdentity} onOpenDraft={id => { if (onOpenDraft) onOpenDraft(id); else window.location.assign(`/tailor/drafts/${id}`); }} onBack={onBack} />;
   if (!detail || !manifest || !activeStep) {
     return <p className="text-sm text-slate-500">Loading run…</p>;
   }
@@ -238,19 +345,38 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
   const prevApproved = !prev || manifest.steps[prev.id].status === 'approved';
   const isRunning = record.status === 'running';
   const anyRunning = !!runningStep;
-  const readOnly = record.status === 'approved' || anyRunning;
-  const hasOutput = ['done', 'approved', 'stale'].includes(record.status);
+  const commandPending = !!busy;
+  const readOnly = !!recovery.identityError || record.status === 'approved' || commandPending || !recovery.payload;
+  const draftRecord = recovery.state?.record;
+  const upstreamReview = draftRecord?.kind === 'run' ? draftRecord.upstreamSync : undefined;
+  const upstreamApprovalBlocked = !!upstreamReview && (upstreamReview.staleSteps.some(step => STEPS.findIndex(s => s.id === step) <= STEPS.findIndex(s => s.id === activeStep)) || (['proposals', 'brief'].includes(activeStep) && upstreamReview.reviewProposalIds.length > 0));
+  const upstreamFinalizeBlocked = !!upstreamReview && (upstreamReview.staleSteps.length > 0 || upstreamReview.reviewProposalIds.length > 0);
+  const unapplied = !!draftRecord && hasUnappliedChanges(draftRecord);
+  const dirty = pendingStep(activeStep) || (activeStep !== 'analysis' && !!upstreamReview?.staleSteps.includes(activeStep));
+  const commandReason = recovery.identityError ? 'Reconnect to the original workspace before continuing.' : recovery.state?.status === 'conflict' ? 'Resolve the recovery conflict first.' : unapplied ? 'Apply edits before running another command.' : null;
+  const analysis = recovery.payload?.analysis ?? detail.analysis;
+  const alignment = recovery.payload?.alignment ?? detail.alignment;
+  const proposals = recovery.payload?.proposals?.proposals ?? detail.proposals;
+  const hasOutput = ['done', 'approved', 'stale'].includes(record.status)
+    || (activeStep === 'analysis' && !!analysis) || (activeStep === 'alignment' && !!alignment)
+    || (activeStep === 'proposals' && !!proposals) || (activeStep === 'brief' && !!detail.brief_markdown);
   const evidenceOptions = evidence.map((e) => ({ id: e.id, title: e.title }));
   const focused = evidenceFocus ? evidence.find((e) => e.id === evidenceFocus) : null;
-  const pendingDecisions = detail.proposals?.filter((p) => p.decision === 'pending').length ?? 0;
+  const pendingDecisions = proposals?.filter((p) => p.decision === 'pending').length ?? 0;
   const tailoredResumeId = `tailored-${slug}`;
 
   const approveDisabledReason =
     record.status !== 'done'
       ? null
-      : dirty
-      ? 'Save your edits first'
-      : activeStep === 'alignment' && detail.alignment?.rows.some((r) => r.issues?.some((i) => i.severity === 'block'))
+      : recovery.identityError
+      ? 'Reconnect to the original workspace before continuing.'
+      : recovery.state?.status === 'conflict'
+      ? 'Resolve the recovery conflict first.'
+      : (['analysis', 'alignment', 'proposals'] as TailoringStep[]).some(s => s !== activeStep && pendingStep(s))
+      ? 'Apply edits in the other steps first.'
+      : upstreamApprovalBlocked
+      ? 'Review and Apply or regenerate outputs made stale by upstream changes.'
+      : activeStep === 'alignment' && alignment?.rows.some((r) => r.issues?.some((i) => i.severity === 'block'))
       ? 'Resolve blocking issues first'
       : activeStep === 'proposals' && pendingDecisions > 0
       ? `Decide on ${pendingDecisions} pending edit(s)`
@@ -266,8 +392,9 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
             <li key={s.id}>
               <button
                 type="button"
+                disabled={!!busy}
                 onClick={() => {
-                  setActiveStep(s.id);
+                  selectStep(s.id);
                   setMobilePane('work');
                 }}
                 aria-current={active ? 'step' : undefined}
@@ -358,6 +485,14 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
         <StatusPill status={activeStep === 'brief' && record.status === 'done' ? 'complete' : record.status} />
       </div>
 
+      <ParentCompletionLink completionId={draftRecord?.parentCompletionId} onOpenDraft={id => { if (onOpenDraft) onOpenDraft(id); else window.location.assign(`/tailor/drafts/${id}`); }} />
+      {recovery.identityError && <p role="alert">{recovery.identityError} Your current draft is retained; further edits and commands are paused.</p>}
+      {recovery.state && !recovery.identityError && <DraftStatus status={recovery.state.status} savedAt={recovery.state.savedAt} onRetry={() => void recovery.coordinator.current?.retry()} />}
+      {recovery.coordinator.current && !recovery.identityError && <DraftControls coordinator={recovery.coordinator.current} verifyWorkspace={recovery.verifyIdentity} verifySyncIdentity={recovery.verifyCommandIdentity} onBack={onBack} onFork={draft => onOpenDraft?.(draft.record.id)} onLoaded={async () => { await refresh(); }} />}
+      {Object.keys(recovery.payload?.proposalTextById ?? {}).some(id => !proposals?.some(p => p.id === id)) && <p role="alert">Recovery contains text for a proposal that is no longer available. Your text is retained; resolve it before applying proposal edits.</p>}
+      {unapplied && <p className="mt-2 text-sm">Unapplied edits — recovery saves your work; Apply updates the run.</p>}
+      {commandReason && <p className="mt-2 text-xs text-slate-500">{commandReason}</p>}
+      {anyRunning && dirty && <p className="mt-2 text-xs">Wait for generation to finish before applying edits.</p>}
       {record.status === 'stale' && (
         <p className="mt-4 rounded-desk bg-orange-50 px-3 py-2 text-sm text-orange-900 dark:bg-orange-950/30 dark:text-orange-200">
           An earlier step changed after this output was produced. Re-run this step to bring it up to date.
@@ -384,7 +519,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
       )}
 
       <div className="mt-5">
-        {isRunning ? (
+        {isRunning && (
           <div className="space-y-3" aria-live="polite">
             <p className="flex items-center gap-2 text-sm font-medium text-slate-800 dark:text-slate-200">
               <Loader2 className="h-4 w-4 animate-spin text-vermilion-500" aria-hidden="true" />
@@ -395,53 +530,65 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
                 {tokenTail}
               </pre>
             )}
-            <button type="button" className={secondaryButton} onClick={() => guard('cancel', () => apiClient.cancelTailoringRun(slug))}>
+            <button type="button" className={secondaryButton} disabled={!!recovery.identityError} onClick={() => guard('cancel', async () => { await recovery.verifyCommandIdentity(); return apiClient.cancelTailoringRun(slug); })}>
               <Square className="h-3.5 w-3.5" aria-hidden="true" /> Cancel
             </button>
           </div>
-        ) : !hasOutput ? (
+        )}
+        {!hasOutput && !isRunning ? (
           <div className="py-6 text-center">
             <p className="text-sm text-slate-600 dark:text-slate-400">
               {prevApproved ? 'This step has not run yet.' : `Approve “${prev?.title}” first.`}
             </p>
             {prevApproved && (
-              <button type="button" className={`${primaryButton} mt-4`} disabled={anyRunning || !!busy} onClick={() => runStep(activeStep)}>
-                <Play className="h-4 w-4" aria-hidden="true" /> Run {stepMeta.title.toLowerCase()}
+              <button type="button" className={`${primaryButton} mt-4`} disabled={anyRunning || !!busy || !!commandReason} onClick={() => runStep(activeStep)}>
+                <Play className="h-4 w-4" aria-hidden="true" /> {record.status === 'error' ? 'Retry' : 'Run'} {stepMeta.title.toLowerCase()}
               </button>
             )}
           </div>
-        ) : activeStep === 'analysis' && detail.analysis ? (
+        ) : activeStep === 'analysis' && analysis ? (
           <AnalysisStep
-            analysis={detail.analysis}
+            value={analysis!}
             readOnly={readOnly}
-            saving={busy === 'save:analysis'}
-            onDirtyChange={setDirty}
-            onSave={(a: JobAnalysis) => save('analysis', a)}
+            applying={!!busy}
+            applyDisabled={anyRunning || recovery.state?.status === 'conflict'}
+            unapplied={dirty}
+            onChange={(analysis) => recovery.edit({ analysis })}
+            onApply={() => applyEdits('analysis')}
             onHighlightQuote={(q) => {
               setEvidenceFocus(null);
               setHighlight(q);
             }}
           />
-        ) : activeStep === 'alignment' && detail.alignment && detail.analysis ? (
+        ) : activeStep === 'alignment' && alignment && analysis ? (
           <AlignmentStep
-            analysis={detail.analysis}
-            alignment={detail.alignment}
+            analysis={analysis!}
+            value={alignment}
             evidenceOptions={evidenceOptions}
             readOnly={readOnly}
-            saving={busy === 'save:alignment'}
-            onDirtyChange={setDirty}
-            onSave={(a: AlignmentMatrix) => save('alignment', a)}
+            applying={!!busy}
+            applyDisabled={anyRunning || recovery.state?.status === 'conflict'}
+            unapplied={dirty}
+            onChange={(alignment) => recovery.edit({ alignment })}
+            onApply={() => applyEdits('alignment')}
             onOpenEvidence={setEvidenceFocus}
           />
-        ) : activeStep === 'proposals' && detail.proposals ? (
+        ) : activeStep === 'proposals' && proposals ? (
           <ProposalsStep
-            proposals={detail.proposals}
+            value={proposals}
             baseResume={detail.base_resume}
-            analysis={detail.analysis}
+            analysis={analysis!}
             pageBudget={detail.page_budget}
             readOnly={readOnly}
-            saving={busy === 'save:proposals'}
-            onSave={(p: Proposal[]) => save('proposals', { proposals: p })}
+            applying={!!busy}
+            applyDisabled={anyRunning || recovery.state?.status === 'conflict'}
+            unapplied={dirty}
+            onChange={(proposals, proposalTextById) => recovery.edit({ proposals: { proposals }, ...(proposalTextById ? { proposalTextById } : {}) })}
+            onApply={() => applyEdits('proposals')}
+            textById={recovery.payload?.proposalTextById ?? {}}
+            onTextChange={(id, text) => recovery.edit({ proposalTextById: { ...recovery.payload?.proposalTextById, [id]: text } })}
+            context={recovery.context}
+            onContextChange={(patch) => { if (!commandActive.current) recovery.updateContext(patch); }}
             onOpenEvidence={setEvidenceFocus}
           />
         ) : activeStep === 'brief' && detail.brief_markdown ? (
@@ -470,7 +617,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
                 </div>
               )}
               <div className="mt-3 flex flex-wrap gap-2">
-                <button type="button" className={primaryButton} disabled={!!busy || anyRunning} onClick={finalize}>
+                <button type="button" className={primaryButton} disabled={!!busy || anyRunning || !!commandReason || upstreamFinalizeBlocked} onClick={finalize}>
                   {busy === 'finalize' ? 'Saving…' : finalized ? 'Save again' : 'Save resume'}
                 </button>
                 {(finalized || manifest.finalized_path) && (
@@ -488,8 +635,8 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
         <div className="sticky bottom-0 -mx-5 -mb-5 mt-6 flex flex-wrap items-center justify-end gap-2 border-t border-slate-100 bg-white/95 p-3.5 backdrop-blur pb-safe dark:border-slate-800/80 dark:bg-[#121622]/95 sm:static sm:mx-0 sm:mb-0 sm:p-0 sm:pt-4 sm:bg-transparent sm:backdrop-none z-10">
           {approveDisabledReason && <span className="mr-auto text-xs text-slate-500">{approveDisabledReason}</span>}
           {prevApproved && (
-            <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} disabled={anyRunning || !!busy} onClick={() => runStep(activeStep)}>
-              <RotateCcw className="h-4 w-4" aria-hidden="true" /> Re-run
+            <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} disabled={anyRunning || !!busy || !!commandReason} onClick={() => runStep(activeStep)}>
+              <RotateCcw className="h-4 w-4" aria-hidden="true" /> {record.status === 'error' ? 'Retry' : 'Re-run'}
             </button>
           )}
           {record.status === 'done' && stepMeta.next && (
@@ -503,7 +650,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
             </button>
           )}
           {record.status === 'approved' && NEXT_STEP[activeStep] && (
-            <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} onClick={() => setActiveStep(NEXT_STEP[activeStep]!)}>
+            <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} onClick={() => selectStep(NEXT_STEP[activeStep]!)}>
               Next step
             </button>
           )}
@@ -535,6 +682,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, onBack, onOpen
             role="tab"
             type="button"
             aria-selected={mobilePane === pane}
+            disabled={!!busy}
             onClick={() => setMobilePane(pane)}
             className={`flex-1 rounded-md px-3 py-2 text-sm capitalize min-h-[44px] flex items-center justify-center transition-colors ${
               mobilePane === pane ? 'bg-white font-semibold text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'

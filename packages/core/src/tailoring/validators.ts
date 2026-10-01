@@ -400,5 +400,6 @@ export function validateProposals(proposals: Proposal[], ctx: ProposalValidation
 }
 
 export function isBlocked(p: Proposal): boolean {
+  if (p.override) return false;
   return p.checks.some((c) => c.severity === 'block');
 }

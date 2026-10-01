@@ -1,18 +1,26 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlignLeft, Check, Columns2, Pencil, Sparkles, X } from 'lucide-react';
-import { applyProposals, compileMarkdownResume, type JobAnalysis, type Proposal, type ResumeSpec } from '@featherduster/core';
+import { applyProposals, compileMarkdownResume, type DraftContext, type JobAnalysis, type Proposal, type ResumeSpec } from '@featherduster/core';
 import { apiClient } from '../../../api/client';
 import { wordDiff, sideBySideWordDiff } from '../wordDiff';
 import { CitationChip, IssueList, inputClass, secondaryButton } from '../ui';
 
 interface ProposalsStepProps {
-  proposals: Proposal[];
+  value: Proposal[];
   baseResume: ResumeSpec | null;
   analysis: JobAnalysis | null;
   pageBudget: { overBy: number; proposalIds: string[] } | null;
   readOnly: boolean;
-  saving: boolean;
-  onSave: (proposals: Proposal[]) => void;
+  applying: boolean;
+  applyDisabled?: boolean;
+  unapplied: boolean;
+  /** A cleanup result changes proposal text and its recovery buffer together. */
+  onChange: (proposals: Proposal[], textById?: Record<string, string>) => void;
+  onApply: () => Promise<void>;
+  textById: Record<string, string>;
+  onTextChange: (id: string, text: string) => void;
+  context: DraftContext;
+  onContextChange: (context: Partial<DraftContext>) => void;
   onOpenEvidence: (id: string) => void;
 }
 
@@ -254,19 +262,21 @@ function ProposalBody({
 }
 
 export const ProposalsStep: React.FC<ProposalsStepProps> = ({
-  proposals,
-  baseResume,
-  analysis,
-  pageBudget,
-  readOnly,
-  saving,
-  onSave,
-  onOpenEvidence,
+  value: proposals, baseResume, analysis, pageBudget, readOnly,
+  applying: saving, applyDisabled, unapplied, onChange, onApply, textById, onTextChange, context, onContextChange, onOpenEvidence,
 }) => {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editText, setEditText] = useState('');
+  const editingId = context.editingProposalId;
+  const editText = editingId ? textById[editingId] ?? proposals.find(p => p.id === editingId)?.edited_after ?? proposals.find(p => p.id === editingId)?.after ?? '' : '';
+  const setEditingId = (id: string | null) => onContextChange({ editingProposalId: id ?? undefined, ...(id ? { selectedProposalId: id } : {}) });
+  const setEditText = (text: string) => { if (editingId) onTextChange(editingId, text); };
   const [cleaningId, setCleaningId] = useState<string | null>(null);
-  const [diffMode, setDiffMode] = useState<'side-by-side' | 'unified'>('side-by-side');
+  const [cleanError, setCleanError] = useState<string>();
+  const mounted = useRef(false);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const latest = useRef({ proposals, onChange, readOnly, textById });
+  latest.current = { proposals, onChange, readOnly, textById };
+  const diffMode = context.diffMode ?? 'side-by-side';
+  const setDiffMode = (diffMode: 'side-by-side' | 'unified') => onContextChange({ diffMode });
 
   const reqText = useMemo(() => new Map(analysis?.requirements.map((r) => [r.id, r.text]) ?? []), [analysis]);
   const counts = proposals.reduce(
@@ -283,17 +293,27 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
     }
   }, [baseResume, proposals]);
 
-  const replace = (id: string, patch: Partial<Proposal>) => onSave(proposals.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  const replace = (id: string, patch: Partial<Proposal>) => onChange(proposals.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   const setAll = (decision: Proposal['decision']) =>
-    onSave(proposals.map((p) => (decision === 'accepted' && p.checks.some((c) => c.severity === 'block') ? p : { ...p, decision })));
+    onChange(proposals.map((p) => (decision === 'accepted' && p.checks.some((c) => c.severity === 'block') ? p : { ...p, decision })));
 
   const cleanSlop = async (p: Proposal) => {
-    setCleaningId(p.id);
+    setCleaningId(p.id); setCleanError(undefined);
+    const originalBuffer = textById[p.id];
     try {
       const res = await apiClient.deslopText(p.edited_after ?? p.after);
-      replace(p.id, { edited_after: res.cleanedText });
+      const current = latest.current;
+      if (!mounted.current || current.readOnly || current.proposals.find(candidate => candidate.id === p.id) !== p || current.textById[p.id] !== originalBuffer) return;
+      const nextTextById = { ...current.textById };
+      if (nextTextById[p.id] === (p.edited_after ?? p.after)) delete nextTextById[p.id];
+      current.onChange(
+        current.proposals.map(candidate => candidate.id === p.id ? { ...candidate, edited_after: res.cleanedText } : candidate),
+        nextTextById,
+      );
+    } catch (error) {
+      if (mounted.current) setCleanError((error as Error).message || 'Could not clean filler');
     } finally {
-      setCleaningId(null);
+      if (mounted.current) setCleaningId(null);
     }
   };
 
@@ -301,6 +321,7 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
 
   return (
     <div className="space-y-4">
+      {cleanError && <p role="alert">{cleanError}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-slate-700 dark:text-slate-300" aria-live="polite">
           {counts.accepted} accepted · {counts.rejected} rejected · {counts.pending} pending
@@ -319,6 +340,7 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
               role="tab"
               type="button"
               aria-selected={diffMode === 'side-by-side'}
+              disabled={saving}
               onClick={() => setDiffMode('side-by-side')}
               className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors flex items-center gap-1 min-h-[36px] sm:min-h-0 ${
                 diffMode === 'side-by-side'
@@ -333,6 +355,7 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
               role="tab"
               type="button"
               aria-selected={diffMode === 'unified'}
+              disabled={saving}
               onClick={() => setDiffMode('unified')}
               className={`px-2.5 py-1 rounded text-[11px] font-medium transition-colors flex items-center gap-1 min-h-[36px] sm:min-h-0 ${
                 diffMode === 'unified'
@@ -370,7 +393,7 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
               ? 'border-slate-200 opacity-60 dark:border-slate-800'
               : 'border-slate-200 dark:border-slate-800';
           return (
-            <li key={p.id} className={`rounded-desk border p-3.5 ${border}`} aria-label={`Proposal ${p.id}: ${TYPE_LABELS[p.type]}`}>
+            <li key={p.id} onFocus={() => onContextChange({ selectedProposalId: p.id })} data-selected={context.selectedProposalId === p.id} className={`rounded-desk border p-3.5 ${border}`} aria-label={`Proposal ${p.id}: ${TYPE_LABELS[p.type]}`}>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   <span className="mr-1.5 font-mono normal-case text-slate-400">{p.id}</span>
@@ -384,7 +407,6 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
                         type="button"
                         onClick={() => {
                           setEditingId(p.id);
-                          setEditText(p.edited_after ?? p.after);
                         }}
                         className="inline-flex items-center gap-1 rounded px-2.5 py-1.5 min-h-[36px] sm:min-h-0 text-xs text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
                       >
@@ -421,23 +443,23 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
                       aria-label={`Edit proposal ${p.id}`}
                       rows={3}
                       value={editText}
+                      readOnly={readOnly}
                       onChange={(e) => setEditText(e.target.value)}
                       className={`${inputClass} text-base sm:text-xs`}
                     />
                     <div className="flex justify-end gap-2">
-                      <button type="button" className={secondaryButton} onClick={() => setEditingId(null)}>
-                        Cancel
+                      <button type="button" className={secondaryButton} disabled={saving} onClick={() => setEditingId(null)}>
+                        Close editor
                       </button>
                       <button
                         type="button"
                         className={secondaryButton}
-                        disabled={!editText.trim() || saving}
-                        onClick={() => {
-                          replace(p.id, { edited_after: editText });
-                          setEditingId(null);
+                        disabled={!editText.trim() || saving || applyDisabled}
+                        onClick={async () => {
+                          try { await onApply(); setEditingId(null); } catch { /* Keep recovery text open for correction. */ }
                         }}
                       >
-                        Save edit
+                        Apply edit
                       </button>
                     </div>
                   </div>
@@ -449,7 +471,7 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
               {/* Direct Inline Linter (De-Slop Compliance & Metric Groundings) */}
               <InlineLinter
                 proposal={p}
-                onCleanSlop={!readOnly && textual(p) ? () => cleanSlop(p) : undefined}
+                onCleanSlop={!readOnly && !unapplied && textual(p) ? () => cleanSlop(p) : undefined}
                 isCleaning={cleaningId === p.id}
               />
 
@@ -472,6 +494,7 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
         })}
       </ul>
 
+      {!readOnly && unapplied && <button type="button" className={secondaryButton} disabled={saving || applyDisabled} onClick={() => void onApply().catch(() => undefined)}>{saving ? 'Applying…' : 'Apply proposal edits'}</button>}
       {preview && (
         <details className="rounded-desk border border-slate-200 dark:border-slate-800">
           <summary className="cursor-pointer px-3.5 py-2.5 text-sm font-medium text-slate-800 dark:text-slate-200">

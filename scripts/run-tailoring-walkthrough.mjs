@@ -1,6 +1,7 @@
 // End-to-end walkthrough of the skill-driven tailoring flow against a throwaway
 // sample workspace, using the deterministic demo runner (no real LLM, no user data).
 import fs from 'node:fs';
+import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,10 +37,10 @@ async function main() {
   const page = await (await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 })).newPage();
   const errors = [];
   page.on('console', (msg) => msg.type() === 'error' && errors.push(msg.text()));
-  page.on('pageerror', (err) => errors.push(err.message));
+  page.on('response', async r => { if (r.status() >= 400) console.error(r.request().method(), r.url(), await r.text()); });
+  page.on('pageerror', (err) => errors.push(err.stack));
 
   const shot = async (name) => {
-    await page.waitForTimeout(300);
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, name), fullPage: true });
     console.log(`  -> ${name}`);
   };
@@ -69,37 +70,35 @@ async function main() {
     await shot('05-proposals.png');
 
     await page.getByRole('button', { name: 'Accept all unblocked' }).click();
-    await page.waitForTimeout(800);
     // Reject anything that stayed pending (blocked by a check).
     for (const item of await page.getByRole('listitem', { name: /^Proposal / }).all()) {
       const reject = item.getByRole('button', { name: 'Reject' });
       const accept = item.getByRole('button', { name: 'Accept' });
       if ((await accept.getAttribute('aria-pressed')) !== 'true' && (await reject.getAttribute('aria-pressed')) !== 'true') {
         await reject.click();
-        await page.waitForTimeout(400);
       }
     }
     await page.locator('details summary', { hasText: 'Preview resume with accepted edits' }).click();
     await shot('06-proposals-decided.png');
 
+    await page.getByRole('button', { name: 'Apply proposal edits', exact: true }).click();
+    await page.getByText(/Unapplied edits/).waitFor({ state: 'hidden' });
     await page.getByRole('button', { name: 'Approve edits & write brief' }).click();
     await page.getByRole('button', { name: 'Save resume' }).waitFor({ timeout: 15000 });
     await shot('07-brief.png');
 
     await page.getByRole('button', { name: 'Save resume' }).click();
-    await page.getByText(/Saved to resumes\/tailored\/globex-staff-platform\.yaml/).waitFor({ timeout: 10000 });
-    await shot('08-saved.png');
+    await page.getByRole('article', { name: 'Completed resume' }).waitFor({ timeout: 10000 });
+    await shot('08-completed.png');
+    assert.equal(await page.getByRole('button', { name: 'Continue editing' }).count(), 1);
 
-    await page.getByRole('button', { name: 'Open in canvas' }).click();
-    await page.getByText('Resume Tailoring Canvas').waitFor({ timeout: 10000 });
-    await shot('09-canvas.png');
-
-    const runDir = path.join(workspace, 'tailoring', 'globex-staff-platform');
+    const runDir = path.join(workspace, 'tailoring');
     console.log(`Run files: ${fs.readdirSync(runDir).join(', ')}`);
     if (errors.length) {
       console.log('Browser errors:');
       errors.forEach((e) => console.log(`  ${e}`));
     }
+    assert.deepEqual(errors, [], 'Unexpected browser errors');
     console.log('Tailoring walkthrough completed.');
   } catch (err) {
     await page.screenshot({ path: path.join(SCREENSHOTS_DIR, 'failure.png'), fullPage: true }).catch(() => undefined);

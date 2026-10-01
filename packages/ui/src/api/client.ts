@@ -1,4 +1,5 @@
 import type {
+  DraftAcknowledgement, DraftEnvelope, DraftContext, DraftCompletion, DraftRecord, DraftUpdate, RevisionToken, SetupPayload, ManualDraftPayload,
   AlignmentMatrix,
   EvidenceEntry,
   EvidenceRecord,
@@ -48,6 +49,8 @@ export type TailoringRunSummary = RunManifest & { needs_review: boolean };
 export type TailoringCitations = Record<string, Array<{ slug: string; title: string }>>;
 
 export interface TailoringRunDetail {
+  draft?: DraftEnvelope;
+  base_notice?: string;
   manifest: RunManifest;
   posting: string;
   base_resume: ResumeSpec | null;
@@ -82,6 +85,7 @@ export interface FinalizeResponse {
 export type GapAnalysisResult = RubricGapAnalysis;
 
 export interface HealthResponse {
+  workspaceId?: string;
   status: string;
   workspaceDir: string;
 }
@@ -281,7 +285,31 @@ export interface ClaudeLoginJob {
   url: string | null;
 }
 
+export type DraftSeed = { id: string; context?: DraftContext } & (
+  { kind: 'setup'; payload: SetupPayload } | { kind: 'manual'; payload: ManualDraftPayload }
+);
+export interface DraftListResponse { workspaceId: string; records: DraftEnvelope[]; recoveryErrors: { id: string; message: string }[] }
+export interface DraftCommand { expected: RevisionToken; operationId: string }
+export interface DraftUpstream { fingerprint: string | null; record: DraftRecord; missing: boolean; changed: boolean }
+export interface DraftSyncConflict { id: string; path: string; base: unknown; local: unknown; upstream: unknown }
+export interface DraftSyncPreview { upstreamFingerprint: string; conflicts: DraftSyncConflict[]; record: DraftRecord; candidate: ResumeSpec; targetMap: Record<string, string> }
+export type DraftSyncResolutions = Record<string, 'local' | 'upstream'>;
+
 export class ApiClient {
+  listTailoringDrafts(): Promise<DraftListResponse> { return this.fetchJson('/api/tailoring-drafts'); }
+  getTailoringDraft(id: string): Promise<DraftEnvelope> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}`); }
+  createTailoringDraft(input: { record: DraftSeed; mutationId: string }): Promise<DraftAcknowledgement> { return this.fetchJson('/api/tailoring-drafts', this.jsonRequest('POST', input)); }
+  saveTailoringDraft(id: string, input: DraftUpdate): Promise<DraftAcknowledgement> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}`, this.jsonRequest('PUT', input)); }
+  discardTailoringDraft(id: string, input: DraftCommand): Promise<DraftEnvelope> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/discard`, this.jsonRequest('POST', input)); }
+  createRunFromDraft(id: string, input: DraftCommand): Promise<DraftEnvelope & { slug: string }> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/create-run`, this.jsonRequest('POST', input)); }
+  applyTailoringDraft(id: string, step: 'analysis' | 'alignment' | 'proposals', input: DraftCommand & { artifactToken: RevisionToken | null }): Promise<DraftAcknowledgement & { run: TailoringRunDetail }> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/apply/${step}`, this.jsonRequest('POST', input)); }
+  getDraftUpstream(id: string): Promise<DraftUpstream> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/upstream`); }
+  previewDraftSync(id: string, input: { expected: RevisionToken }): Promise<DraftSyncPreview> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/sync-preview`, this.jsonRequest('POST', input)); }
+  syncTailoringDraft(id: string, input: DraftCommand & { upstreamFingerprint: string; resolutions: DraftSyncResolutions }): Promise<DraftEnvelope> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/sync`, this.jsonRequest('POST', input)); }
+  completeTailoringDraft(id: string, input: DraftCommand & { name?: string; type?: 'template' | 'tailored' }): Promise<DraftEnvelope & { completion: DraftCompletion }> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/complete`, this.jsonRequest('POST', input)); }
+  continueTailoringDraft(id: string, input: DraftCommand): Promise<DraftEnvelope> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/continue`, this.jsonRequest('POST', input)); }
+  forkTailoringDraft(id: string, input: DraftCommand & { sourceSnapshot: DraftRecord }): Promise<DraftEnvelope> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}/fork`, this.jsonRequest('POST', input)); }
+
   private baseUrl: string;
 
   constructor(baseUrl: string = '') {

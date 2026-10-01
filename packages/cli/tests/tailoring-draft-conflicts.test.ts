@@ -1,0 +1,122 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { DraftService } from '../src/tailoring/drafts/service.js';
+import { FakeRunner } from '../src/runners/fake.js';
+import { RunStore } from '../src/tailoring/store.js';
+import { createApp } from '../src/server.js';
+
+const spec = { profile: { name: 'Person', title: 'Engineer', email: 'p@example.com' }, summary: 'Pinned', experiences: [], education: [], skills: [] };
+describe('explicit draft recovery choices', () => {
+  let root: string, service: DraftService;
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'draft-choices-'));
+    service = new DraftService({ workspaceDir: root, loadResumes: () => [{ id: 'base', spec }], runnerFactory: () => new FakeRunner([]) });
+  });
+  afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+  const setup = () => service.create({ id: randomUUID(), kind: 'setup', payload: { posting: 'A sufficiently long original posting.', label: 'Original', baseResumeId: 'base', runner: 'fake' } }, randomUUID());
+  it('forks the selected snapshot after parent changed or was discarded, preserving pinned content and replaying exactly', () => {
+    const original = setup();
+    const local = structuredClone(original.record); local.payload.posting = 'My unfinished version';
+    const newer = service.save(original.record.id, { expected: original.token, mutationId: randomUUID(), change: 'content', payload: { ...original.record.payload, posting: 'Someone else version' } });
+    service.discard(original.record.id, newer.token, randomUUID());
+    const op = randomUUID();
+    const fork = service.fork(original.record.id, original.token, op, local);
+    expect(fork.record.id).not.toBe(original.record.id);
+    expect(fork.record.payload).toEqual(local.payload);
+    expect(fork.record.base).toEqual(original.record.base);
+    expect(fork.record.lifecycle).toBe('draft');
+    expect(() => service.get(original.record.id)).toThrow(/discarded/i);
+    expect(service.fork(original.record.id, original.token, op, local)).toEqual(fork);
+    expect(() => service.fork(original.record.id, original.token, op, original.record)).toThrow(/different request/i);
+  });
+  it('forks run recovery into an independent run without trusting client approvals or applied baseline', () => {
+    const original = setup(); const run = service.createRun(original.record.id, original.token, randomUUID());
+    const local = structuredClone(run.record);
+    if (local.kind !== 'run') throw Error('run');
+    local.payload.proposalTextById = { p1: 'Unfinished text' };
+    local.appliedContent.analysis = { company: 'False approved', role: '', seniority: '', mission: '', requirements: [], boilerplate: [] };
+    local.payload.alignment = { rows: [{ requirement_id: 'r1', classification: 'backed', citations: [], rationale: 'My rationale', adjacent_tool: '', candidate_confirmed: true }] };
+    local.payload.proposals = { proposals: (['accepted', 'rejected', 'pending'] as const).map((decision, index) => ({ id: `p${index}`, type: 'summary.rewrite' as const, target: { experience_index: -1, bullet_index: -1, skill_group_index: -1 }, before: 'Pinned', after: `Recovery ${index}`, order: [], skills: [], citations: [], requirement_ids: ['r1'], rationale: 'My choice', decision, override: index === 0, checks: [{ severity: 'warn' as const, kind: 'old-check', message: 'Historical check' }] })) };
+    const fork = service.fork(local.id, run.token, randomUUID(), local);
+    if (fork.record.kind !== 'run') throw Error('run');
+    expect(fork.record.runSlug).not.toBe(local.runSlug);
+    expect(fork.record.appliedContent).toEqual({});
+    expect(fork.record.payload.artifactTokens).toEqual({});
+    expect(fork.record.payload.proposalTextById).toEqual(local.payload.proposalTextById);
+    expect(fork.record.payload.alignment).toEqual(local.payload.alignment);
+    expect(fork.record.payload.proposals?.proposals).toEqual(local.payload.proposals.proposals.map(proposal => ({ ...proposal, checks: [] })));
+    const manifest = new RunStore(root).readManifest(fork.record.runSlug!);
+    expect(manifest.draft_id).toBe(fork.record.id); expect(manifest.finalized_path).toBeNull();
+    expect(Object.values(manifest.steps).every(s => s.status === 'pending')).toBe(true);
+  });
+  it('discards only unapplied run edits and refuses a newer revision or externally changed artifact', () => {
+    const original = setup(); const run = service.createRun(original.record.id, original.token, randomUUID());
+    if (run.record.kind !== 'run') throw Error('run');
+    const store = new RunStore(root); const manifest = store.readText(run.slug, 'run.yaml');
+    const edited = service.save(run.record.id, { expected: run.token, mutationId: randomUUID(), change: 'content', payload: { ...run.record.payload, proposalTextById: { p: 'Unapplied' } } });
+    expect(() => service.discard(run.record.id, run.token, randomUUID())).toThrow();
+    expect(service.get(run.record.id)).toEqual({ record: edited.record, token: edited.token });
+    const op = randomUUID(); const reset = service.discard(run.record.id, edited.token, op);
+    expect(reset.record.lifecycle).toBe('draft');
+    expect(reset.record.payload).toEqual(run.record.payload);
+    expect(store.readText(run.slug, 'run.yaml')).toBe(manifest);
+    expect(service.discard(run.record.id, edited.token, op)).toEqual(reset);
+    store.writeJson(run.slug, 'analysis.json', { external: true });
+    expect(() => service.discard(run.record.id, reset.token, randomUUID())).toThrow(/artifact/i);
+  });
+  it('retains setup text with no pinned base when an offline source selection no longer exists', () => {
+    const original = setup(); const local = structuredClone(original.record);
+    if (local.kind !== 'setup') throw Error('setup');
+    local.payload.baseResumeId = 'missing'; local.payload.posting = 'My offline posting';
+    const fork = service.fork(original.record.id, original.token, randomUUID(), local);
+    expect(fork.record.base).toBeNull(); expect(fork.record.payload).toEqual(local.payload);
+  });
+  const manual = () => service.create({ id: randomUUID(), kind: 'manual', payload: { ...spec, selectedResumeId: 'base', jobDescription: 'Manual posting', squeezeMode: false } }, randomUUID());
+  it('rejects mismatched manual source identity without repinning or changing the recovery snapshot', () => {
+    const original = manual(); const local = structuredClone(original.record); if (local.kind !== 'manual') throw Error('manual');
+    local.payload.selectedResumeId = 'other'; local.payload.summary = 'Unfinished manual text';
+    const before = structuredClone(local);
+    service = new DraftService({ workspaceDir: root, loadResumes: () => [{ id: 'other', spec: { ...spec, summary: 'Replacement live base' } }] });
+    let failure: unknown;
+    try { service.fork(local.id, original.token, randomUUID(), local); } catch (error) { failure = error; }
+    expect(failure).toMatchObject({ status: 400, code: 'invalid_base', detail: expect.stringMatching(/manual.*source.*pinned base/i) });
+    expect(local).toEqual(before); expect(service.list().records).toHaveLength(1);
+    expect(service.get(original.record.id).record.base).toEqual(original.record.base);
+  });
+  it('forks a consistent manual snapshot after its original source disappeared', () => {
+    const original = manual(); const local = structuredClone(original.record); if (local.kind !== 'manual') throw Error('manual');
+    local.payload.summary = 'My independent revision';
+    service = new DraftService({ workspaceDir: root, loadResumes: () => [] });
+    const fork = service.fork(local.id, original.token, randomUUID(), local);
+    expect(fork.record.id).not.toBe(local.id); expect(fork.record.base).toEqual(original.record.base); expect(fork.record.payload).toEqual(local.payload);
+  });
+  it('validates recovered candidate choices through explicit Apply without inheriting workflow approval', async () => {
+    const original = setup(); const run = service.createRun(original.record.id, original.token, randomUUID());
+    const local = structuredClone(run.record); if (local.kind !== 'run') throw Error('run');
+    local.payload.analysis = { company: 'Recovered company', role: 'Engineer', seniority: '', mission: '', requirements: [{ id: 'r1', tier: 'must', text: 'Original posting', quote: 'original posting', terms: [] }], boilerplate: [] };
+    local.payload.alignment = { rows: [{ requirement_id: 'r1', classification: 'backed', citations: [], rationale: 'Confirmed recovery', adjacent_tool: '', candidate_confirmed: true }] };
+    local.payload.proposals = { proposals: [{ id: 'p1', type: 'summary.rewrite', target: { experience_index: -1, bullet_index: -1, skill_group_index: -1 }, before: 'Pinned', after: 'My recovery summary', order: [], skills: [], citations: ['missing-evidence'], requirement_ids: ['r1'], rationale: 'My choice', decision: 'accepted', override: true, checks: [{ severity: 'warn', kind: 'old-check', message: 'Historical check' }] }] };
+    const app = createApp(root, { runnerFactory: () => new FakeRunner([]) });
+    const post = (value: unknown) => ({ method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
+    const response = await app.request(`/api/tailoring-drafts/${run.record.id}/fork`, post({ expected: run.token, operationId: randomUUID(), sourceSnapshot: local }));
+    expect(response.status).toBe(200); const fork = await response.json();
+    const applied = await app.request(`/api/tailoring-drafts/${fork.record.id}/apply/analysis`, post({ expected: fork.token, operationId: randomUUID(), artifactToken: null }));
+    expect(applied.status).toBe(200);
+    const result = await applied.json();
+    expect(result.record.appliedContent.analysis.company).toBe('Recovered company');
+    expect(new RunStore(root).readManifest(fork.record.runSlug).steps.analysis.status).toBe('done');
+    expect(new RunStore(root).readManifest(run.slug).steps.analysis.status).toBe('pending');
+    const appliedAlignment = await app.request(`/api/tailoring-drafts/${fork.record.id}/apply/alignment`, post({ expected: result.token, operationId: randomUUID(), artifactToken: null }));
+    expect(appliedAlignment.status).toBe(200); const aligned = await appliedAlignment.json();
+    expect(aligned.record.appliedContent.alignment.rows[0].candidate_confirmed).toBe(true);
+    const appliedProposals = await app.request(`/api/tailoring-drafts/${fork.record.id}/apply/proposals`, post({ expected: aligned.token, operationId: randomUUID(), artifactToken: null }));
+    expect(appliedProposals.status).toBe(200); const proposed = await appliedProposals.json();
+    expect(proposed.record.appliedContent.proposals.proposals[0]).toMatchObject({ decision: 'accepted', override: true });
+    expect(proposed.record.appliedContent.proposals.proposals[0].checks.length).toBeGreaterThan(0);
+    expect(proposed.record.appliedContent.proposals.proposals[0].checks.some((check: { kind: string }) => check.kind === 'old-check')).toBe(false);
+    expect(Object.values(new RunStore(root).readManifest(fork.record.runSlug).steps).some(step => step.status === 'approved')).toBe(false);
+  });
+});

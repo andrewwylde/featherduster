@@ -22,6 +22,8 @@ import {
   type ResumeRecord,
   type PreflightResult,
 } from '../api/client';
+import { manualFromSpec, manualToSpec } from '../tailoring-drafts/manual-model';
+import type { ManualDraftPayload } from '@featherduster/core';
 import { PreFlightModal } from '../components/PreFlightModal';
 import { EvidencePickerModal } from '../components/EvidencePickerModal';
 import { ExportDrawer } from '../components/ExportDrawer';
@@ -30,7 +32,6 @@ import {
   cleanSlop,
   calculatePageBudget,
   type EvidenceRecord,
-  type ResumeSpec,
   type ResumeEducation,
   type ResumeSkillGroup,
 } from '@featherduster/core';
@@ -53,6 +54,14 @@ interface ModularExperience {
 }
 
 interface ResumeTailorProps {
+  /** Complete hydrated document; changes explicitly replace the current payload. */
+  initialPayload?: ManualDraftPayload;
+  onPayloadChange?: (payload: ManualDraftPayload, source?: ResumeRecord) => void;
+  onSourceSelect?: (payload: ManualDraftPayload, source: ResumeRecord) => boolean;
+  initialMobilePane?: 'bullets' | 'matcher';
+  onMobilePaneChange?: (pane: 'bullets' | 'matcher') => void;
+  onComplete?: (name: string, type: 'template' | 'tailored', payload: ManualDraftPayload, source?: ResumeRecord) => Promise<void>;
+  verifyWorkspace?: () => Promise<void>;
   /** Hands the pasted job description to the skill-driven tailoring workflow. */
   onStartTailoringRun?: (posting: string) => void;
   /** Resume variant to select once loaded (e.g. a freshly finalized tailoring run). */
@@ -61,30 +70,38 @@ interface ResumeTailorProps {
   onBackToRuns?: () => void;
 }
 
-export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns }) => {
+export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete }) => {
   // Remote data state
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
-  const [selectedResumeId, setSelectedResumeId] = useState<string>('');
   const [evidenceList, setEvidenceList] = useState<EvidenceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Resume Spec Editing State
-  const [profile, setProfile] = useState<ResumeSpec['profile']>({
-    name: '',
-    title: '',
-    email: '',
-    phone: '',
-    location: '',
-    links: { github: '', linkedin: '', website: '' },
-  });
-  const [summary, setSummary] = useState('');
-  const [experiences, setExperiences] = useState<ModularExperience[]>([]);
-  const [education, setEducation] = useState<ResumeEducation[]>([]);
-  const [skills, setSkills] = useState<ResumeSkillGroup[]>([]);
-
-  // Target Job Description State
-  const [jobDescription, setJobDescription] = useState('');
+  // The complete recovery payload is the editor model. Keep a synchronous ref so
+  // multiple field changes in one event never overwrite each other.
+  const [payload, setPayload] = useState<ManualDraftPayload>(() => initialPayload ?? manualFromSpec({ profile: { name: '', title: '', email: '', phone: '', location: '', links: { github: '', linkedin: '', website: '' } }, experiences: [], education: [], skills: [] }, ''));
+  const payloadRef = useRef(payload);
+  useEffect(() => {
+    if (initialPayload && initialPayload !== payloadRef.current) {
+      payloadRef.current = initialPayload; setPayload(initialPayload);
+    }
+  }, [initialPayload]);
+  const sourceRef = useRef<ResumeRecord>();
+  const initialized = useRef(!!initialPayload);
+  const changeField = <K extends keyof ManualDraftPayload>(key: K, value: React.SetStateAction<ManualDraftPayload[K]>) => {
+    const next = { ...payloadRef.current, [key]: typeof value === 'function' ? (value as (previous: ManualDraftPayload[K]) => ManualDraftPayload[K])(payloadRef.current[key]) : value };
+    payloadRef.current = next;
+    setPayload(next);
+    onPayloadChange?.(next, sourceRef.current);
+  };
+  const { profile, summary, experiences, education, skills, jobDescription, selectedResumeId, squeezeMode } = payload;
+  const setProfile = (value: React.SetStateAction<ManualDraftPayload['profile']>) => changeField('profile', value);
+  const setSummary = (value: React.SetStateAction<string>) => changeField('summary', value);
+  const setExperiences = (value: React.SetStateAction<ModularExperience[]>) => changeField('experiences', value);
+  const setEducation = (value: React.SetStateAction<ResumeEducation[]>) => changeField('education', value);
+  const setSkills = (value: React.SetStateAction<ResumeSkillGroup[]>) => changeField('skills', value);
+  const setJobDescription = (value: React.SetStateAction<string>) => changeField('jobDescription', value);
+  const setSqueezeMode = (value: React.SetStateAction<boolean>) => changeField('squeezeMode', value);
 
   // Compiled Markdown Output for Pre-Flight Validation
   const [compiledOutput, setCompiledOutput] = useState('');
@@ -119,34 +136,13 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [showSkillsEditor, setShowSkillsEditor] = useState(false);
   const [showEduEditor, setShowEduEditor] = useState(false);
-  const [mobilePane, setMobilePane] = useState<'bullets' | 'matcher'>('bullets');
+  const [mobilePane, updateMobilePane] = useState<'bullets' | 'matcher'>(initialMobilePane ?? 'bullets');
+  const setMobilePane = (pane: 'bullets' | 'matcher') => { updateMobilePane(pane); onMobilePaneChange?.(pane); };
 
-  // Build current active spec containing only included bullets
-  const currentSpec: ResumeSpec = useMemo(() => {
-    return {
-      profile,
-      summary,
-      experiences: experiences.map((exp) => ({
-        company: exp.company,
-        role: exp.role,
-        location: exp.location,
-        startDate: exp.startDate,
-        endDate: exp.endDate,
-        bullets: exp.bullets
-          .filter((b) => b.included)
-          .map((b) => ({
-            text: b.text,
-            citations: b.citations,
-          })),
-      })),
-      education,
-      skills,
-    };
-  }, [profile, summary, experiences, education, skills]);
+  const currentSpec = useMemo(() => manualToSpec(payload), [payload]);
 
   // Deliverables & Exports Drawer State
   const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
-  const [squeezeMode, setSqueezeMode] = useState(false);
 
   // Live Page Budget Telemetry
   const pageBudget = useMemo(() => {
@@ -177,10 +173,12 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
       setResumes(resumesData);
       setEvidenceList(evidenceData);
 
-      if (resumesData.length > 0) {
-        const initial = resumesData[0];
-        setSelectedResumeId(initial.id);
-        applySpec(initial.spec);
+      if (!initialized.current && resumesData.length > 0) {
+        const initial = resumesData.find(r => r.id === preferredResumeId) ?? resumesData[0];
+        initialized.current = true;
+        sourceRef.current = initial;
+        const next = manualFromSpec(initial.spec, initial.id);
+        payloadRef.current = next; setPayload(next);
       }
     } catch (err: any) {
       console.error('Failed to load initial resume data', err);
@@ -194,55 +192,15 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
     loadInitialData();
   }, [loadInitialData]);
 
-  // Preferred resume selection
-  useEffect(() => {
-    if (!preferredResumeId || resumes.length === 0) return;
-    const match = resumes.find((r) => r.id === preferredResumeId);
-    if (match) {
-      setSelectedResumeId(match.id);
-      applySpec(match.spec);
-    }
-  }, [preferredResumeId, resumes]);
-
-
-  // Helper to load a spec into modular editing state
-  const applySpec = (spec: ResumeSpec) => {
-    setProfile(spec.profile || {
-      name: '',
-      title: '',
-      email: '',
-      phone: '',
-      location: '',
-      links: {},
-    });
-    setSummary(spec.summary || '');
-    setExperiences(
-      (spec.experiences || []).map((exp, expIdx) => ({
-        id: `exp-${expIdx}-${Date.now()}`,
-        company: exp.company,
-        role: exp.role,
-        location: exp.location,
-        startDate: exp.startDate,
-        endDate: exp.endDate,
-        bullets: (exp.bullets || []).map((b, bIdx) => ({
-          id: `b-${expIdx}-${bIdx}-${Date.now()}`,
-          text: b.text,
-          citations: b.citations,
-          included: true,
-        })),
-      }))
-    );
-    setEducation(spec.education || []);
-    setSkills(spec.skills || []);
-  };
-
-  // Switch loaded resume variant
+  // Choosing a source is an explicit independent draft, never hydration.
   const handleSelectResume = (id: string) => {
-    setSelectedResumeId(id);
-    const found = resumes.find((r) => r.id === id);
-    if (found) {
-      applySpec(found.spec);
-    }
+    const found = resumes.find(r => r.id === id);
+    if (!found || id === payloadRef.current.selectedResumeId) return;
+    const next = manualFromSpec(found.spec, found.id);
+    if (onSourceSelect && !onSourceSelect(next, found)) return;
+    sourceRef.current = found;
+    payloadRef.current = next; setPayload(next);
+    if (!onSourceSelect) onPayloadChange?.(next, found);
   };
 
   // Re-compile markdown resume for background preflight audit
@@ -404,6 +362,8 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
   const handleSaveVariant = async () => {
     if (!saveVariantName.trim()) return;
     try {
+      await verifyWorkspace?.();
+      if (onComplete) { await onComplete(saveVariantName.trim(), saveVariantType, payloadRef.current, sourceRef.current); return; }
       const res = await apiClient.saveResume(
         saveVariantName.trim(),
         currentSpec,
@@ -416,8 +376,6 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
         // Refresh resume list
         const updated = await apiClient.getResumes();
         setResumes(updated);
-        const match = updated.find((r) => r.name === res.name);
-        if (match) setSelectedResumeId(match.id);
         setTimeout(() => setSaveSuccessMessage(null), 4000);
       }
     } catch (err: any) {
@@ -480,7 +438,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
     setDeslopping(false);
   }, [summary, experiences]);
 
-  if (loadError) {
+  if (loadError && !initialized.current) {
     return (
       <div className="rounded-2xl border border-rose-500/30 bg-rose-950/20 p-6 text-rose-200" role="alert">
         <h2 className="text-base font-semibold">Could not load resumes</h2>
@@ -497,11 +455,25 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
     );
   }
 
-  if (loading) {
+  if (loading && !initialPayload) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400 space-y-3">
         <RefreshCw className="w-8 h-8 animate-spin text-purple-400" />
         <p className="text-sm font-medium">Loading Resume Tailoring Canvas...</p>
+      </div>
+    );
+  }
+
+  if (!initialized.current) {
+    return (
+      <div className="space-y-4 rounded-2xl border border-slate-700 p-6">
+        <h1 className="text-2xl font-bold">Resume Tailoring Canvas</h1>
+        <h2 className="font-semibold">No source resume available</h2>
+        <p>Add a resume template to this workspace, then reload resumes to start a canvas draft.</p>
+        <div className="flex gap-3">
+          <button type="button" onClick={() => void loadInitialData()}>Reload resumes</button>
+          {onBackToRuns && <button type="button" onClick={onBackToRuns}>Back to tailoring</button>}
+        </div>
       </div>
     );
   }
@@ -688,6 +660,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
               aria-label="Select resume variant"
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
             >
+              {selectedResumeId && !resumes.some(resume => resume.id === selectedResumeId) && <option value={selectedResumeId}>{selectedResumeId} (saved source)</option>}
               {resumes.map((r) => (
                 <option key={r.id} value={r.id}>
                   {r.name} ({r.type})

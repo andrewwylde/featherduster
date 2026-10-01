@@ -193,6 +193,7 @@ describe('Local Hono Server Integration Tests', () => {
       expect(body).toEqual({
         status: 'ok',
         workspaceDir: tmpWorkspace,
+        workspaceId: expect.stringMatching(/^[a-f0-9]{64}$/),
       });
     });
   });

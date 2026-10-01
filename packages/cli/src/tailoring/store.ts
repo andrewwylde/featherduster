@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import yaml from 'js-yaml';
+import { randomUUID } from 'node:crypto';
+import { DraftRepositoryError } from './drafts/errors.js';
+import { withDraftFileLock } from './drafts/locks.js';
 import { RunManifestSchema, type RunManifest } from '@featherduster/core';
 
 export const TAILORING_DIR = 'tailoring';
@@ -50,7 +53,7 @@ function timestampSlug(date: Date): string {
 export class RunStore {
   readonly rootDir: string;
 
-  constructor(workspaceDir: string) {
+  constructor(workspaceDir: string, private readonly mutationGuard?: <T>(slug: string, action: (validate: () => void) => T) => T) {
     this.rootDir = path.join(path.resolve(workspaceDir), TAILORING_DIR);
   }
 
@@ -74,12 +77,12 @@ export class RunStore {
     return isValidSlug(slug) && fs.existsSync(path.join(this.rootDir, slug, RUN_FILES.manifest));
   }
 
-  allocateSlug(label: string | undefined, now: Date): string {
+  allocateSlug(label: string | undefined, now: Date, reserved: ReadonlySet<string> = new Set()): string {
     const base = (label && slugify(label)) || timestampSlug(now);
     const safeBase = isValidSlug(base) ? base : timestampSlug(now);
     let slug = safeBase;
     let n = 2;
-    while (fs.existsSync(path.join(this.rootDir, slug))) {
+    while (reserved.has(slug) || fs.existsSync(path.join(this.rootDir, slug))) {
       slug = `${safeBase.slice(0, 74)}-${n++}`;
     }
     return slug;
@@ -99,7 +102,12 @@ export class RunStore {
 
   writeManifest(manifest: RunManifest): void {
     const validated = RunManifestSchema.parse(manifest);
-    this.writeAtomic(this.filePath(validated.slug, RUN_FILES.manifest), yaml.dump(validated, { indent: 2, lineWidth: 120 }));
+    this.writeGuarded(validated.slug, RUN_FILES.manifest, yaml.dump(validated, { indent: 2, lineWidth: 120 }), () => {
+      const current = this.exists(validated.slug) ? this.readManifest(validated.slug) : undefined;
+      if (current?.draft_id && current.draft_id !== validated.draft_id) {
+        throw new DraftRepositoryError(409, 'association_conflict', 'Run association changed; reload the manifest before writing');
+      }
+    });
   }
 
   readText(slug: string, file: RunFile): string | null {
@@ -108,7 +116,16 @@ export class RunStore {
   }
 
   writeText(slug: string, file: RunFile, content: string): void {
-    this.writeAtomic(this.filePath(slug, file), content);
+    this.writeGuarded(slug, file, content);
+  }
+
+  private writeGuarded(slug: string, file: RunFile, content: string, validateContent: () => void = () => {}): void {
+    const action = (validateGuard: () => void = () => {}) => writeRunArtifactAtomic(this.filePath(slug, file), content, () => {
+      validateGuard();
+      validateContent();
+    });
+    if (this.mutationGuard) this.mutationGuard(slug, action);
+    else action();
   }
 
   readJson<T>(slug: string, file: RunFile, parse: (raw: unknown) => T): T | null {
@@ -139,16 +156,21 @@ export class RunStore {
     return manifests.sort((a, b) => b.updated.localeCompare(a.updated));
   }
 
-  private writeAtomic(file: string, content: string): void {
+}
+
+/** Shared with finalized resume writes; callers acquire draft ownership before artifact ownership. */
+export function writeRunArtifactAtomic(file: string, content: string, validate: () => void = () => {}): void {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    const tmp = `${file}.${process.pid}.tmp`;
-    fs.writeFileSync(tmp, content, 'utf-8');
-    try {
-      fs.renameSync(tmp, file);
-    } catch {
-      // Windows can refuse rename over a file held open by a watcher; fall back to direct write.
-      fs.writeFileSync(file, content, 'utf-8');
-      fs.rmSync(tmp, { force: true });
-    }
-  }
+    withDraftFileLock(file, () => {
+      // Read-only validation under artifact ownership must never acquire a draft lock.
+      validate();
+      const tmp = `${file}.${randomUUID()}.tmp`;
+      try {
+        fs.writeFileSync(tmp, content, { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
+        validate();
+        fs.renameSync(tmp, file);
+      } finally {
+        if (fs.existsSync(tmp)) fs.unlinkSync(tmp);
+      }
+    });
 }

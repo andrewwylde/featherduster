@@ -1,15 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import type { AlignmentClassification, AlignmentMatrix, AlignmentRow, JobAnalysis } from '@featherduster/core';
 import { CitationChip, IssueList, inputClass, secondaryButton } from '../ui';
 
 interface AlignmentStepProps {
   analysis: JobAnalysis;
-  alignment: AlignmentMatrix;
+  value: AlignmentMatrix;
   evidenceOptions: Array<{ id: string; title: string }>;
   readOnly: boolean;
-  saving: boolean;
-  onDirtyChange?: (dirty: boolean) => void;
-  onSave: (alignment: AlignmentMatrix) => void;
+  applying: boolean;
+  applyDisabled?: boolean;
+  unapplied: boolean;
+  onChange: (alignment: AlignmentMatrix) => void;
+  onApply: () => Promise<void>;
   onOpenEvidence: (id: string) => void;
 }
 
@@ -19,31 +21,9 @@ const CLASS_STYLE: Record<AlignmentClassification, string> = {
   gap: 'border-slate-300 text-slate-700 dark:border-slate-700 dark:text-slate-300',
 };
 
-export const AlignmentStep: React.FC<AlignmentStepProps> = ({
-  analysis,
-  alignment,
-  evidenceOptions,
-  readOnly,
-  saving,
-  onDirtyChange,
-  onSave,
-  onOpenEvidence,
-}) => {
-  const [draft, setDraft] = useState<AlignmentMatrix>(alignment);
-  const [dirty, setDirty] = useState(false);
-
-  useEffect(() => {
-    onDirtyChange?.(dirty);
-  }, [dirty, onDirtyChange]);
-
-  useEffect(() => {
-    setDraft(alignment);
-    setDirty(false);
-  }, [alignment]);
-
+export const AlignmentStep: React.FC<AlignmentStepProps> = ({ analysis, value: draft, evidenceOptions, readOnly, applying, applyDisabled, unapplied, onChange, onApply, onOpenEvidence }) => {
   const updateRow = (requirementId: string, patch: Partial<AlignmentRow>) => {
-    setDraft({ rows: draft.rows.map((r) => (r.requirement_id === requirementId ? { ...r, ...patch, issues: [] } : r)) });
-    setDirty(true);
+    onChange({ rows: draft.rows.map((r) => (r.requirement_id === requirementId ? { ...r, ...patch, issues: [] } : r)) });
   };
 
   const counts = draft.rows.reduce(
@@ -88,7 +68,7 @@ export const AlignmentStep: React.FC<AlignmentStepProps> = ({
                 </select>
               </div>
 
-              {row.rationale && <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-400">{row.rationale}</p>}
+              <textarea aria-label={`Rationale for ${row.requirement_id}`} value={row.rationale} readOnly={readOnly} onChange={(e) => updateRow(row.requirement_id, { rationale: e.target.value })} className={`${inputClass} mt-1.5 text-xs`} />
 
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {row.citations.map((c) => (
@@ -145,10 +125,10 @@ export const AlignmentStep: React.FC<AlignmentStepProps> = ({
         })}
       </ul>
 
-      {!readOnly && dirty && (
+      {!readOnly && unapplied && (
         <div className="flex justify-end">
-          <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} disabled={saving} onClick={() => onSave(draft)}>
-            {saving ? 'Saving…' : 'Save alignment edits'}
+          <button type="button" className={`${secondaryButton} min-h-[44px] sm:min-h-0`} disabled={applying || applyDisabled} onClick={() => void onApply().catch(() => undefined)}>
+            {applying ? 'Applying…' : 'Apply alignment edits'}
           </button>
         </div>
       )}

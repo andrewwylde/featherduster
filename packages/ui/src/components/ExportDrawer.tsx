@@ -30,8 +30,10 @@ import {
 import { useModalA11y } from '../hooks/useModalA11y';
 
 export type DrawerFormat = 'markdown' | 'html' | 'typst' | 'latex' | 'brief';
+const EMPTY_KEYWORDS: string[] = [];
 
 export interface ExportDrawerProps {
+  readOnly?: boolean;
   isOpen: boolean;
   onClose: () => void;
   spec: ResumeSpec;
@@ -55,13 +57,14 @@ function svgToDataUri(svg: string): string {
 }
 
 export const ExportDrawer: React.FC<ExportDrawerProps> = ({
+  readOnly = false,
   isOpen,
   onClose,
   spec,
   variantName,
   jobDescription = '',
-  matchedKeywords = [],
-  missingKeywords = [],
+  matchedKeywords = EMPTY_KEYWORDS,
+  missingKeywords = EMPTY_KEYWORDS,
   targetCompany = '',
   targetRole = '',
   preflightStatus,
@@ -488,6 +491,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
 
               {/* Squeeze Toggle */}
               <button
+                disabled={readOnly}
                 onClick={onToggleSqueeze}
                 className={`px-2 py-0.5 rounded text-[10px] font-mono border transition-all ${
                   squeezeMode
@@ -504,7 +508,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
             <div className="flex items-center gap-2">
               <button
                 onClick={onDeSlop}
-                disabled={deslopping}
+                disabled={deslopping || readOnly}
                 className="px-2 py-1 rounded text-[11px] font-semibold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 transition-all flex items-center gap-1"
                 title="De-slop active resume bullets"
               >

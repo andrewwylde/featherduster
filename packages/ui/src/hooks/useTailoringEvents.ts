@@ -1,10 +1,12 @@
 import { useEffect, useRef } from 'react';
 import type { TailoringEvent } from '../api/client';
-import { sseClient } from '../api/events';
+import { sseClient, type DraftChangeEvent } from '../api/events';
 
 export interface TailoringEventHandlers {
   /** Progress/state events emitted by the orchestrator. */
   onEvent?: (event: TailoringEvent) => void;
+  onReconnect?: () => void;
+  onDraftChange?: (event: DraftChangeEvent) => void;
   /** Filesystem changes under tailoring/ (e.g. an external agent edited a run file). */
   onFileChange?: (relativePath: string) => void;
 }
@@ -30,7 +32,11 @@ export function useTailoringEvents(handlers: TailoringEventHandlers): void {
       }
     });
 
+    const unsubDraft = sseClient.onDraftChange(event => ref.current.onDraftChange?.(event));
+    const unsubStatus = sseClient.onStatus(connected => { if (connected) ref.current.onReconnect?.(); });
     return () => {
+      unsubDraft();
+      unsubStatus();
       unsubTailoring();
       unsubChange();
     };

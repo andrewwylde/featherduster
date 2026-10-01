@@ -103,6 +103,8 @@ import { WorkspaceWatcher } from './watcher.js';
 import { isConsolidatedLedgerFile, isInsideWorkspace, toWorkspaceRelative } from './evidence-files.js';
 import { defaultRunnerFactory, type RunnerFactory } from './runners/registry.js';
 import { TailoringOrchestrator, type TailoringEvent } from './tailoring/orchestrator.js';
+import { DraftService } from './tailoring/drafts/service.js';
+import { mountDraftRoutes } from './tailoring/drafts/routes.js';
 import { mountTailoringRoutes } from './tailoring/routes.js';
 import { mountSettingsRoutes } from './settings/routes.js';
 import { ClaudeAuthManager } from './settings/claude-auth.js';
@@ -414,7 +416,10 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     }
   };
 
+  const draftService = new DraftService({ workspaceDir: resolvedWorkspaceDir, runnerFactory: options?.runnerFactory ?? defaultRunnerFactory, loadResumes: () => loadResumeSpecs(resolvedWorkspaceDir) });
+  draftService.recover();
   const orchestrator = new TailoringOrchestrator({
+    drafts: draftService,
     workspaceDir: resolvedWorkspaceDir,
     runnerFactory: options?.runnerFactory ?? defaultRunnerFactory,
     loadEvidence: () => loadEvidenceStore(resolvedWorkspaceDir),
@@ -470,11 +475,14 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     credentials: true,
   }));
 
+  mountDraftRoutes(app, draftService, orchestrator);
+
   // 1b. Health check
   app.get('/api/health', (c) => {
     return c.json({
       status: 'ok',
       workspaceDir: resolvedWorkspaceDir,
+      workspaceId: draftService.workspaceId,
     });
   });
 
@@ -933,6 +941,8 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   // 6c. Resume Specs list
   app.get('/api/resumes', (c) => {
     const resumes = loadResumeSpecs(resolvedWorkspaceDir);
+    const completed = orchestrator.drafts.list().records.flatMap(({ record }) => record.completion ? [record.completion] : []);
+    for (const resume of resumes) { const completion = completed.find(item => item.path === resume.filePath); if (completion?.name) resume.name = completion.name; }
     return c.json(resumes);
   });
 
@@ -963,6 +973,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         return c.json({ success: false, error: 'Cannot overwrite symbolic links' }, 403);
       }
       fs.mkdirSync(targetDir, { recursive: true });
+      if (orchestrator.drafts.ownsCompletedOutput(targetFile)) return c.json({ success: false, error: 'Completed versions are immutable; continue editing as a new draft' }, 409);
       fs.writeFileSync(targetFile, yaml.dump(validatedSpec), 'utf-8');
 
       const relativePath = path
@@ -1186,6 +1197,13 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         tailoringListeners.add(tailoringListener);
         const unsubscribeWatcher = watcher.subscribe(async (evt) => {
           try {
+            const draftMatch = /^tailoring-drafts\/([0-9a-f-]{36})\.json$/i.exec(evt.relativePath);
+            if (draftMatch) {
+              let token;
+              try { token = draftService.repository.read(draftMatch[1]).token; } catch { /* Deleted/corrupt records still invalidate caches. */ }
+              await stream.writeSSE({ event: 'tailoring-draft', data: JSON.stringify({ draftId: draftMatch[1], token }) });
+              return;
+            }
             await stream.writeSSE({
               event: 'change',
               data: JSON.stringify({

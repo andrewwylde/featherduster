@@ -1,10 +1,11 @@
+import { TAILORING_STEPS, type TailoringStep } from '@featherduster/core';
 import type { NavTab } from './components/Layout';
 
 /** The manual canvas is a mode of the tailor tab, not a run slug. */
 export const CANVAS_PATH = '/tailor/canvas';
 
 /** Reserved `/tailor/*` segments that never name a run. */
-const RESERVED_TAILOR_SEGMENTS = new Set(['canvas']);
+const RESERVED_TAILOR_SEGMENTS = new Set(['canvas', 'drafts']);
 
 const routeByTab: Record<NavTab, string> = {
   briefing: '/briefing',
@@ -32,7 +33,8 @@ const legacyRoutes: Record<string, string> = {
 };
 
 function normalize(pathname: string): string {
-  return pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  const path = new URL(pathname, 'http://local').pathname;
+  return path.length > 1 ? path.replace(/\/+$/, '') : path;
 }
 
 /** Canonical path for a legacy URL, or null when the path is already current. */
@@ -61,13 +63,20 @@ export function tailoringSlugForPath(pathname: string): string | null {
 /** Which of the tailor tab's three modes a path selects. */
 export type TailorView =
   | { mode: 'list' }
-  | { mode: 'run'; slug: string }
+  | { mode: 'run'; slug: string; step?: TailoringStep }
+  | { mode: 'draft'; draftId: string }
+  | { mode: 'unavailable' }
   | { mode: 'canvas' };
 
 export function tailorViewForPath(pathname: string): TailorView {
   const normalized = normalize(pathname);
   const canonical = legacyRoutes[normalized] ?? normalized;
   if (canonical === CANVAS_PATH) return { mode: 'canvas' };
+  if (canonical === '/tailor/drafts' || canonical.startsWith('/tailor/drafts/')) {
+    const match = /^\/tailor\/drafts\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i.exec(canonical);
+    return match ? { mode: 'draft', draftId: match[1] } : { mode: 'unavailable' };
+  }
   const slug = tailoringSlugForPath(canonical);
-  return slug ? { mode: 'run', slug } : { mode: 'list' };
+  const step = new URL(pathname, 'http://local').searchParams.get('step');
+  return slug ? { mode: 'run', slug, ...(TAILORING_STEPS.includes(step as TailoringStep) ? { step: step as TailoringStep } : {}) } : { mode: 'list' };
 }

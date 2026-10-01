@@ -16,6 +16,7 @@
     "build": "npm run build:core && npm run build:ui && npm run build:cli",
     "test": "vitest run",
     "walkthrough": "node scripts/run-walkthrough.mjs",
+    "walkthrough:tailoring-recovery": "node scripts/run-tailoring-recovery-walkthrough.mjs",
     "walkthrough:tailoring": "node scripts/run-tailoring-walkthrough.mjs",
     "ideas": "python scripts/autonomous_feature_pipeline.py",
     "ideas:scan": "python scripts/loop_idea_scanner.py",

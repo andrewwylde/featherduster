@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Layout, type NavTab } from './components/Layout';
 import { ThemeProvider } from './theme/ThemeContext';
 import { PrivateBriefing } from './views/desk/PrivateBriefing';
 import { StoryThreadsNodeMap } from './views/desk/StoryThreadsNodeMap';
 import { EvidenceExplorer } from './views/EvidenceExplorer';
 import { RubricGapMatrix } from './views/RubricGapMatrix';
-import { ResumeTailor } from './views/ResumeTailor';
 import { EvidenceStrengthener } from './views/desk/EvidenceStrengthener';
 import { useDeskData } from './hooks/useDeskData';
 import {
@@ -16,7 +15,7 @@ import {
   tailorViewForPath,
   type TailorView,
 } from './routing';
-import { TailoringRunList } from './views/tailoring/TailoringRunList';
+import { TailoringDraftRoute } from './views/tailoring/TailoringDraftRoute';
 import { TailoringRun } from './views/tailoring/TailoringRun';
 import { SettingsView } from './views/settings/SettingsView';
 
@@ -31,17 +30,24 @@ function canonicalPath(pathname: string): string {
 }
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(canonicalPath(window.location.pathname)));
-  const [tailorView, setTailorView] = useState<TailorView>(() => tailorViewForPath(window.location.pathname));
-  const [handoffPosting, setHandoffPosting] = useState<string | undefined>(undefined);
+  const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(canonicalPath(window.location.pathname + window.location.search)));
+  const [tailorView, setTailorView] = useState<TailorView>(() => tailorViewForPath(window.location.pathname + window.location.search));
   const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
   const desk = useDeskData();
   const [strengthenId, setStrengthenId] = useState<string | null>(null);
 
-  const navigatePath = (path: string) => {
-    if (window.location.pathname !== path) {
-      window.history.pushState({}, '', path);
+  const [tailorListVisit, setTailorListVisit] = useState(0);
+  const navigationGuard = useRef<() => boolean>(() => true);
+  const [navigationError, setNavigationError] = useState<string | null>(null);
+  const currentPath = useRef(window.location.pathname + window.location.search);
+  const navigatePath = (path: string, replace = false) => {
+    if (!replace && !navigationGuard.current()) { setNavigationError('Changes are not saved yet. Retry saving before leaving this draft.'); return; }
+    setNavigationError(null);
+    if (window.location.pathname + window.location.search !== path) {
+      window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
     }
+    if (path === '/tailor') setTailorListVisit(visit => visit + 1);
+    currentPath.current = path;
     setCurrentTab(tabForPath(path));
     setTailorView(tailorViewForPath(path));
   };
@@ -50,7 +56,11 @@ export function App() {
 
   useEffect(() => {
     const handlePopState = () => {
-      const path = canonicalPath(window.location.pathname);
+      if (!navigationGuard.current()) { window.history.pushState({}, '', currentPath.current); setNavigationError('Changes are not saved yet. Retry saving before leaving this draft.'); return; }
+      setNavigationError(null);
+      const path = canonicalPath(window.location.pathname + window.location.search);
+      if (path === '/tailor') setTailorListVisit(visit => visit + 1);
+      currentPath.current = path;
       setCurrentTab(tabForPath(path));
       setTailorView(tailorViewForPath(path));
     };
@@ -58,15 +68,13 @@ export function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  // The canvas holds unsaved editor state, so it stays mounted across tab changes.
-  const isCanvasVisible = currentTab === 'tailor' && tailorView.mode === 'canvas';
-
   return (
     <ThemeProvider>
       <Layout
         currentTab={currentTab}
         onSelectTab={navigateTo}
       >
+        {navigationError && <p role="alert">{navigationError}</p>}
         {/* Briefing Workspace */}
         {currentTab === 'briefing' &&
           (strengthenId && desk.model.recordsById.get(strengthenId) ? (
@@ -94,8 +102,11 @@ export function App() {
         {/* Tailor Workspace: run list, run detail, and the manual canvas */}
         {currentTab === 'tailor' && tailorView.mode === 'run' && (
           <TailoringRun
+            registerGuard={(guard) => { navigationGuard.current = guard; }}
             slug={tailorView.slug}
+            selectedStep={tailorView.step}
             onBack={() => navigatePath('/tailor')}
+            onOpenDraft={id => navigatePath(`/tailor/drafts/${id}`)}
             onOpenInCanvas={(resumeId) => {
               setCanvasResumeId(resumeId);
               navigatePath(CANVAS_PATH);
@@ -103,15 +114,20 @@ export function App() {
           />
         )}
 
-        {currentTab === 'tailor' && tailorView.mode === 'list' && (
-          <TailoringRunList
-            onOpenRun={(slug) => navigatePath(`/tailor/${slug}`)}
+        {currentTab === 'tailor' && (tailorView.mode === 'list' || tailorView.mode === 'draft' || tailorView.mode === 'canvas') && (
+          <TailoringDraftRoute
+            key={tailorListVisit}
+            canvas={tailorView.mode === 'canvas'}
+            preferredResumeId={canvasResumeId}
+            draftId={tailorView.mode === 'draft' ? tailorView.draftId : undefined}
+            navigate={navigatePath}
+            registerGuard={(guard) => { navigationGuard.current = guard; }}
             onOpenSettings={() => navigateTo('settings')}
             onOpenCanvas={() => navigatePath(CANVAS_PATH)}
-            initialPosting={handoffPosting}
-            onInitialPostingConsumed={() => setHandoffPosting(undefined)}
           />
         )}
+
+        {currentTab === 'tailor' && tailorView.mode === 'unavailable' && <div><h1>Draft unavailable</h1><button onClick={() => navigatePath('/tailor')}>Back to tailoring</button></div>}
 
         {/* Runner Settings */}
         {currentTab === 'settings' && <SettingsView />}
@@ -136,17 +152,6 @@ export function App() {
           <RubricGapMatrix />
         </div>
 
-        {/* Manual resume canvas (a mode of the tailor tab) */}
-        <div className={isCanvasVisible ? 'block' : 'hidden'}>
-          <ResumeTailor
-            preferredResumeId={canvasResumeId}
-            onBackToRuns={() => navigatePath('/tailor')}
-            onStartTailoringRun={(posting) => {
-              setHandoffPosting(posting);
-              navigatePath('/tailor');
-            }}
-          />
-        </div>
       </Layout>
     </ThemeProvider>
   );

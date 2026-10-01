@@ -1,3 +1,6 @@
+import { DraftRevisionTokenSchema, type RevisionToken } from '@featherduster/core';
+export interface DraftChangeEvent { draftId: string; token?: RevisionToken }
+export type DraftChangeListener = (event: DraftChangeEvent) => void;
 export type ChangeListener = (event: any) => void;
 export type TailoringListener = (event: any) => void;
 export type StatusListener = (connected: boolean) => void;
@@ -5,6 +8,7 @@ export type StatusListener = (connected: boolean) => void;
 class SseClient {
   private eventSource: EventSource | null = null;
   private changeListeners = new Set<ChangeListener>();
+  private draftListeners = new Set<DraftChangeListener>();
   private tailoringListeners = new Set<TailoringListener>();
   private statusListeners = new Set<StatusListener>();
   private connected = false;
@@ -17,7 +21,7 @@ class SseClient {
   }
 
   private totalListeners(): number {
-    return this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
+    return this.draftListeners.size + this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
   }
 
   private setConnected(status: boolean) {
@@ -89,6 +93,17 @@ class SseClient {
         }
       });
 
+      source.addEventListener('tailoring-draft', (e: MessageEvent) => {
+        try {
+          const data: unknown = JSON.parse(e.data);
+          if (!data || typeof data !== 'object' || !('draftId' in data) || typeof data.draftId !== 'string') return;
+          const token = 'token' in data ? DraftRevisionTokenSchema.parse(data.token) : undefined;
+          for (const listener of this.draftListeners) {
+            try { listener({ draftId: data.draftId, token }); } catch { /* Isolate listeners. */ }
+          }
+        } catch { /* Ignore malformed metadata events. */ }
+      });
+
       source.onopen = () => {
         this.retryAttempts = 0;
         this.setConnected(true);
@@ -147,6 +162,12 @@ class SseClient {
     };
   }
 
+  onDraftChange(listener: DraftChangeListener): () => void {
+    this.draftListeners.add(listener);
+    this.connect();
+    return () => { this.draftListeners.delete(listener); this.scheduleDisconnectIfOrphaned(); };
+  }
+
   onTailoring(listener: TailoringListener): () => void {
     this.tailoringListeners.add(listener);
     this.connect();
@@ -187,6 +208,7 @@ class SseClient {
     this.close();
     this.changeListeners.clear();
     this.tailoringListeners.clear();
+    this.draftListeners.clear();
     this.statusListeners.clear();
   }
 }

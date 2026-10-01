@@ -1,9 +1,11 @@
 /**
  * @vitest-environment jsdom
  */
+import { useState } from 'react';
+import type { DraftContext } from '@featherduster/core';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
 import { ProposalsStep } from '../src/views/tailoring/steps/ProposalsStep';
 import { apiClient } from '../src/api/client';
 import type { Proposal, ResumeSpec, JobAnalysis } from '@featherduster/core';
@@ -107,20 +109,21 @@ describe('Two-Pane Side-by-Side Tailoring Diff Inspector (Task #14)', () => {
     cleanup();
   });
 
-  const renderComponent = (props: Partial<Parameters<typeof ProposalsStep>[0]> = {}) =>
-    render(
-      <ProposalsStep
-        proposals={sampleProposals}
-        baseResume={sampleResume}
-        analysis={sampleAnalysis}
-        pageBudget={null}
-        readOnly={false}
-        saving={false}
-        onSave={mockOnSave}
-        onOpenEvidence={mockOnOpenEvidence}
-        {...props}
-      />
-    );
+  const mockApply = vi.fn(async () => {});
+  const renderComponent = (props: Partial<Parameters<typeof ProposalsStep>[0]> = {}) => {
+    function Controlled() {
+      const [value, setValue] = useState(sampleProposals);
+      const [context, setContext] = useState<DraftContext>({});
+      const [textById, setText] = useState<Record<string, string>>({});
+      return <ProposalsStep value={value} baseResume={sampleResume} analysis={sampleAnalysis} pageBudget={null}
+        readOnly={false} applying={false} unapplied={false}
+        onChange={(next, buffers) => { setValue(next); if (buffers) setText(buffers); mockOnSave(next); }} onApply={mockApply}
+        context={context} onContextChange={patch => setContext(old => ({ ...old, ...patch }))}
+        textById={textById} onTextChange={(id, text) => setText(old => ({ ...old, [id]: text }))}
+        onOpenEvidence={mockOnOpenEvidence} {...props} />;
+    }
+    return render(<Controlled />);
+  };
 
   it('renders Diff Mode tablist with Side-by-Side Diff active by default', () => {
     renderComponent();
@@ -204,6 +207,40 @@ describe('Two-Pane Side-by-Side Tailoring Diff Inspector (Task #14)', () => {
     });
   });
 
+  it.each(['decision', 'text'] as const)('does not let a late filler cleanup overwrite newer proposal %s', async change => {
+    let finish!: (value: any) => void;
+    vi.spyOn(apiClient, 'deslopText').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    renderComponent();
+    fireEvent.click(screen.getByRole('button', { name: /Clean filler/i }));
+    const item = screen.getByRole('listitem', { name: /Proposal prop-02/ });
+    if (change === 'decision') fireEvent.click(within(item).getByRole('button', { name: /Reject/ }));
+    else {
+      fireEvent.click(within(item).getByRole('button', { name: /^Edit$/ }));
+      fireEvent.change(screen.getByLabelText('Edit proposal prop-02'), { target: { value: 'New typing while cleaning' } });
+    }
+    await act(async () => finish({ success: true, cleanedText: 'Cleaned', fixesApplied: [] }));
+    if (change === 'decision') expect(within(item).getByRole('button', { name: /Reject/ })).toHaveAttribute('aria-pressed', 'true');
+    else expect(screen.getByLabelText('Edit proposal prop-02')).toHaveValue('New typing while cleaning');
+    expect(mockOnSave.mock.calls.at(-1)?.[0].find((p: Proposal) => p.id === 'prop-02')?.edited_after).not.toBe('Cleaned');
+  });
+
+  it('does not overwrite citations changed while filler cleanup is pending', async () => {
+    let finish!: (value: any) => void;
+    vi.spyOn(apiClient, 'deslopText').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const onChange = vi.fn();
+    const props: Parameters<typeof ProposalsStep>[0] = {
+      value: sampleProposals, baseResume: sampleResume, analysis: sampleAnalysis, pageBudget: null,
+      readOnly: false, applying: false, unapplied: false, onChange, onApply: mockApply,
+      context: {}, onContextChange: vi.fn(), textById: {}, onTextChange: vi.fn(), onOpenEvidence: mockOnOpenEvidence,
+    };
+    const view = render(<ProposalsStep {...props} />);
+    fireEvent.click(screen.getByRole('button', { name: /Clean filler/i }));
+    view.rerender(<ProposalsStep {...props} value={sampleProposals.map(p => p.id === 'prop-02' ? { ...p, citations: ['new-evidence'] } : p)} />);
+    await act(async () => finish({ success: true, cleanedText: 'Cleaned', fixesApplied: [] }));
+    expect(screen.getByRole('button', { name: 'new-evidence' })).toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('supports one-click Accept and Reject per bullet edit with immediate save callback', () => {
     renderComponent();
 
@@ -228,7 +265,7 @@ describe('Two-Pane Side-by-Side Tailoring Diff Inspector (Task #14)', () => {
     );
   });
 
-  it('supports opening and saving manual edits on a proposal', () => {
+  it('supports opening and applying controlled manual edits on a proposal', async () => {
     renderComponent();
 
     const proposalItem = screen.getByRole('listitem', { name: /Proposal prop-01: Bullet rewrite/i });
@@ -239,14 +276,12 @@ describe('Two-Pane Side-by-Side Tailoring Diff Inspector (Task #14)', () => {
     expect(textarea).toBeInTheDocument();
 
     fireEvent.change(textarea, { target: { value: 'Custom engineered high-throughput mesh.' } });
-    const saveEditBtn = screen.getByRole('button', { name: /Save edit/i });
+    const saveEditBtn = screen.getByRole('button', { name: /Apply edit/i });
     fireEvent.click(saveEditBtn);
 
-    expect(mockOnSave).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'prop-01', edited_after: 'Custom engineered high-throughput mesh.' }),
-      ])
-    );
+    expect(textarea).toHaveValue('Custom engineered high-throughput mesh.');
+    await waitFor(() => expect(mockApply).toHaveBeenCalled());
+
   });
 
   it('renders side-by-side representation for bullet.add proposals', () => {
