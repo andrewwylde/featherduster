@@ -617,7 +617,7 @@
         "description": "Implement local semantic vector search over past evidence ledger entries for rapid retrieval during job tailoring.",
         "details": "Feature proposal for Featherduster Core (packages/core/src/parsers/vector-index.ts):\n- Generates offline, local embeddings of evidence summaries, problem contexts, and outcomes\n- Allows instant semantic nearest-neighbor retrieval when pasting a target job description\n- 100% local-first and zero-cloud to preserve confidential career data",
         "testStrategy": "npx vitest run packages/core/tests/evidence-parser.test.ts",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": [
@@ -625,21 +625,21 @@
             "id": 57.1,
             "title": "1. Falsifiable Specification for Local Air-Gapped Vector Search for Evidence Retrieval",
             "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/evidence-parser.test.ts",
-            "status": "pending",
+            "status": "done",
             "parentId": "undefined"
           },
           {
             "id": 57.2,
             "title": "2. Implementation of Local Air-Gapped Vector Search for Evidence Retrieval",
             "description": "Implement changes satisfying requirements: Implement local semantic vector search over past evidence ledger entries for rapid retrieval during job tailoring.\nFeature proposal for Featherduster Core (packages/core/src/parsers/vector-index.ts):\n- Generates offline, local embeddings of evidence summaries, problem contexts, and outcomes\n- Allows instant semantic nearest-neighbor retrieval when pasting a target job description\n- 100% local-first and zero-cloud to preserve confidential career data",
-            "status": "pending",
+            "status": "done",
             "parentId": "undefined"
           },
           {
             "id": 57.3,
             "title": "3. Verification & Monorepo Guard",
             "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
-            "status": "pending",
+            "status": "done",
             "parentId": "undefined"
           }
         ],
@@ -651,7 +651,7 @@
           "core",
           "promoted-from-proposals"
         ],
-        "updatedAt": "2026-10-02T03:31:32.349000+00:00"
+        "updatedAt": "2026-10-02T04:07:13.380Z"
       }
     ],
     "metadata": {

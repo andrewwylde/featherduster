@@ -4,6 +4,11 @@ import {
   MetricEntry,
   InternalReference,
 } from '../schemas/evidence.js';
+import {
+  EvidenceVectorIndex,
+  VectorSearchResult,
+  VectorSearchOptions,
+} from './vector-index.js';
 
 export interface EvidenceRecord {
   entry: EvidenceEntry;
@@ -104,6 +109,7 @@ export function matchesSearch(record: EvidenceRecord, searchTerm: string): boole
  */
 export class EvidenceStore {
   private readonly entries = new Map<string, EvidenceRecord>();
+  private readonly vectorIndex = new EvidenceVectorIndex();
 
   constructor(
     initialEntries?: Array<
@@ -123,7 +129,7 @@ export class EvidenceStore {
   }
 
   /**
-   * Adds an evidence entry to the store.
+   * Adds an evidence entry to the store and updates the semantic vector index.
    */
   add(entry: EvidenceEntry, narrative?: string, filePath?: string): EvidenceRecord;
   add(record: { entry: EvidenceEntry; narrative?: string; filePath?: string }): EvidenceRecord;
@@ -154,6 +160,7 @@ export class EvidenceStore {
     };
 
     this.entries.set(entry.id, record);
+    this.vectorIndex.add(record);
     return record;
   }
 
@@ -172,9 +179,10 @@ export class EvidenceStore {
   }
 
   /**
-   * Removes an evidence entry by ID.
+   * Removes an evidence entry by ID and removes it from the vector index.
    */
   remove(id: string): boolean {
+    this.vectorIndex.remove(id);
     return this.entries.delete(id);
   }
 
@@ -186,10 +194,25 @@ export class EvidenceStore {
   }
 
   /**
-   * Clears all stored evidence entries.
+   * Clears all stored evidence entries and vector embeddings.
    */
   clear(): void {
     this.entries.clear();
+    this.vectorIndex.clear();
+  }
+
+  /**
+   * Performs 100% air-gapped local semantic vector search across all evidence entries.
+   */
+  semanticSearch(query: string, options?: VectorSearchOptions): VectorSearchResult[] {
+    return this.vectorIndex.search(query, options);
+  }
+
+  /**
+   * Returns the underlying EvidenceVectorIndex instance.
+   */
+  getVectorIndex(): EvidenceVectorIndex {
+    return this.vectorIndex;
   }
 
   /**

@@ -516,6 +516,47 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     return c.json(records);
   });
 
+  // 2b. Air-gapped local vector search across evidence ledger
+  app.post('/api/evidence/semantic-search', async (c) => {
+    try {
+      const body = await c.req.json();
+      const query = typeof body.query === 'string' ? body.query : '';
+      if (!query.trim()) {
+        return c.json([]);
+      }
+      const store = loadEvidenceStore(resolvedWorkspaceDir);
+      const results = store.semanticSearch(query, {
+        limit: typeof body.limit === 'number' ? body.limit : 10,
+        minScore: typeof body.minScore === 'number' ? body.minScore : 0.05,
+        filters: body.filters,
+      });
+      return c.json(results);
+    } catch (err: any) {
+      return c.json({ error: err.message || 'Failed to execute semantic vector search' }, 400);
+    }
+  });
+
+  app.get('/api/evidence/semantic-search', (c) => {
+    const store = loadEvidenceStore(resolvedWorkspaceDir);
+    const url = new URL(c.req.url);
+    const query = url.searchParams.get('q') ?? url.searchParams.get('query') ?? '';
+    if (!query.trim()) {
+      return c.json([]);
+    }
+    const limit = url.searchParams.get('limit') ? Number(url.searchParams.get('limit')) : 10;
+    const minScore = url.searchParams.get('minScore') ? Number(url.searchParams.get('minScore')) : 0.05;
+    const company = url.searchParams.get('company') ?? undefined;
+    const theme = url.searchParams.get('theme') ?? undefined;
+    const confidence = url.searchParams.get('confidence') ?? undefined;
+
+    const results = store.semanticSearch(query, {
+      limit,
+      minScore,
+      filters: { company, theme, confidence },
+    });
+    return c.json(results);
+  });
+
   // 3. Evidence create & update
   app.post('/api/evidence', async (c) => {
     try {

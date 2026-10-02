@@ -29,3 +29,4 @@ export * from './tailoring/drafts.js';
 export * from './tailoring/draft-state.js';
 export * from './tailoring/resume-merge.js';
 export * from './integrity/confidentiality-scanner.js';
+export * from './parsers/vector-index.js';

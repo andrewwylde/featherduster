@@ -397,6 +397,32 @@ export class ApiClient {
   }
 
   /**
+   * Air-gapped local semantic vector search across evidence ledger entries
+   */
+  async semanticSearchEvidence(
+    query: string,
+    options?: { limit?: number; minScore?: number; filters?: EvidenceFilters }
+  ): Promise<
+    Array<{
+      record: EvidenceRecord;
+      score: number;
+      matchedTokens: string[];
+      matchedThemes: string[];
+    }>
+  > {
+    return this.fetchJson('/api/evidence/semantic-search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        limit: options?.limit,
+        minScore: options?.minScore,
+        filters: options?.filters,
+      }),
+    });
+  }
+
+  /**
    * Create or update an evidence entry
    */
   async saveEvidence(

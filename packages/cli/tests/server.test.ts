@@ -230,6 +230,48 @@ describe('Local Hono Server Integration Tests', () => {
     });
   });
 
+  describe('Semantic Vector Search Endpoints', () => {
+    it('POST /api/evidence/semantic-search performs local air-gapped vector search', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/evidence/semantic-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          query: 'database migration and session token authentication',
+          limit: 5,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const results = await res.json();
+      expect(Array.isArray(results)).toBe(true);
+      expect(results.length).toBeGreaterThanOrEqual(1);
+
+      const top = results[0];
+      expect(top.record.id).toBe('ev-042');
+      expect(top.score).toBeGreaterThan(0.2);
+      expect(top.matchedTokens.length).toBeGreaterThan(0);
+    });
+
+    it('GET /api/evidence/semantic-search performs query via query string', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/evidence/semantic-search?q=zero-downtime+migration');
+      expect(res.status).toBe(200);
+      const results = await res.json();
+      expect(Array.isArray(results)).toBe(true);
+      expect(results.length).toBe(1);
+      expect(results[0].record.id).toBe('ev-042');
+    });
+
+    it('returns empty array on empty search query', async () => {
+      const app = createApp(tmpWorkspace);
+      const res = await app.request('/api/evidence/semantic-search?q=');
+      expect(res.status).toBe(200);
+      const results = await res.json();
+      expect(results).toEqual([]);
+    });
+  });
+
   describe('POST /api/evidence', () => {
     it('creates a new evidence markdown file on disk with valid frontmatter and returns success', async () => {
       const app = createApp(tmpWorkspace);
