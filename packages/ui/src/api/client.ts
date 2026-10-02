@@ -752,6 +752,40 @@ export class ApiClient {
       body: JSON.stringify({ relativePath }),
     });
   }
+
+  /**
+   * Compile and save standalone defensibility brief directly to disk
+   */
+  async exportBrief(payload: ExportBriefPayload): Promise<ExportBriefResponse> {
+    return this.fetchJson<ExportBriefResponse>('/api/exports/brief', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  }
+}
+
+export interface ExportBriefPayload {
+  name: string;
+  spec: ResumeSpec;
+  format?: 'markdown' | 'html' | 'all';
+  targetCompany?: string;
+  targetRole?: string;
+  jobDescription?: string;
+  matchedKeywords?: string[];
+  missingKeywords?: string[];
+}
+
+export interface ExportBriefResponse {
+  success: boolean;
+  name?: string;
+  files: Array<{
+    name: string;
+    relativePath: string;
+    category: 'brief';
+    format: string;
+  }>;
+  error?: string;
 }
 
 export interface ExportArtifact {

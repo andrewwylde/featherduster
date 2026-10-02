@@ -85,6 +85,7 @@ import {
   compileMarkdownResume,
   compileTypstResume,
   compileDefenseBrief,
+  compileHtmlDefenseBrief,
   calculatePageBudget,
   lintCitations,
   parseEvidenceLedger,
@@ -775,6 +776,30 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
           });
           break;
         }
+        case 'brief': {
+          const store = loadEvidenceStore(resolvedWorkspaceDir);
+          output = compileDefenseBrief(spec, store, {
+            candidateName: spec.candidateName || spec.profile?.name,
+            targetCompany: spec.targetCompany,
+            targetRole: spec.targetRole,
+            jobDescription: spec.jobDescription,
+            matchedKeywords: spec.matchedKeywords,
+            missingKeywords: spec.missingKeywords,
+          });
+          break;
+        }
+        case 'brief-html': {
+          const store = loadEvidenceStore(resolvedWorkspaceDir);
+          output = compileHtmlDefenseBrief(spec, store, {
+            candidateName: spec.candidateName || spec.profile?.name,
+            targetCompany: spec.targetCompany,
+            targetRole: spec.targetRole,
+            jobDescription: spec.jobDescription,
+            matchedKeywords: spec.matchedKeywords,
+            missingKeywords: spec.missingKeywords,
+          });
+          break;
+        }
         default:
           return c.json({ error: `Unsupported format: ${format}` }, 400);
       }
@@ -1185,6 +1210,82 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         {
           success: false,
           error: err.message || 'Failed to compile and save application bundle',
+          issues: err.issues,
+        },
+        400
+      );
+    }
+  });
+
+  // 6i. Compile and save standalone interview defensibility brief (Markdown and/or HTML)
+  app.post('/api/exports/brief', async (c) => {
+    try {
+      const body = await c.req.json();
+      let rawName = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!rawName) {
+        return c.json({ success: false, error: 'Brief name / slug is required' }, 400);
+      }
+      rawName = rawName.replace(/\.(ya?ml|json|md|html)$/i, '');
+      const safeName = rawName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const validatedSpec = ResumeSpecSchema.parse(body.spec);
+      const store = loadEvidenceStore(resolvedWorkspaceDir);
+
+      const requestedFormat = body.format || 'markdown'; // 'markdown' | 'html' | 'all'
+      const briefsDir = path.join(resolvedWorkspaceDir, 'resumes', 'tailored', 'briefs');
+      fs.mkdirSync(briefsDir, { recursive: true });
+
+      const generatedFiles: Array<{
+        name: string;
+        relativePath: string;
+        category: 'brief';
+        format: string;
+      }> = [];
+
+      const briefOptions = {
+        candidateName: body.candidateName || validatedSpec.profile?.name,
+        targetCompany: body.targetCompany,
+        targetRole: body.targetRole,
+        jobDescription: body.jobDescription,
+        matchedKeywords: body.matchedKeywords,
+        missingKeywords: body.missingKeywords,
+      };
+
+      if (requestedFormat === 'markdown' || requestedFormat === 'all') {
+        const mdContent = compileDefenseBrief(validatedSpec, store, briefOptions);
+        const mdFileName = `${safeName}-defense-brief.md`;
+        const mdFilePath = path.join(briefsDir, mdFileName);
+        fs.writeFileSync(mdFilePath, mdContent, 'utf-8');
+        generatedFiles.push({
+          name: mdFileName,
+          relativePath: path.relative(resolvedWorkspaceDir, mdFilePath).replace(/\\/g, '/'),
+          category: 'brief',
+          format: 'markdown',
+        });
+      }
+
+      if (requestedFormat === 'html' || requestedFormat === 'all') {
+        const htmlContent = compileHtmlDefenseBrief(validatedSpec, store, briefOptions);
+        const htmlFileName = `${safeName}-defense-brief.html`;
+        const htmlFilePath = path.join(briefsDir, htmlFileName);
+        fs.writeFileSync(htmlFilePath, htmlContent, 'utf-8');
+        generatedFiles.push({
+          name: htmlFileName,
+          relativePath: path.relative(resolvedWorkspaceDir, htmlFilePath).replace(/\\/g, '/'),
+          category: 'brief',
+          format: 'html',
+        });
+      }
+
+      return c.json({
+        success: true,
+        name: safeName,
+        files: generatedFiles,
+      });
+    } catch (err: any) {
+      return c.json(
+        {
+          success: false,
+          error: err.message || 'Failed to export defensibility brief',
           issues: err.issues,
         },
         400

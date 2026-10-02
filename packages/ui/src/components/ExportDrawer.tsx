@@ -89,6 +89,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
 
   // Format and compiler state
   const [activeFormat, setActiveFormat] = useState<DrawerFormat>('markdown');
+  const [briefView, setBriefView] = useState<'markdown' | 'html'>('markdown');
   const [compiledOutput, setCompiledOutput] = useState('');
   const [compiling, setCompiling] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -118,28 +119,33 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
   const missingKeywordsKey = missingKeywords.join('\u0000');
 
   // Load compiled format preview
-  const compileFormat = useCallback(async (format: DrawerFormat) => {
-    if (!spec.profile?.name && (spec.experiences || []).length === 0) return;
-    try {
-      setCompiling(true);
-      const res = await apiClient.compileResume(
-        {
-          ...spec,
-          targetCompany,
-          targetRole,
-          jobDescription,
-          matchedKeywords,
-          missingKeywords,
-        },
-        format
-      );
-      setCompiledOutput(res.output || '');
-    } catch (err: any) {
-      setCompiledOutput(`// Compilation Error:\n${err.message || err}`);
-    } finally {
-      setCompiling(false);
-    }
-  }, [spec, targetCompany, targetRole, jobDescription, matchedKeywordsKey, missingKeywordsKey]);
+  const compileFormat = useCallback(
+    async (format: DrawerFormat, currentBriefView: 'html' | 'markdown' = briefView) => {
+      if (!spec.profile?.name && (spec.experiences || []).length === 0) return;
+      try {
+        setCompiling(true);
+        const targetFormat =
+          format === 'brief' && currentBriefView === 'html' ? 'brief-html' : format;
+        const res = await apiClient.compileResume(
+          {
+            ...spec,
+            targetCompany,
+            targetRole,
+            jobDescription,
+            matchedKeywords,
+            missingKeywords,
+          },
+          targetFormat
+        );
+        setCompiledOutput(res.output || '');
+      } catch (err: any) {
+        setCompiledOutput(`// Compilation Error:\n${err.message || err}`);
+      } finally {
+        setCompiling(false);
+      }
+    },
+    [spec, targetCompany, targetRole, jobDescription, matchedKeywordsKey, missingKeywordsKey, briefView]
+  );
 
   // Typst rendering effect
   const shouldRenderTypst = isOpen && activeFormat === 'typst' && typstView === 'preview';
@@ -217,10 +223,10 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      compileFormat(activeFormat);
+      compileFormat(activeFormat, briefView);
       loadArtifacts();
     }
-  }, [isOpen, activeFormat, compileFormat, loadArtifacts]);
+  }, [isOpen, activeFormat, briefView, compileFormat, loadArtifacts]);
 
   if (!isOpen) return null;
 
@@ -255,12 +261,13 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
   // Download active compiled file
   const handleDownloadActive = () => {
     if (!compiledOutput) return;
+    const isBriefHtml = activeFormat === 'brief' && briefView === 'html';
     const extMap: Record<DrawerFormat, string> = {
       markdown: 'md',
       html: 'html',
       typst: 'typ',
       latex: 'tex',
-      brief: 'md',
+      brief: isBriefHtml ? 'html' : 'md',
     };
     const ext = extMap[activeFormat] || 'txt';
     const mimeMap: Record<DrawerFormat, string> = {
@@ -268,7 +275,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
       html: 'text/html;charset=utf-8',
       typst: 'text/plain;charset=utf-8',
       latex: 'application/x-latex;charset=utf-8',
-      brief: 'text/markdown;charset=utf-8',
+      brief: isBriefHtml ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8',
     };
     const mime = mimeMap[activeFormat] || 'text/plain';
 
@@ -279,7 +286,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
     const safeSlug = (variantName || 'resume').replace(/[^a-zA-Z0-9_-]/g, '_');
     a.download =
       activeFormat === 'brief'
-        ? `${safeSlug}-defense-brief.md`
+        ? `${safeSlug}-defense-brief.${ext}`
         : `resume_${safeSlug}.${ext}`;
     document.body.appendChild(a);
     a.click();
@@ -287,8 +294,22 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Print Defense Brief directly via embedded print preview iframe
+  const handlePrintBrief = () => {
+    if (printIframeRef.current?.contentWindow) {
+      printIframeRef.current.contentWindow.focus();
+      printIframeRef.current.contentWindow.print();
+    } else {
+      window.print();
+    }
+  };
+
   // Compile the canonical LaTeX export on the server and download its PDF.
   const handlePrintHtml = async () => {
+    if (activeFormat === 'brief') {
+      handlePrintBrief();
+      return;
+    }
     setPdfExporting(true);
     setPdfError(null);
     try {
@@ -305,6 +326,36 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
       setPdfError(err?.message || 'Failed to export LaTeX PDF');
     } finally {
       setPdfExporting(false);
+    }
+  };
+
+  // Standalone Defensibility Brief Exporter (Markdown + HTML to disk)
+  const handleExportBrief = async () => {
+    try {
+      setBundleLoading(true);
+      setBundleMessage(null);
+      setBundleOpenPath(null);
+      const res = await apiClient.exportBrief({
+        name: variantName || 'interview-defense',
+        spec,
+        format: 'all',
+        targetCompany,
+        targetRole,
+        jobDescription,
+        matchedKeywords,
+        missingKeywords,
+      });
+
+      if (res.success) {
+        setBundleMessage(`Defense brief saved (${res.files.length} artifacts in briefs/)`);
+        setBundleOpenPath(res.files[0]?.relativePath ?? null);
+        await loadArtifacts();
+        setTimeout(() => setBundleMessage(null), 5000);
+      }
+    } catch (err: any) {
+      alert(`Failed to export defense brief: ${err.message}`);
+    } finally {
+      setBundleLoading(false);
     }
   };
 
@@ -454,10 +505,10 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
                 onClick={() => void handlePrintHtml()}
                 disabled={pdfExporting}
                 className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-purple-900/30 min-h-[44px]"
-                title="Compile the LaTeX resume and download its PDF"
+                title={activeFormat === 'brief' ? "Print or save Defense Brief to PDF" : "Compile the LaTeX resume and download its PDF"}
               >
                 {pdfExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
-                <span>{pdfExporting ? 'Compiling LaTeX…' : 'Print to PDF'}</span>
+                <span>{pdfExporting ? 'Compiling LaTeX…' : activeFormat === 'brief' ? 'Print Brief' : 'Print to PDF'}</span>
               </button>
 
               {/* Compile Complete Release Bundle */}
@@ -707,6 +758,61 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
                   </div>
                 )}
 
+                {activeFormat === 'brief' && (
+                  <div className="flex items-center justify-between gap-2 px-1">
+                    <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+                      <button
+                        onClick={() => {
+                          setBriefView('html');
+                          compileFormat('brief', 'html');
+                        }}
+                        aria-pressed={briefView === 'html'}
+                        className={`px-2 py-0.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
+                          briefView === 'html' ? 'bg-teal-700 text-white' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Eye className="w-3 h-3" />
+                        <span>Print Preview</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setBriefView('markdown');
+                          compileFormat('brief', 'markdown');
+                        }}
+                        aria-pressed={briefView === 'markdown'}
+                        className={`px-2 py-0.5 text-xs font-medium rounded-md transition-colors inline-flex items-center gap-1 ${
+                          briefView === 'markdown' ? 'bg-teal-700 text-white' : 'text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        <Code2 className="w-3 h-3" />
+                        <span>Markdown Source</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={handleExportBrief}
+                        disabled={bundleLoading}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-teal-300 border border-teal-500/30 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                        title="Save standalone Markdown & HTML defense briefs to disk in resumes/tailored/briefs/"
+                      >
+                        <HardDrive className="w-3.5 h-3.5" />
+                        <span>Save to Disk</span>
+                      </button>
+                      {briefView === 'html' && (
+                        <button
+                          onClick={handlePrintBrief}
+                          className="px-2.5 py-1 bg-teal-600 hover:bg-teal-500 text-white rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5 shadow-sm shadow-teal-900/30"
+                          title="Open browser print dialog to print or save Defense Brief as PDF"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Print PDF</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Preview Box */}
                 <div className="flex-1 overflow-hidden bg-slate-950 border border-slate-800 rounded-xl relative flex flex-col">
                   {activeFormat === 'typst' && pdfError && (
@@ -719,11 +825,11 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
                       <RefreshCw className="w-6 h-6 animate-spin text-purple-400" />
                       <span className="text-xs font-mono">Compiling {activeFormat.toUpperCase()}...</span>
                     </div>
-                  ) : activeFormat === 'html' ? (
+                  ) : activeFormat === 'html' || (activeFormat === 'brief' && briefView === 'html') ? (
                     <iframe
                       ref={printIframeRef}
                       srcDoc={compiledOutput}
-                      title="Resume Print Preview"
+                      title={activeFormat === 'brief' ? 'Defense Brief Print Preview' : 'Resume Print Preview'}
                       className="w-full flex-1 bg-white rounded-lg shadow-inner border-0"
                     />
                   ) : activeFormat === 'typst' && typstView === 'preview' ? (

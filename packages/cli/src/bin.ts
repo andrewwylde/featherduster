@@ -57,59 +57,85 @@ cli
     await runCheckCommand({ workspace, exitOnError: true, strict: options.strict });
   });
 
+async function handleBuildOrExport(target?: string, options: any = {}) {
+  let workspace = options.workspace || process.cwd();
+  let spec = options.spec;
+
+  if (target) {
+    const resolved = path.resolve(target);
+    if (fs.existsSync(resolved)) {
+      if (fs.statSync(resolved).isDirectory()) {
+        workspace = resolved;
+      } else if (fs.statSync(resolved).isFile()) {
+        spec = resolved;
+        if (!options.workspace) {
+          const candidate = path.dirname(path.dirname(resolved));
+          if (fs.existsSync(path.join(candidate, '.featherduster'))) {
+            workspace = candidate;
+          } else {
+            workspace = path.dirname(resolved);
+          }
+        }
+      }
+    } else {
+      const candidateSpecYaml = path.join(workspace, 'resumes', 'tailored', `${target}.yaml`);
+      const candidateSpecJson = path.join(workspace, 'resumes', 'tailored', `${target}.json`);
+      if (fs.existsSync(candidateSpecYaml)) {
+        spec = candidateSpecYaml;
+      } else if (fs.existsSync(candidateSpecJson)) {
+        spec = candidateSpecJson;
+      }
+    }
+  }
+
+  let format = options.format;
+  if (options.brief) {
+    format = options.html ? 'brief-html' : 'brief';
+  }
+
+  await runBuildCommand({
+    workspace,
+    format,
+    brief: Boolean(options.brief),
+    spec,
+    rubric: options.rubric,
+    output: options.output,
+    stdout: options.stdout,
+    strict: Boolean(options.strict),
+  });
+}
+
 // 3. Build command: headless resume and brag doc compiler
 cli
-  .command('build [target]', 'Compile tailored resume or performance brag doc')
+  .command('build [target]', 'Compile tailored resume, performance brag doc, or interview brief')
   .option('-w, --workspace <dir>', 'Path to workspace directory')
-  .option('-f, --format <format>', 'Export format: markdown | html | brag | typst | latex | brief', {
+  .option('-f, --format <format>', 'Export format: markdown | html | brag | typst | latex | brief | brief-html', {
     default: 'markdown',
   })
+  .option('--brief', 'Compile standalone interview defense brief')
+  .option('--html', 'Output print-ready HTML when compiling defense brief')
   .option('-s, --spec <file>', 'Path to resume spec or rubric file')
   .option('-r, --rubric <id>', 'Rubric ID for brag doc compilation')
   .option('-o, --output <file>', 'Output destination path')
   .option('--stdout', 'Stream compiled output directly to stdout')
   .option('--strict', 'Fail build with error code if banned keywords are detected')
-  .action(async (target?: string, options: any = {}) => {
-    let workspace = options.workspace || process.cwd();
-    let spec = options.spec;
+  .action(handleBuildOrExport);
 
-    if (target) {
-      const resolved = path.resolve(target);
-      if (fs.existsSync(resolved)) {
-        if (fs.statSync(resolved).isDirectory()) {
-          workspace = resolved;
-        } else if (fs.statSync(resolved).isFile()) {
-          spec = resolved;
-          if (!options.workspace) {
-            const candidate = path.dirname(path.dirname(resolved));
-            if (fs.existsSync(path.join(candidate, '.featherduster'))) {
-              workspace = candidate;
-            } else {
-              workspace = path.dirname(resolved);
-            }
-          }
-        }
-      } else {
-        const candidateSpecYaml = path.join(workspace, 'resumes', 'tailored', `${target}.yaml`);
-        const candidateSpecJson = path.join(workspace, 'resumes', 'tailored', `${target}.json`);
-        if (fs.existsSync(candidateSpecYaml)) {
-          spec = candidateSpecYaml;
-        } else if (fs.existsSync(candidateSpecJson)) {
-          spec = candidateSpecJson;
-        }
-      }
-    }
-
-    await runBuildCommand({
-      workspace,
-      format: options.format,
-      spec,
-      rubric: options.rubric,
-      output: options.output,
-      stdout: options.stdout,
-      strict: Boolean(options.strict),
-    });
-  });
+// 4. Export command: standalone exporter for resumes and defense briefs
+cli
+  .command('export [target]', 'Export tailored resume or standalone defensibility brief')
+  .option('-w, --workspace <dir>', 'Path to workspace directory')
+  .option('-f, --format <format>', 'Export format: markdown | html | brag | typst | latex | brief | brief-html', {
+    default: 'markdown',
+  })
+  .option('--brief', 'Export standalone interview defense brief')
+  .option('--html', 'Output print-ready HTML defense brief')
+  .option('-s, --spec <file>', 'Path to resume spec or rubric file')
+  .option('-r, --rubric <id>', 'Rubric ID for brag doc compilation')
+  .option('-o, --output <file>', 'Output destination path')
+  .option('--stdout', 'Stream compiled output directly to stdout')
+  .option('--strict', 'Fail export with error code if banned keywords are detected')
+  .action(handleBuildOrExport);
 
 // 4. Init command: scaffold new career workspace
 cli

@@ -575,7 +575,7 @@
         "description": "Generate dedicated interview defense dossier containing anticipated skeptical interviewer follow-ups, trade-offs, and ledger proof trails.",
         "details": "Feature proposal for Featherduster Compilers & UI (packages/core/src/compilers/defense-brief-compiler.ts):\n- Compiles standalone one-page defense brief per tailored resume or role\n- Anticipates hard Staff+ interview probes ('Why this architecture? What failed? What trade-offs?') with cited proof\n- Provides candidate cheat-sheet for rapid interview recall and defensibility verification",
         "testStrategy": "npx vitest run packages/core/tests/defense-brief.test.ts",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": [
@@ -583,21 +583,21 @@
             "id": 69.1,
             "title": "1. Falsifiable Specification for Standalone Defensibility Brief PDF & Markdown Exporter",
             "description": "Author Vitest assertions or gate checks verifying the expected behavior before changes: npx vitest run packages/core/tests/defense-brief.test.ts",
-            "status": "pending",
+            "status": "done",
             "parentId": "undefined"
           },
           {
             "id": 69.2,
             "title": "2. Implementation of Standalone Defensibility Brief PDF & Markdown Exporter",
             "description": "Implement changes satisfying requirements: Generate dedicated interview defense dossier containing anticipated skeptical interviewer follow-ups, trade-offs, and ledger proof trails.\nFeature proposal for Featherduster Compilers & UI (packages/core/src/compilers/defense-brief-compiler.ts):\n- Compiles standalone one-page defense brief per tailored resume or role\n- Anticipates hard Staff+ interview probes ('Why this architecture? What failed? What trade-offs?') with cited proof\n- Provides candidate cheat-sheet for rapid interview recall and defensibility verification",
-            "status": "pending",
+            "status": "done",
             "parentId": "undefined"
           },
           {
             "id": 69.3,
             "title": "3. Verification & Monorepo Guard",
             "description": "Run full test suite (`npm test`) and monorepo build (`npm run build`) to ensure zero regressions.",
-            "status": "pending",
+            "status": "done",
             "parentId": "undefined"
           }
         ],
@@ -609,7 +609,7 @@
           "export",
           "promoted-from-proposals"
         ],
-        "updatedAt": "2026-10-02T03:31:32.274718+00:00"
+        "updatedAt": "2026-10-02T04:01:55.557Z"
       },
       {
         "id": "17",

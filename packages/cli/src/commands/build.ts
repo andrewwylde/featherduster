@@ -11,6 +11,7 @@ import {
   compileLatexResume,
   compileBragDoc,
   compileDefenseBrief,
+  compileHtmlDefenseBrief,
   redactText,
 } from '@featherduster/core';
 import {
@@ -20,11 +21,12 @@ import {
   loadRubrics,
 } from '../server.js';
 
-export type BuildFormat = 'markdown' | 'html' | 'brag' | 'typst' | 'latex' | 'brief';
+export type BuildFormat = 'markdown' | 'html' | 'brag' | 'typst' | 'latex' | 'brief' | 'brief-html';
 
 export interface BuildOptions {
   workspace?: string;
   format?: BuildFormat;
+  brief?: boolean;
   spec?: string;
   rubric?: string;
   candidateName?: string;
@@ -51,6 +53,8 @@ function getExtensionForFormat(format: BuildFormat): string {
       return 'md';
     case 'brief':
       return 'md';
+    case 'brief-html':
+      return 'html';
     case 'typst':
       return 'typ';
     case 'latex':
@@ -63,7 +67,11 @@ function getExtensionForFormat(format: BuildFormat): string {
  */
 export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
   const workspaceDir = path.resolve(options?.workspace || process.cwd());
-  const format: BuildFormat = options?.format || 'markdown';
+  const requestedFormat = options?.format || 'markdown';
+  const format: BuildFormat =
+    options?.brief
+      ? (requestedFormat === 'html' || requestedFormat === 'brief-html' ? 'brief-html' : 'brief')
+      : requestedFormat;
   const privacyRules = loadPrivacyRules(workspaceDir);
 
   let output = '';
@@ -141,6 +149,13 @@ export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
         });
         break;
       }
+      case 'brief-html': {
+        const store = loadEvidenceStore(workspaceDir);
+        output = compileHtmlDefenseBrief(specObj, store, {
+          candidateName: options?.candidateName,
+        });
+        break;
+      }
       default:
         throw new Error(`Unsupported format: ${format}`);
     }
@@ -159,9 +174,16 @@ export async function runBuild(options?: BuildOptions): Promise<BuildResult> {
     process.stdout.write(output);
   } else {
     const ext = getExtensionForFormat(format);
+    const specSlug = options?.spec
+      ? path.basename(options.spec, path.extname(options.spec))
+      : '';
+    const briefFileName = specSlug
+      ? `${specSlug}-defense-brief.${ext}`
+      : `defense-brief.${ext}`;
+
     const defaultOutput =
-      format === 'brief'
-        ? path.join(workspaceDir, 'resumes', 'tailored', 'briefs', 'defense-brief.md')
+      format === 'brief' || format === 'brief-html'
+        ? path.join(workspaceDir, 'resumes', 'tailored', 'briefs', briefFileName)
         : path.join(workspaceDir, 'resumes', 'exports', `resume-${format}.${ext}`);
     if (options?.output) {
       outputPath = path.isAbsolute(options.output)

@@ -239,6 +239,31 @@ describe('CLI Commands & Watcher Tests', () => {
       expect(resLatex.output).toContain('\\documentclass');
     });
 
+    it('compiles standalone defense brief in Markdown and HTML via brief options', async () => {
+      const resBriefMd = await runBuild({
+        workspace: tmpWorkspace,
+        brief: true,
+      });
+      expect(resBriefMd.output).toContain('# 🛡️ Interview Defense Brief: Morgan Blake');
+      expect(resBriefMd.output).toContain('Distributed Transaction Coordinator');
+      expect(resBriefMd.output).toContain('ev-001');
+      expect(resBriefMd.outputPath).toBeDefined();
+      expect(resBriefMd.outputPath?.endsWith('.md')).toBe(true);
+      expect(fs.existsSync(resBriefMd.outputPath!)).toBe(true);
+
+      const resBriefHtml = await runBuild({
+        workspace: tmpWorkspace,
+        brief: true,
+        format: 'html',
+      });
+      expect(resBriefHtml.output).toContain('<!DOCTYPE html>');
+      expect(resBriefHtml.output).toContain('Interview Defense Brief: Morgan Blake');
+      expect(resBriefHtml.output).toContain('Distributed Transaction Coordinator');
+      expect(resBriefHtml.outputPath).toBeDefined();
+      expect(resBriefHtml.outputPath?.endsWith('.html')).toBe(true);
+      expect(fs.existsSync(resBriefHtml.outputPath!)).toBe(true);
+    });
+
     it('detects violations when compiled document contains banned keywords', async () => {
       const specWithBanned: ResumeSpec = {
         ...sampleSpec,

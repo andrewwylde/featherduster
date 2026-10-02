@@ -566,6 +566,53 @@ describe('Local Hono Server Integration Tests', () => {
       expect(body.isClean).toBe(true);
     });
 
+    it('compiles Defense Brief format in Markdown and print-ready HTML', async () => {
+      const app = createApp(tmpWorkspace);
+      const resBriefMd = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: {
+            ...sampleResumeSpec,
+            targetCompany: 'Acme Corp',
+            targetRole: 'Staff Architect',
+            matchedKeywords: ['Distributed Systems'],
+            missingKeywords: ['eBPF'],
+          },
+          format: 'brief',
+        }),
+      });
+
+      expect(resBriefMd.status).toBe(200);
+      const mdBody = await resBriefMd.json();
+      expect(mdBody.output).toContain('# 🛡️ Interview Defense Brief: Alex Mercer');
+      expect(mdBody.output).toContain('Staff Architect at Acme Corp');
+      expect(mdBody.output).toContain('Distributed Systems');
+      expect(mdBody.output).toContain('eBPF');
+      expect(mdBody.output).toContain('Zero-Downtime Session Migration');
+      expect(mdBody.output).toContain('ev-042');
+
+      const resBriefHtml = await app.request('/api/resumes/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: {
+            ...sampleResumeSpec,
+            targetCompany: 'Acme Corp',
+            targetRole: 'Staff Architect',
+          },
+          format: 'brief-html',
+        }),
+      });
+
+      expect(resBriefHtml.status).toBe(200);
+      const htmlBody = await resBriefHtml.json();
+      expect(htmlBody.output).toContain('<!DOCTYPE html>');
+      expect(htmlBody.output).toContain('Interview Defense Brief: Alex Mercer');
+      expect(htmlBody.output).toContain('Staff Architect at Acme Corp');
+      expect(htmlBody.output).toContain('@media print');
+    });
+
     it('flags violations and sets isClean=false when banned keywords appear in compiled output', async () => {
       const app = createApp(tmpWorkspace);
 
@@ -1122,6 +1169,48 @@ experiences:
       expect(hasBrief).toBe(true);
       expect(items[0]).toHaveProperty('sizeBytes');
       expect(items[0]).toHaveProperty('updatedAt');
+    });
+
+    it('POST /api/exports/brief compiles standalone defense briefs in Markdown and HTML directly to disk', async () => {
+      const app = createApp(tmpWorkspace);
+
+      const res = await app.request('/api/exports/brief', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'apple-staff-systems',
+          spec: sampleResumeSpec,
+          format: 'all',
+          targetCompany: 'Apple',
+          targetRole: 'Staff Systems Architect',
+          matchedKeywords: ['Distributed Systems'],
+          missingKeywords: ['Security'],
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.name).toBe('apple-staff-systems');
+      expect(data.files.length).toBe(2);
+
+      const mdFile = data.files.find((f: any) => f.format === 'markdown');
+      const htmlFile = data.files.find((f: any) => f.format === 'html');
+      expect(mdFile).toBeDefined();
+      expect(htmlFile).toBeDefined();
+
+      const mdPath = path.join(tmpWorkspace, mdFile.relativePath);
+      const htmlPath = path.join(tmpWorkspace, htmlFile.relativePath);
+      expect(fs.existsSync(mdPath)).toBe(true);
+      expect(fs.existsSync(htmlPath)).toBe(true);
+
+      const mdContent = fs.readFileSync(mdPath, 'utf-8');
+      expect(mdContent).toContain('Staff Systems Architect at Apple');
+      expect(mdContent).toContain('Security');
+
+      const htmlContent = fs.readFileSync(htmlPath, 'utf-8');
+      expect(htmlContent).toContain('<!DOCTYPE html>');
+      expect(htmlContent).toContain('Staff Systems Architect at Apple');
     });
   });
 });

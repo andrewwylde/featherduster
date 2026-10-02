@@ -86,6 +86,14 @@ describe('ExportDrawer Component Tests', () => {
       ],
     });
     vi.spyOn(apiClient, 'openExport').mockResolvedValue({ success: true });
+    vi.spyOn(apiClient, 'exportBrief').mockResolvedValue({
+      success: true,
+      name: 'starter',
+      files: [
+        { name: 'starter-defense-brief.md', relativePath: 'resumes/tailored/briefs/starter-defense-brief.md', category: 'brief', format: 'markdown' },
+        { name: 'starter-defense-brief.html', relativePath: 'resumes/tailored/briefs/starter-defense-brief.html', category: 'brief', format: 'html' },
+      ],
+    });
     vi.spyOn(apiClient, 'exportLatexPdf').mockResolvedValue(new Blob(['%PDF-1.7']));
     vi.spyOn(apiClient, 'renderTypst').mockResolvedValue({
       available: true,
@@ -335,5 +343,79 @@ describe('ExportDrawer Component Tests', () => {
     fireEvent.click(squeezeBtn);
 
     expect(toggleSqueezeMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('compiles and previews defense brief with HTML and Markdown view toggles', async () => {
+    const compileSpy = vi.spyOn(apiClient, 'compileResume');
+
+    render(
+      <ExportDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        spec={sampleSpec}
+        variantName="starter"
+        preflightStatus={null}
+        preflightLoading={false}
+        onOpenPreflightModal={vi.fn()}
+        onDeSlop={vi.fn()}
+        deslopping={false}
+        squeezeMode={false}
+        onToggleSqueeze={vi.fn()}
+      />
+    );
+
+    // Switch to Defense Brief format
+    fireEvent.click(screen.getByRole('button', { name: /Defense Brief/i }));
+
+    await waitFor(() => {
+      // Defaults to brief for markdown view
+      expect(compileSpy).toHaveBeenCalledWith(expect.anything(), 'brief');
+      expect(screen.getByRole('button', { name: 'Print Preview' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Markdown Source' })).toBeInTheDocument();
+    });
+
+    // Toggle to Print Preview
+    fireEvent.click(screen.getByRole('button', { name: 'Print Preview' }));
+    await waitFor(() => {
+      expect(compileSpy).toHaveBeenCalledWith(expect.anything(), 'brief-html');
+      expect(screen.getByTitle('Defense Brief Print Preview')).toBeInTheDocument();
+    });
+  });
+
+  it('triggers standalone brief export to disk via apiClient.exportBrief', async () => {
+    const exportBriefSpy = vi.spyOn(apiClient, 'exportBrief');
+
+    render(
+      <ExportDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        spec={sampleSpec}
+        variantName="starter"
+        preflightStatus={null}
+        preflightLoading={false}
+        onOpenPreflightModal={vi.fn()}
+        onDeSlop={vi.fn()}
+        deslopping={false}
+        squeezeMode={false}
+        onToggleSqueeze={vi.fn()}
+      />
+    );
+
+    // Switch to Defense Brief format
+    fireEvent.click(screen.getByRole('button', { name: /Defense Brief/i }));
+
+    // Click "Save to Disk" inside the Defense Brief sub-bar
+    const saveToDiskBtn = screen.getByRole('button', { name: 'Save to Disk' });
+    fireEvent.click(saveToDiskBtn);
+
+    await waitFor(() => {
+      expect(exportBriefSpy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'starter',
+          format: 'all',
+        })
+      );
+      expect(screen.getByText(/Defense brief saved/i)).toBeInTheDocument();
+    });
   });
 });

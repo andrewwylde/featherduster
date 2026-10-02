@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   EvidenceStore,
   compileDefenseBrief,
+  compileHtmlDefenseBrief,
   calculatePageBudget,
   ResumeSpec,
 } from '../src/index.js';
@@ -100,6 +101,52 @@ describe('Defense Brief & Page Budget Compilers', () => {
       const output = compileDefenseBrief(sampleSpec, store);
       expect(output).toContain('Interview Defense Brief: Alex Mercer');
       expect(output).toContain('Dossier Audit Statistics');
+    });
+  });
+
+  describe('compileHtmlDefenseBrief', () => {
+    it('compiles styled, print-ready HTML defense brief with all sections and metadata', () => {
+      const html = compileHtmlDefenseBrief(sampleSpec, store, {
+        targetCompany: 'Netflix',
+        targetRole: 'Staff Platform Engineer',
+        matchedKeywords: ['Kafka', 'Distributed Systems', 'Go'],
+        missingKeywords: ['eBPF', 'gRPC'],
+      });
+
+      expect(html).toContain('<!DOCTYPE html>');
+      expect(html).toContain('<title>Interview Defense Brief - Alex Mercer</title>');
+      expect(html).toContain('STRICTLY CONFIDENTIAL · INTERVIEW DEFENSE DOSSIER');
+      expect(html).toContain('Staff Platform Engineer at Netflix');
+      expect(html).toContain('Kafka');
+      expect(html).toContain('eBPF');
+      expect(html).toContain('CloudMatrix — Staff Engineer');
+      expect(html).toContain('Zero-Downtime Partition Sharding');
+      expect(html).toContain('ev-042');
+      expect(html).toContain('✅ Verified');
+      expect(html).toContain('AUTH-892');
+      expect(html).toContain('#2914');
+      expect(html).toContain('95% (808ms)');
+      expect(html).toContain('Anticipated Interview Deep-Dives');
+      expect(html).toContain('Technical Trade-offs:');
+      expect(html).toContain('Failure Modes:');
+      expect(html).toContain('Metric Attribution:');
+      expect(html).toContain('Dossier Audit Statistics');
+      expect(html).toContain('50%');
+      expect(html).toContain('@media print');
+    });
+
+    it('escapes special characters and prevents HTML injection', () => {
+      const injectedSpec: ResumeSpec = {
+        ...sampleSpec,
+        profile: {
+          ...sampleSpec.profile,
+          name: '<script>alert("pwned")</script>',
+        },
+      };
+
+      const html = compileHtmlDefenseBrief(injectedSpec, store);
+      expect(html).not.toContain('<script>');
+      expect(html).toContain('&lt;script&gt;alert(&quot;pwned&quot;)&lt;/script&gt;');
     });
   });
 
