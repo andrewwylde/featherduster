@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlignLeft, Check, Columns2, Pencil, Sparkles, X } from 'lucide-react';
-import { applyProposals, compileMarkdownResume, type DraftContext, type JobAnalysis, type Proposal, type ResumeSpec } from '@featherduster/core';
+import { applyProposals, compileMarkdownResume, isBlocked, type DraftContext, type JobAnalysis, type Proposal, type ResumeSpec } from '@featherduster/core';
 import { apiClient } from '../../../api/client';
 import { wordDiff, sideBySideWordDiff } from '../wordDiff';
 import { CitationChip, IssueList, inputClass, secondaryButton } from '../ui';
@@ -10,6 +10,7 @@ interface ProposalsStepProps {
   baseResume: ResumeSpec | null;
   analysis: JobAnalysis | null;
   pageBudget: { overBy: number; proposalIds: string[] } | null;
+  evidenceOptions?: Array<{ id: string; title: string }>;
   readOnly: boolean;
   applying: boolean;
   applyDisabled?: boolean;
@@ -262,7 +263,7 @@ function ProposalBody({
 }
 
 export const ProposalsStep: React.FC<ProposalsStepProps> = ({
-  value: proposals, baseResume, analysis, pageBudget, readOnly,
+  value: proposals, baseResume, analysis, pageBudget, evidenceOptions, readOnly,
   applying: saving, applyDisabled, unapplied, onChange, onApply, textById, onTextChange, context, onContextChange, onOpenEvidence,
 }) => {
   const editingId = context.editingProposalId;
@@ -271,6 +272,7 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
   const setEditText = (text: string) => { if (editingId) onTextChange(editingId, text); };
   const [cleaningId, setCleaningId] = useState<string | null>(null);
   const [cleanError, setCleanError] = useState<string>();
+  const [bulkActionMessage, setBulkActionMessage] = useState<string>();
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   const latest = useRef({ proposals, onChange, readOnly, textById });
@@ -293,9 +295,29 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
     }
   }, [baseResume, proposals]);
 
-  const replace = (id: string, patch: Partial<Proposal>) => onChange(proposals.map((p) => (p.id === id ? { ...p, ...patch } : p)));
-  const setAll = (decision: Proposal['decision']) =>
-    onChange(proposals.map((p) => (decision === 'accepted' && p.checks.some((c) => c.severity === 'block') ? p : { ...p, decision })));
+  const replace = (id: string, patch: Partial<Proposal>) => {
+    setBulkActionMessage(undefined);
+    onChange(proposals.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  };
+  const setAll = (decision: Proposal['decision']) => {
+    const eligible = proposals.filter((p) => decision !== 'accepted' || !isBlocked(p));
+    const changed = eligible.filter((p) => p.decision !== decision).length;
+    const blocked = proposals.length - eligible.length;
+    if (decision === 'accepted' && changed === 0) {
+      setBulkActionMessage(
+        blocked > 0
+          ? `${blocked} proposal${blocked === 1 ? '' : 's'} still blocked. Confirm the blocking checks on each proposal before accepting it.`
+          : 'All unblocked proposals are already accepted.',
+      );
+      return;
+    }
+    setBulkActionMessage(
+      decision === 'accepted'
+        ? `Accepted ${changed} unblocked proposal${changed === 1 ? '' : 's'}${blocked > 0 ? `; ${blocked} remain blocked.` : '.'}`
+        : `Rejected ${changed} proposal${changed === 1 ? '' : 's'}.`,
+    );
+    onChange(proposals.map((p) => (decision === 'accepted' && isBlocked(p) ? p : { ...p, decision })));
+  };
 
   const cleanSlop = async (p: Proposal) => {
     setCleaningId(p.id); setCleanError(undefined);
@@ -380,15 +402,23 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
           )}
         </div>
       </div>
+      {bulkActionMessage && (
+        <p role="status" aria-live="polite" className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
+          {bulkActionMessage}
+        </p>
+      )}
 
       {proposals.length === 0 && <p className="text-sm text-slate-500">The model proposed no edits.</p>}
 
       <ul className="space-y-3">
         {proposals.map((p) => {
-          const blocked = p.checks.some((c) => c.severity === 'block');
+          const hasBlockingChecks = p.checks.some((c) => c.severity === 'block');
+          const blocked = isBlocked(p);
           const border =
             p.decision === 'accepted'
-              ? 'border-emerald-300 dark:border-emerald-800'
+              ? p.override
+                ? 'border-amber-400 dark:border-amber-700'
+                : 'border-emerald-300 dark:border-emerald-800'
               : p.decision === 'rejected'
               ? 'border-slate-200 opacity-60 dark:border-slate-800'
               : 'border-slate-200 dark:border-slate-800';
@@ -399,6 +429,11 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
                   <span className="mr-1.5 font-mono normal-case text-slate-400">{p.id}</span>
                   {TYPE_LABELS[p.type]}
                   {p.edited_after !== undefined && <span className="ml-2 normal-case text-vermilion-600">edited</span>}
+                  {p.override && (
+                    <span className="ml-2 rounded bg-amber-100 dark:bg-amber-950/60 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-800 dark:text-amber-300">
+                      override
+                    </span>
+                  )}
                 </p>
                 {!readOnly && (
                   <div className="flex flex-wrap items-center gap-1.5">
@@ -426,11 +461,18 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
                       type="button"
                       aria-pressed={p.decision === 'accepted'}
                       disabled={saving || blocked}
-                      title={blocked ? 'Resolve blocking checks (edit the text) before accepting' : undefined}
-                      onClick={() => replace(p.id, { decision: p.decision === 'accepted' ? 'pending' : 'accepted' })}
-                      className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1.5 min-h-[36px] sm:min-h-0 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                      title={blocked ? 'Confirm by checking "Confirmed by me" below or edit the text before accepting' : undefined}
+                      onClick={() =>
+                        replace(p.id, {
+                          decision: p.decision === 'accepted' ? 'pending' : 'accepted',
+                          ...(p.decision === 'accepted' && p.override ? { override: false } : {}),
+                        })
+                      }
+                      className={`inline-flex items-center gap-1 rounded ${
+                        p.override ? 'bg-amber-600 hover:bg-amber-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                      } px-2.5 py-1.5 min-h-[36px] sm:min-h-0 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40`}
                     >
-                      <Check className="h-3.5 w-3.5" aria-hidden="true" /> Accept
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" /> {p.decision === 'accepted' && p.override ? 'Accepted (override)' : 'Accept'}
                     </button>
                   </div>
                 )}
@@ -479,8 +521,30 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
 
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {p.citations.map((c) => (
-                  <CitationChip key={c} id={c} onClick={onOpenEvidence} />
+                  <CitationChip
+                    key={c}
+                    id={c}
+                    onClick={onOpenEvidence}
+                    onRemove={readOnly ? undefined : (id) => replace(p.id, { citations: p.citations.filter((x) => x !== id) })}
+                  />
                 ))}
+                {!readOnly && evidenceOptions && evidenceOptions.filter((e) => !p.citations.includes(e.id)).length > 0 && (
+                  <select
+                    aria-label={`Add evidence to ${p.id}`}
+                    value=""
+                    onChange={(e) => e.target.value && replace(p.id, { citations: [...p.citations, e.target.value] })}
+                    className="rounded border border-dashed border-slate-300 dark:border-slate-700 bg-transparent px-2 py-1 min-h-[36px] sm:min-h-0 text-xs text-slate-600 dark:text-slate-400"
+                  >
+                    <option value="">+ cite evidence</option>
+                    {evidenceOptions
+                      .filter((e) => !p.citations.includes(e.id))
+                      .map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.id} — {e.title}
+                        </option>
+                      ))}
+                  </select>
+                )}
                 {p.requirement_ids.map((r) => (
                   <span key={r} title={reqText.get(r)} className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                     {r}: {reqText.get(r) ?? 'requirement'}
@@ -489,6 +553,31 @@ export const ProposalsStep: React.FC<ProposalsStepProps> = ({
               </div>
 
               <IssueList issues={p.checks} />
+
+              {hasBlockingChecks && (
+                <div className="mt-2.5 flex items-center justify-between rounded-md bg-amber-50/80 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 p-2.5">
+                  <label htmlFor={`override-${p.id}`} className="flex items-center gap-2 text-xs font-medium text-amber-900 dark:text-amber-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id={`override-${p.id}`}
+                      checked={!!p.override}
+                      disabled={readOnly || saving}
+                      onChange={(e) => {
+                        const override = e.target.checked;
+                        replace(p.id, {
+                          override,
+                          decision: override ? 'accepted' : (p.decision === 'accepted' ? 'pending' : p.decision),
+                        });
+                      }}
+                      className="h-4 w-4 accent-amber-600 rounded"
+                    />
+                    <span>Confirmed by me (override blocking checks)</span>
+                  </label>
+                  {p.override && (
+                    <span className="text-[11px] font-mono text-amber-700 dark:text-amber-400">Waived</span>
+                  )}
+                </div>
+              )}
             </li>
           );
         })}

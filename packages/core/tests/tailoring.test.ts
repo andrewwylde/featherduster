@@ -12,6 +12,7 @@ import {
   validateProposal,
   validateProposals,
   applyProposals,
+  isBlocked,
   pageBudgetOverruns,
   renderBriefMarkdown,
   METRIC_NEEDED,
@@ -355,6 +356,29 @@ describe('applyProposals', () => {
     ]);
     expect(result.summary).toBe('mine');
     expect(result.experiences[0].bullets).toHaveLength(3);
+  });
+
+  it('applies blocked proposals when override is true', () => {
+    const blockedWithoutOverride = accepted({
+      id: 'x',
+      type: 'summary.rewrite',
+      after: 'Unbacked summary',
+      override: false,
+      checks: [{ severity: 'block', kind: 'ledger_ceiling', message: 'Unbacked' }],
+    });
+    expect(isBlocked(blockedWithoutOverride)).toBe(true);
+
+    const blockedWithOverride = accepted({
+      id: 'x',
+      type: 'summary.rewrite',
+      after: 'Candidate confirmed summary',
+      override: true,
+      checks: [{ severity: 'block', kind: 'ledger_ceiling', message: 'Unbacked' }],
+    });
+    expect(isBlocked(blockedWithOverride)).toBe(false);
+
+    const result = applyProposals(baseResume, [blockedWithOverride]);
+    expect(result.summary).toBe('Candidate confirmed summary');
   });
 
   it('reports page budget overruns for added lines', () => {

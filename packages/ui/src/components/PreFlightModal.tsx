@@ -13,6 +13,7 @@ import {
   Hash,
   EyeOff,
   Sparkles,
+  Lock,
 } from 'lucide-react';
 import { apiClient, type PreflightResult } from '../api/client';
 import { useModalA11y } from '../hooks/useModalA11y';
@@ -108,10 +109,17 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
 
   const slopIssuesCount = isSlopClean ? 0 : slopMatches.length;
 
+  const confidentialityLeaks = result?.confidentialityLeaks ?? result?.confidentiality?.leaks ?? [];
+  const isConfidentialityClean = result?.confidentiality !== undefined
+    ? result.confidentiality.isClean
+    : confidentialityLeaks.length === 0;
+  const confidentialityLeaksCount = isConfidentialityClean ? 0 : confidentialityLeaks.length;
+
   const totalIssues =
     (result?.danglingCitations.length ?? 0) +
     (result?.metricIssues.length ?? 0) +
     (result?.violations.length ?? 0) +
+    confidentialityLeaksCount +
     slopIssuesCount;
 
   const previewText = result?.redactedText || cleanedPreviewText || '';
@@ -364,7 +372,7 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2 text-sm font-semibold text-white">
                       <EyeOff className="w-4 h-4 text-rose-400" />
-                      <span>Confidentiality & Privacy Rules</span>
+                      <span>Privacy Redaction &amp; Banned Keywords</span>
                     </div>
                     {result.violations.length === 0 ? (
                       <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
@@ -402,7 +410,70 @@ export const PreFlightModal: React.FC<PreFlightModalProps> = ({
                   )}
                 </div>
 
-                {/* 4. Anti-Slop Audit */}
+                {/* 4. Secret & Infrastructure Leak Scanner */}
+                <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 text-sm font-semibold text-white">
+                      <Lock className="w-4 h-4 text-emerald-400" />
+                      <span>Secret &amp; Infrastructure Leak Scanner</span>
+                    </div>
+                    {isConfidentialityClean ? (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        0 Leaks Detected
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />
+                        {confidentialityLeaksCount} Leak{confidentialityLeaksCount === 1 ? '' : 's'} Detected
+                      </span>
+                    )}
+                  </div>
+
+                  {isConfidentialityClean ? (
+                    <p className="text-xs text-slate-400">
+                      No internal hostnames, private IPs, VCS remotes, or credentials/API keys detected.
+                    </p>
+                  ) : (
+                    <div className="space-y-1.5 pt-1">
+                      <p className="text-xs text-rose-400 font-medium">
+                        Sensitive tokens or internal infrastructure indicators flagged:
+                      </p>
+                      <div className="space-y-1.5">
+                        {confidentialityLeaks.map((leak, idx) => (
+                          <div
+                            key={idx}
+                            className="text-xs p-2.5 rounded-lg bg-rose-950/25 border border-rose-500/30 text-rose-300 space-y-1"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                <span className="font-semibold uppercase text-[10px] tracking-wider px-1.5 py-0.5 rounded bg-rose-900/50 text-rose-200">
+                                  {leak.category.replace(/_/g, ' ')}
+                                </span>
+                                <span className="font-mono text-slate-200 text-[11px]">
+                                  {leak.redactedSnippet}
+                                </span>
+                              </div>
+                              {leak.lineNumber !== undefined && (
+                                <span className="text-[10px] font-mono text-slate-400 shrink-0">
+                                  Line {leak.lineNumber}
+                                </span>
+                              )}
+                            </div>
+                            {leak.remediation && (
+                              <p className="text-[11px] text-slate-400 pl-5">
+                                <span className="text-slate-300 font-medium">Fix:</span> {leak.remediation}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. Anti-Slop Audit */}
                 <div className="p-4 rounded-xl bg-slate-950/40 border border-slate-800 space-y-2.5">
                   <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center space-x-2 text-sm font-semibold text-white">

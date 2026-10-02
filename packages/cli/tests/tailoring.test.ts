@@ -367,4 +367,30 @@ describe('Tailoring runs API', () => {
     expect(res.status).toBe(200);
     expect(Array.isArray(res.json.runners)).toBe(true);
   });
+
+  it('allows candidate override on blocked proposals and applies them on approval', async () => {
+    build([ANALYSIS, ALIGNMENT, PROPOSALS]);
+    const slug = await createRun('override-run');
+    await runAndApprove(slug, 'analysis');
+    await call('POST', `/api/tailoring/${slug}/steps/analysis/approve`);
+    await runAndApprove(slug, 'alignment');
+    await call('POST', `/api/tailoring/${slug}/steps/alignment/approve`);
+    const run = await runAndApprove(slug, 'proposals');
+
+    // p2 has blocking checks (introducing unbacked Kafka)
+    const p2 = run.proposals.find((p: any) => p.id === 'p2');
+    expect(p2.checks.some((c: any) => c.severity === 'block')).toBe(true);
+
+    // Save with override: true and accepted
+    const decided = run.proposals.map((p: any) =>
+      p.id === 'p2' ? { ...p, decision: 'accepted', override: true } : { ...p, decision: 'rejected' }
+    );
+    const saved = await call('PUT', `/api/tailoring/${slug}/steps/proposals`, { proposals: decided });
+    expect(saved.status).toBe(200);
+
+    // Approval succeeds because candidate override waived the block
+    const approved = await call('POST', `/api/tailoring/${slug}/steps/proposals/approve`);
+    expect(approved.status).toBe(200);
+    expect(approved.json.resume.experiences[0].bullets.some((b: any) => b.text.includes('Kafka'))).toBe(true);
+  });
 });

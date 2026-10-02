@@ -85,6 +85,15 @@ describe('ExportDrawer Component Tests', () => {
         { name: 'netflix-staff-defense-brief.md', relativePath: 'resumes/tailored/briefs/netflix-staff-defense-brief.md', category: 'brief', format: 'markdown' },
       ],
     });
+    vi.spyOn(apiClient, 'openExport').mockResolvedValue({ success: true });
+    vi.spyOn(apiClient, 'exportLatexPdf').mockResolvedValue(new Blob(['%PDF-1.7']));
+    vi.spyOn(apiClient, 'renderTypst').mockResolvedValue({
+      available: true,
+      detail: 'typst test',
+      pages: ['<svg xmlns="http://www.w3.org/2000/svg"><text>Resume</text></svg>'],
+      error: null,
+      source: '# Resume',
+    });
 
     // Mock clipboard
     Object.assign(navigator, {
@@ -216,6 +225,62 @@ describe('ExportDrawer Component Tests', () => {
       );
       expect(screen.getByText(/Release bundle generated/i)).toBeInTheDocument();
     });
+    fireEvent.click(screen.getByRole('button', { name: 'Open in Explorer' }));
+    await waitFor(() => {
+      expect(apiClient.openExport).toHaveBeenCalledWith('resumes/exports/resume_netflix-staff_ats.md');
+    });
+  });
+
+  it('compiles and downloads the LaTeX PDF from Print to PDF', async () => {
+    const latexSpy = vi.spyOn(apiClient, 'exportLatexPdf');
+
+    render(
+      <ExportDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        spec={sampleSpec}
+        variantName="starter"
+        jobDescription="Target Staff Role"
+        preflightStatus={null}
+        preflightLoading={false}
+        onOpenPreflightModal={vi.fn()}
+        onDeSlop={vi.fn()}
+        deslopping={false}
+        squeezeMode={false}
+        onToggleSqueeze={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Print to PDF' }));
+
+    await waitFor(() => {
+      expect(latexSpy).toHaveBeenCalledWith(expect.objectContaining({ targetRole: '', jobDescription: 'Target Staff Role' }));
+    });
+  });
+
+  it('renders Typst once without a competing source compile loop', async () => {
+    const compileSpy = vi.spyOn(apiClient, 'compileResume');
+    const typstSpy = vi.spyOn(apiClient, 'renderTypst');
+
+    render(
+      <ExportDrawer
+        isOpen={true}
+        onClose={vi.fn()}
+        spec={sampleSpec}
+        variantName="starter"
+        preflightStatus={null}
+        preflightLoading={false}
+        onOpenPreflightModal={vi.fn()}
+        onDeSlop={vi.fn()}
+        deslopping={false}
+        squeezeMode={false}
+        onToggleSqueeze={vi.fn()}
+      />
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Typst' }));
+    expect(typstSpy).toHaveBeenCalledTimes(1);
+    expect(compileSpy).toHaveBeenCalledWith(expect.anything(), 'typst');
   });
 
   it('renders artifacts shelf tab with files and confidential badge for defense brief', async () => {

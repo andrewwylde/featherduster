@@ -544,10 +544,12 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
           expect.objectContaining({ profile: expect.objectContaining({ name: 'Alex Mercer' }) })
         );
         expect(global.URL.createObjectURL).toHaveBeenCalled();
+        expect(exportButton).not.toBeDisabled();
       });
 
       pdfSpy.mockRejectedValue(new ApiError('Typst CLI not found on PATH.', 503, 'typst_not_installed'));
-      fireEvent.click(exportButton);
+      const reExportBtn = screen.getByRole('button', { name: /Export PDF/i });
+      fireEvent.click(reExportBtn);
 
       await waitFor(() => {
         expect(screen.getByText('Typst CLI not found on PATH.')).toBeInTheDocument();

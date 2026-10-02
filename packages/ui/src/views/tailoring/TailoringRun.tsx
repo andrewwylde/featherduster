@@ -46,22 +46,51 @@ function escapeRegExp(s: string) {
 }
 
 const PostingWithHighlight: React.FC<{ posting: string; highlight: string | null }> = ({ posting, highlight }) => {
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const markRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
-    markRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+    const mark = markRef.current;
+    const container = containerRef.current;
+    if (!mark || !container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const markRect = mark.getBoundingClientRect();
+    const relativeTop = markRect.top - containerRect.top;
+    const targetScrollTop = container.scrollTop + relativeTop - container.clientHeight / 2 + markRect.height / 2;
+
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: Math.max(0, targetScrollTop), behavior: 'smooth' });
+    } else {
+      container.scrollTop = Math.max(0, targetScrollTop);
+    }
   }, [highlight]);
-  if (!highlight) return <>{posting}</>;
-  const pattern = highlight.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
-  const match = new RegExp(pattern, 'i').exec(posting);
-  if (!match) return <>{posting}</>;
+
+  const content = useMemo(() => {
+    if (!highlight) return <>{posting}</>;
+    const pattern = highlight.trim().split(/\s+/).map(escapeRegExp).join('\\s+');
+    const match = new RegExp(pattern, 'i').exec(posting);
+    if (!match) return <>{posting}</>;
+    return (
+      <>
+        {posting.slice(0, match.index)}
+        <mark ref={markRef} className="rounded-sm bg-amber-200 text-slate-900 dark:bg-amber-500/40 dark:text-white">
+          {match[0]}
+        </mark>
+        {posting.slice(match.index + match[0].length)}
+      </>
+    );
+  }, [posting, highlight]);
+
   return (
-    <>
-      {posting.slice(0, match.index)}
-      <mark ref={markRef} className="rounded-sm bg-amber-200 text-slate-900 dark:bg-amber-500/40 dark:text-white">
-        {match[0]}
-      </mark>
-      {posting.slice(match.index + match[0].length)}
-    </>
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      aria-label="Job posting text"
+      className="mt-2 max-h-[70vh] overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-300 focus:outline-none"
+    >
+      {content}
+    </div>
   );
 };
 
@@ -465,9 +494,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, selectedStep, 
       ) : (
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Job posting</h3>
-          <div className="mt-2 max-h-[70vh] overflow-y-auto whitespace-pre-wrap text-sm leading-relaxed text-slate-700 dark:text-slate-300">
-            <PostingWithHighlight posting={detail.posting} highlight={highlight} />
-          </div>
+          <PostingWithHighlight posting={detail.posting} highlight={highlight} />
         </div>
       )}
     </aside>
@@ -579,6 +606,7 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, selectedStep, 
             baseResume={detail.base_resume}
             analysis={analysis!}
             pageBudget={detail.page_budget}
+            evidenceOptions={evidenceOptions}
             readOnly={readOnly}
             applying={!!busy}
             applyDisabled={anyRunning || recovery.state?.status === 'conflict'}
@@ -693,10 +721,10 @@ export const TailoringRun: React.FC<TailoringRunProps> = ({ slug, selectedStep, 
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12">
-        <div className={`${mobilePane === 'steps' ? 'block' : 'hidden'} lg:col-span-3 lg:block`}>{stepper}</div>
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
+        <div className={`${mobilePane === 'steps' ? 'block' : 'hidden'} lg:col-span-3 lg:block lg:sticky lg:top-4 lg:self-start`}>{stepper}</div>
         <div className={`${mobilePane === 'work' ? 'block' : 'hidden'} lg:col-span-6 lg:block`}>{workPane}</div>
-        <div className={`${mobilePane === 'context' ? 'block' : 'hidden'} lg:col-span-3 lg:block`}>{contextPane}</div>
+        <div className={`${mobilePane === 'context' ? 'block' : 'hidden'} lg:col-span-3 lg:block lg:sticky lg:top-4 lg:self-start`}>{contextPane}</div>
       </div>
 
       {consent && (

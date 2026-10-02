@@ -97,6 +97,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
   // Bundle compilation state
   const [bundleLoading, setBundleLoading] = useState(false);
   const [bundleMessage, setBundleMessage] = useState<string | null>(null);
+  const [bundleOpenPath, setBundleOpenPath] = useState<string | null>(null);
 
   // Typst live rendering state
   const [typstView, setTypstView] = useState<'preview' | 'source'>('preview');
@@ -113,6 +114,8 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
   const pageBudget = useMemo(() => {
     return calculatePageBudget(spec, { squeeze: squeezeMode });
   }, [spec, squeezeMode]);
+  const matchedKeywordsKey = matchedKeywords.join('\u0000');
+  const missingKeywordsKey = missingKeywords.join('\u0000');
 
   // Load compiled format preview
   const compileFormat = useCallback(async (format: DrawerFormat) => {
@@ -136,7 +139,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
     } finally {
       setCompiling(false);
     }
-  }, [spec, targetCompany, targetRole, jobDescription, matchedKeywords, missingKeywords]);
+  }, [spec, targetCompany, targetRole, jobDescription, matchedKeywordsKey, missingKeywordsKey]);
 
   // Typst rendering effect
   const shouldRenderTypst = isOpen && activeFormat === 'typst' && typstView === 'preview';
@@ -150,31 +153,31 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
 
     let cancelled = false;
     setTypstRendering(true);
-    const timer = setTimeout(() => {
-      apiClient
-        .renderTypst(spec)
-        .then((res) => {
-          if (!cancelled) setTypstRender(res);
-        })
-        .catch((err: any) => {
-          if (!cancelled) {
-            setTypstRender({
-              available: true,
-              detail: '',
-              pages: [],
-              error: err?.message || String(err),
-              source: '',
-            });
-          }
-        })
-        .finally(() => {
-          if (!cancelled) setTypstRendering(false);
-        });
-    }, 400);
+    apiClient
+      .renderTypst(spec)
+      .then((res) => {
+        if (!cancelled) {
+          setCompiledOutput(res.source);
+          setTypstRender(res);
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          setTypstRender({
+            available: true,
+            detail: '',
+            pages: [],
+            error: err?.message || String(err),
+            source: '',
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTypstRendering(false);
+      });
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
     };
   }, [shouldRenderTypst, spec]);
 
@@ -284,29 +287,25 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  // Browser Print for HTML preview
-  const handlePrintHtml = () => {
-    if (activeFormat !== 'html') {
-      setActiveFormat('html');
+  // Compile the canonical LaTeX export on the server and download its PDF.
+  const handlePrintHtml = async () => {
+    setPdfExporting(true);
+    setPdfError(null);
+    try {
+      const blob = await apiClient.exportLatexPdf({ ...spec, targetCompany, targetRole, jobDescription });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resume_${(variantName || 'resume').replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setPdfError(err?.message || 'Failed to export LaTeX PDF');
+    } finally {
+      setPdfExporting(false);
     }
-    setTimeout(() => {
-      if (printIframeRef.current?.contentWindow) {
-        try {
-          printIframeRef.current.contentWindow.focus();
-          printIframeRef.current.contentWindow.print();
-          return;
-        } catch {
-          // Fallback
-        }
-      }
-      const printWindow = window.open('', '_blank');
-      if (printWindow) {
-        printWindow.document.write(compiledOutput);
-        printWindow.document.close();
-        printWindow.focus();
-        printWindow.print();
-      }
-    }, 150);
   };
 
   // One-Click Application Release Bundle
@@ -314,6 +313,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
     try {
       setBundleLoading(true);
       setBundleMessage(null);
+      setBundleOpenPath(null);
       const res = await apiClient.createBundle({
         name: variantName || 'resume-application',
         spec,
@@ -329,6 +329,7 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
 
       if (res.success) {
         setBundleMessage(`Release bundle generated (${res.files.length} artifacts saved to disk)`);
+        setBundleOpenPath(res.files[0]?.relativePath ?? null);
         await loadArtifacts();
         setTimeout(() => setBundleMessage(null), 5000);
       }
@@ -336,6 +337,17 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
       alert(`Failed to compile bundle: ${err.message}`);
     } finally {
       setBundleLoading(false);
+    }
+  };
+
+  const handleOpenBundle = async () => {
+    if (!bundleOpenPath) return;
+    try {
+      await apiClient.openExport(bundleOpenPath);
+      setBundleMessage('Opened the bundle folder in your file explorer.');
+      setBundleOpenPath(null);
+    } catch (err: any) {
+      setBundleMessage(err?.message || 'Could not open the bundle folder.');
     }
   };
 
@@ -439,12 +451,13 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
 
               {/* Print / Save 1-Page PDF */}
               <button
-                onClick={handlePrintHtml}
+                onClick={() => void handlePrintHtml()}
+                disabled={pdfExporting}
                 className="px-3 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold transition-all flex items-center justify-center gap-1.5 shadow-sm shadow-purple-900/30 min-h-[44px]"
-                title="Print or Save 1-Page PDF using native zero-dependency web print layout"
+                title="Compile the LaTeX resume and download its PDF"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print to PDF</span>
+                {pdfExporting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+                <span>{pdfExporting ? 'Compiling LaTeX…' : 'Print to PDF'}</span>
               </button>
 
               {/* Compile Complete Release Bundle */}
@@ -458,6 +471,15 @@ export const ExportDrawer: React.FC<ExportDrawerProps> = ({
                 <span>{bundleLoading ? 'Building...' : 'Save Bundle'}</span>
               </button>
             </div>
+            {activeFormat !== 'typst' && pdfError && <p role="alert" className="text-xs text-red-300">{pdfError}</p>}
+            {bundleOpenPath && (
+              <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-200">
+                <span>Bundle saved. Open its folder to review the generated files.</span>
+                <button type="button" onClick={() => void handleOpenBundle()} className="rounded-md border border-emerald-400/50 px-2.5 py-1 font-semibold text-emerald-100 hover:bg-emerald-500/20">
+                  Open in Explorer
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Telemetry Bar: 1-Page Budget & Pre-Flight Status */}

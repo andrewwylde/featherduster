@@ -229,6 +229,57 @@ describe('Tailoring run workspace', () => {
     expect(payload.proposals.find((p: any) => p.id === 'p1').decision).toBe('accepted');
   });
 
+  it('allows candidate override on blocked proposals', async () => {
+    const detail = baseDetail();
+    detail.manifest = manifest({
+      state: 'proposal_review',
+      steps: { analysis: step('approved'), alignment: step('approved'), proposals: step('done'), brief: step('pending') } as any,
+    });
+    detail.proposals = [
+      {
+        id: 'p1',
+        type: 'summary.rewrite',
+        target: { experience_index: -1, bullet_index: -1, skill_group_index: -1 },
+        before: 'Backend engineer.',
+        after: 'Distributed systems engineer.',
+        edited_after: 'Staff platform engineer.',
+        order: [],
+        skills: [],
+        citations: [],
+        requirement_ids: ['r1'],
+        rationale: 'Elevates profile.',
+        decision: 'pending',
+        override: false,
+        checks: [
+          { severity: 'block', kind: 'ledger_ceiling', message: 'Text edits must cite at least one non-retracted evidence entry.' },
+        ],
+      },
+    ] as any;
+    vi.spyOn(apiClient, 'getTailoringRun').mockResolvedValue(detail);
+    const save = vi.mocked(apiClient.saveTailoringDraft);
+    vi.spyOn(apiClient, 'applyTailoringDraft').mockResolvedValue({ ...detail.draft!, mutationId: 'apply', run: detail });
+
+    render(<TailoringRun slug="acme-staff" onBack={vi.fn()} onOpenInCanvas={vi.fn()} />);
+
+    const item = await screen.findByRole('listitem', { name: /Proposal p1/ });
+    expect(within(item).getByText('edited')).toBeInTheDocument();
+    expect(within(item).getByRole('button', { name: /Accept/ })).toBeDisabled();
+
+    // Check "Confirmed by me (override blocking checks)"
+    const overrideCheckbox = within(item).getByLabelText(/Confirmed by me \(override blocking checks\)/);
+    expect(overrideCheckbox).not.toBeChecked();
+
+    fireEvent.click(overrideCheckbox);
+
+    await waitFor(() => expect(save).toHaveBeenCalled());
+    const payload = (save.mock.calls[0][1].payload as any).proposals;
+    expect(payload.proposals[0]).toMatchObject({
+      id: 'p1',
+      override: true,
+      decision: 'accepted',
+    });
+  });
+
   it('asks for consent with a redacted preview before the first cloud call', async () => {
     const detail = baseDetail();
     detail.manifest = manifest({ state: 'draft', steps: { analysis: step('pending'), alignment: step('pending'), proposals: step('pending'), brief: step('pending') } as any });
@@ -272,6 +323,50 @@ describe('Tailoring run workspace', () => {
     const approveBtn = screen.getByRole('button', { name: 'Approve & draft edits' });
     expect(approveBtn.parentElement).toHaveClass('sticky');
     expect(approveBtn.parentElement).toHaveClass('bottom-0');
+  });
+
+  it('renders desktop sticky aside and stepper columns that stay alongside', async () => {
+    vi.spyOn(apiClient, 'getTailoringRun').mockResolvedValue(baseDetail());
+    render(<TailoringRun slug="acme-staff" onBack={vi.fn()} onOpenInCanvas={vi.fn()} />);
+
+    const aside = await screen.findByRole('complementary', { name: 'Context' });
+    const asideCol = aside.parentElement;
+    expect(asideCol).toHaveClass('lg:sticky');
+    expect(asideCol).toHaveClass('lg:top-4');
+    expect(asideCol).toHaveClass('lg:self-start');
+
+    const stepper = screen.getByRole('navigation', { name: 'Tailoring steps' });
+    const stepperCol = stepper.parentElement;
+    expect(stepperCol).toHaveClass('lg:sticky');
+    expect(stepperCol).toHaveClass('lg:top-4');
+    expect(stepperCol).toHaveClass('lg:self-start');
+  });
+
+  it('scrolls job posting internally without calling scrollIntoView on hover', async () => {
+    const detail = baseDetail();
+    detail.manifest = manifest({
+      state: 'analysis_ready',
+      steps: { analysis: step('done'), alignment: step('pending'), proposals: step('pending'), brief: step('pending') } as any,
+    });
+    vi.spyOn(apiClient, 'getTailoringRun').mockResolvedValue(detail);
+
+    const scrollIntoViewSpy = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = scrollIntoViewSpy;
+
+    render(<TailoringRun slug="acme-staff" onBack={vi.fn()} onOpenInCanvas={vi.fn()} />);
+
+    expect(await screen.findByRole('heading', { name: 'Break down the posting' })).toBeInTheDocument();
+    const aside = screen.getByRole('complementary', { name: 'Context' });
+    expect(aside.querySelector('mark')).toBeNull();
+
+    const reqItem = screen.getByLabelText('Requirement r1').closest('li')!;
+    fireEvent.mouseEnter(reqItem);
+
+    await waitFor(() => {
+      expect(aside.querySelector('mark')).not.toBeNull();
+    });
+    expect(aside.querySelector('mark')?.textContent).toBe('strong Go');
+    expect(scrollIntoViewSpy).not.toHaveBeenCalled();
   });
 });
 

@@ -11,6 +11,8 @@ import type {
   RunManifest,
   RunState,
   TailoringStep,
+  ConfidentialityScanResult,
+  ConfidentialityLeak,
 } from '@featherduster/core';
 
 /** Error thrown for non-2xx API responses; keeps the server's machine-readable code. */
@@ -206,6 +208,8 @@ export interface PreflightResult {
     matchedText: string;
     line?: number;
   }>;
+  confidentiality?: ConfidentialityScanResult;
+  confidentialityLeaks?: ConfidentialityLeak[];
   error?: string;
 }
 
@@ -485,6 +489,28 @@ export class ApiClient {
     return res.blob();
   }
 
+  /** Compile the resume's LaTeX source with the local LaTeX toolchain. */
+  async exportLatexPdf(spec: ResumeSpec | Record<string, any>): Promise<Blob> {
+    const res = await fetch(`${this.baseUrl}/api/resumes/render/latex/pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ spec }),
+    });
+    if (!res.ok) {
+      let message = `API Error ${res.status}: ${res.statusText}`;
+      let code: string | undefined;
+      try {
+        const body = await res.json();
+        if (body.error) message = body.error;
+        if (typeof body.code === 'string') code = body.code;
+      } catch {
+        // Fall back to the HTTP status.
+      }
+      throw new ApiError(message, res.status, code);
+    }
+    return res.blob();
+  }
+
   /**
    * Run workspace integrity audit
    */
@@ -718,6 +744,14 @@ export class ApiClient {
       body: JSON.stringify(payload),
     });
   }
+
+  async openExport(relativePath: string): Promise<{ success: boolean }> {
+    return this.fetchJson<{ success: boolean }>('/api/exports/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ relativePath }),
+    });
+  }
 }
 
 export interface ExportArtifact {
@@ -754,4 +788,4 @@ export interface BundleResponse {
   error?: string;
 }
 
-export const apiClient = new ApiClient();
+export const apiClient = new ApiClient();

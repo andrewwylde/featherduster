@@ -96,6 +96,7 @@ import {
   validateMetrics,
   auditSlop,
   cleanSlop,
+  scanConfidentiality,
   SlopAuditResult,
   SLOP_WEIGHTS,
 } from '@featherduster/core';
@@ -111,6 +112,7 @@ import { ClaudeAuthManager } from './settings/claude-auth.js';
 import { CodexAuthManager } from './settings/codex-auth.js';
 import { getCredentialStore, type CredentialStore } from './settings/credentials.js';
 import { TypstRenderer } from './render/typst-renderer.js';
+import { LatexRenderer } from './render/latex-renderer.js';
 import { checkWorkspace } from './commands/check.js';
 
 export interface CreateAppOptions {
@@ -128,6 +130,8 @@ export interface CreateAppOptions {
   codexAuth?: CodexAuthManager;
   /** Override the Typst binary wrapper (tests). */
   typstRenderer?: TypstRenderer;
+  /** Override the LaTeX binary wrapper (tests). */
+  latexRenderer?: LatexRenderer;
   /** Override environment used for credential resolution (tests). */
   env?: NodeJS.ProcessEnv;
 }
@@ -390,6 +394,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   const app = new Hono();
   const watcher = options?.watcher ?? new WorkspaceWatcher(resolvedWorkspaceDir);
   const typstRenderer = options?.typstRenderer ?? new TypstRenderer();
+  const latexRenderer = options?.latexRenderer ?? new LatexRenderer();
 
   // Tailoring run events fan out to every SSE subscriber. Token events are coalesced (~10/s).
   const tailoringListeners = new Set<(evt: TailoringEvent) => void>();
@@ -842,6 +847,29 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     }
   });
 
+  app.post('/api/resumes/render/latex/pdf', async (c) => {
+    try {
+      const { spec } = await c.req.json();
+      if (!spec) return c.json({ error: 'Missing spec in request body' }, 400);
+      const shouldRedact = spec.redact !== false;
+      const privacyRules = loadPrivacyRules(resolvedWorkspaceDir);
+      const source = compileLatexResume(spec, shouldRedact ? privacyRules : undefined);
+      const render = await latexRenderer.renderPdf(source);
+      if (!render.available) return c.json({ error: render.detail, code: 'latex_not_installed' }, 503);
+      if (render.error || !render.pdf) return c.json({ error: render.error || 'LaTeX produced no PDF', code: 'latex_compile_failed' }, 422);
+      return new Response(new Uint8Array(render.pdf), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="resume.pdf"',
+          'Content-Length': String(render.pdf.byteLength),
+        },
+      });
+    } catch (err: any) {
+      return c.json({ error: err.message || 'Failed to export LaTeX PDF' }, 400);
+    }
+  });
+
   // 6b. Integrity Pre-Flight Gate
   app.post('/api/integrity/preflight', async (c) => {
     try {
@@ -876,6 +904,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       const metricResult = validateMetrics(text, store);
       const redactResult = redactText(text, privacyRules);
       const slopResult: SlopAuditResult = auditSlop(text);
+      const confidentialityResult = scanConfidentiality(redactResult.redactedText, privacyRules);
 
       const hasSlop = slopResult.matches.length > 0 && slopResult.slopBand !== 'clean';
 
@@ -883,6 +912,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         citationResult.isClean &&
         metricResult.isClean &&
         redactResult.isClean &&
+        confidentialityResult.isClean &&
         !hasSlop;
 
       return c.json({
@@ -894,6 +924,8 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         redactedText: redactResult.redactedText,
         slop: slopResult,
         slopIssues: slopResult.matches,
+        confidentiality: confidentialityResult,
+        confidentialityLeaks: confidentialityResult.leaks,
       });
     } catch (err: any) {
       return c.json(
@@ -1160,6 +1192,24 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     }
   });
 
+  // Open the generated bundle's containing folder in the user's file manager.
+  app.post('/api/exports/open', async (c) => {
+    try {
+      const body = await c.req.json();
+      if (typeof body.relativePath !== 'string' || !body.relativePath.trim()) {
+        return c.json({ success: false, error: 'A bundle file path is required' }, 400);
+      }
+      const filePath = path.resolve(resolvedWorkspaceDir, body.relativePath);
+      if (!isInsideWorkspace(resolvedWorkspaceDir, filePath) || !fs.existsSync(filePath)) {
+        return c.json({ success: false, error: 'Bundle file is outside the workspace or no longer exists' }, 404);
+      }
+      await open(path.dirname(filePath));
+      return c.json({ success: true });
+    } catch (err: any) {
+      return c.json({ success: false, error: err.message || 'Could not open the bundle folder' }, 500);
+    }
+  });
+
   // 7. Integrity check
   app.get('/api/integrity/check', (c) => {
     const isStrict = c.req.query('strict') === 'true';
@@ -1363,4 +1413,4 @@ export async function startServer(options?: StartServerOptions): Promise<ServerI
       });
     },
   };
-}
+}

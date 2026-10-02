@@ -585,7 +585,7 @@ class IdeaScanner:
         """
         self.adapter.ensure_initialized([tag, "master"])
 
-        # Collect titles of ACTIVE tasks only
+        # Collect titles of tasks that are active OR completed in master
         existing_proposals = self.adapter.get_tasks(tag=tag)
         existing_master   = self.adapter.get_tasks(tag="master")
 
@@ -594,6 +594,10 @@ class IdeaScanner:
             for t in (existing_proposals + existing_master)
             if t.status in self.ACTIVE_STATUSES
         }
+        # Also block any tasks already completed in master
+        for t in existing_master:
+            if t.status == "done":
+                active_titles.add(t.title.lower().strip())
 
         created: list[TaskMasterTask] = []
         for idea in ideas:

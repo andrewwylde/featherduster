@@ -70,6 +70,16 @@ async function main() {
     await shot('05-proposals.png');
 
     await page.getByRole('button', { name: 'Accept all unblocked' }).click();
+    // Bulk actions must explain their result, including the no-op case where
+    // every remaining proposal is blocked. This guards against silent clicks.
+    await page.locator('p[role="status"]').filter({ hasText: /Accepted .* unblocked|already accepted|remain blocked|still blocked/ }).waitFor();
+    const override = page.locator('input[id^="override-"]').first();
+    if (await override.count()) {
+      await override.check();
+      assert.equal(await override.isChecked(), true, 'Proposal override should update immediately');
+      await page.reload({ waitUntil: 'networkidle' });
+      assert.equal(await page.locator(`input#${await override.getAttribute('id')}`).isChecked(), true, 'Proposal override should survive reload');
+    }
     // Reject anything that stayed pending (blocked by a check).
     for (const item of await page.getByRole('listitem', { name: /^Proposal / }).all()) {
       const reject = item.getByRole('button', { name: 'Reject' });

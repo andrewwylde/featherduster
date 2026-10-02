@@ -1024,6 +1024,32 @@ experiences:
       expect(data.isClean).toBe(false);
       expect(data.violations).toContain('CLASSIFIED_PROJECT');
     });
+
+    it('POST /api/integrity/preflight detects secrets and internal hostnames via confidentiality scanner', async () => {
+      const app = createApp(tmpWorkspace);
+      const secretSpec: ResumeSpec = {
+        ...sampleResumeSpec,
+        summary: 'Deployed on auth.internal.corp.net using sk-proj-1234567890abcdef1234567890abcdef12345678.',
+      };
+
+      const res = await app.request('/api/integrity/preflight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          spec: secretSpec,
+        }),
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.isClean).toBe(false);
+      expect(data.confidentiality).toBeDefined();
+      expect(data.confidentiality.isClean).toBe(false);
+      expect(data.confidentialityLeaks.length).toBeGreaterThanOrEqual(2);
+      const categories = data.confidentialityLeaks.map((l: any) => l.category);
+      expect(categories).toContain('internal_hostname_or_ip');
+      expect(categories).toContain('credential_or_key');
+    });
   });
 
   describe('GET /api/exports & POST /api/exports/bundle', () => {
