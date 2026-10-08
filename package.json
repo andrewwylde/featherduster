@@ -1,7 +1,7 @@
 {
   "name": "featherduster-app",
   "version": "0.1.0",
-  "description": "Local-First Career Intelligence & Evidence Ledger for Engineers",
+  "description": "Keeps a résumé honest: every bullet cites an evidence entry, and check fails on claims nothing backs.",
   "license": "MIT",
   "private": true,
   "type": "module",
