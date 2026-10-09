@@ -1,7 +1,7 @@
 {
   "name": "featherduster-app",
   "version": "0.1.0",
-  "description": "Keeps a résumé honest: every bullet cites an evidence entry, and check fails on claims nothing backs.",
+  "description": "Links résumé bullets to evidence entries and checks citations, metric placeholders, and privacy rules.",
   "license": "MIT",
   "private": true,
   "type": "module",
