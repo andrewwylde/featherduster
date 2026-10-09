@@ -1,24 +1,21 @@
 # @featherduster/cli
 
-> Local-first CLI and server for Featherduster — Career Intelligence & Evidence Ledger for Engineers.
+The `featherduster` command and local server. See the [repository README](../../README.md).
 
-## Installation
-
-```bash
-npm install -g @featherduster/cli
-# or use directly via npx
-npx featherduster
-```
+Not published to npm yet; use Node 20+ and run it from a clone with `node packages/cli/dist/bin.js` after
+`npm install && npm run build` at the repo root.
 
 ## Commands
 
-- `featherduster [root]` — Launch local Featherduster server and web UI on `http://127.0.0.1:4173`
-- `featherduster init [root] [--block-push]` — Initialize a new career evidence corpus
-- `featherduster check [root]` — Run headless integrity check on citations, metrics, and privacy rules
-- `featherduster build [target] --format <markdown|html|typst|latex|brag>` — Headless compiler for tailored resumes and brag docs
+- `featherduster [workspace]`: web UI on `http://127.0.0.1:4173`
+- `featherduster init [workspace] [--block-push]`: create a workspace
+- `featherduster check [workspace]`: audit citations, metrics, and privacy rules; exits 1 on violations
+- `featherduster build -w <workspace> --format <markdown|html|typst|latex|brag|brief>`: compile a résumé, rubric-based brag doc, or private interview brief
 
-For full documentation and monorepo overview, visit the [Featherduster Repository](https://github.com/andrewwylde/featherduster).
+`check` validates citations it finds and recognized metric flags; it does not compare claimed
+numbers with evidence values. `build` does not run `check`, and `brief` output is unredacted
+private preparation material. Initialize Git before `init --block-push` to activate the hook.
 
 ## License
 
-MIT © 2026 Andrew Wylde and Contributors
+MIT
