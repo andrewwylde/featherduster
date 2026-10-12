@@ -94,3 +94,20 @@ describe('CLI bin executable end-to-end', () => {
     }
   });
 });
+
+it('registers jobs and executes headless JSON commands without a server', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-jobs-bin-'));
+  const bin = path.resolve(__dirname, '../dist/bin.js');
+  const run = (...args: string[]) => execFileAsync(process.execPath, [bin, 'jobs', ...args, '--workspace', root, '--json']);
+  try {
+    expect((await execFileAsync(process.execPath, [bin, '--help'])).stdout).toContain('jobs');
+    expect(JSON.parse((await run('process')).stdout)).toEqual({ items: [] });
+    const added = JSON.parse((await run('add', 'Build systems', '--text')).stdout);
+    const id = added.items[0].job_id;
+    expect(JSON.parse((await run('get', id)).stdout).job.id).toBe(id);
+    expect(JSON.parse((await run('list')).stdout).jobs).toHaveLength(1);
+    expect(JSON.parse((await run('start')).stdout).message).toContain('host');
+    await run('stop');
+    await expect(run('invalid-action')).rejects.toMatchObject({ code: 1 });
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+}, 30000);

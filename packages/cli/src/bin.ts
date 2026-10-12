@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { cac } from 'cac';
+import { registerJobsCommand } from './commands/jobs.js';
 import pc from 'picocolors';
 import { startServer } from './server.js';
 import { runCheckCommand } from './commands/check.js';
@@ -9,6 +10,7 @@ import { runBuildCommand } from './commands/build.js';
 import { runInitCommand } from './commands/init.js';
 
 const cli = cac('featherduster');
+registerJobsCommand(cli);
 
 // 1. Default command: launch local server
 cli

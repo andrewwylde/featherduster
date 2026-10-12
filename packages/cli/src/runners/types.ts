@@ -12,6 +12,7 @@ export interface RunnerRequest {
   prompt: string;
   /** Strict JSON Schema the output must satisfy. */
   schema: Record<string, unknown>;
+  transportRetryCount?: number;
   signal: AbortSignal;
   onProgress(evt: RunnerProgressEvent): void;
 }

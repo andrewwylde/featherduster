@@ -1,3 +1,16 @@
+import type { JobDraft } from '@featherduster/core';
+import { JobsRepository } from '../../jobs/repository.js';
+
+/** Linked drafts are append-only SQLite revisions, never artifact file edits. */
+export class JobDraftRepository {
+  constructor(private readonly repository: JobsRepository) {}
+  create(draft: JobDraft): JobDraft { return this.repository.saveDraft(draft, null); }
+  getLatest(id: string): JobDraft { return this.repository.getLatestDraft(id); }
+  getRevision(id: string, revision: number): JobDraft { return this.repository.getDraftRevision(id, revision); }
+  save(draft: JobDraft, expectedRevision: number): JobDraft { return this.repository.saveDraft(draft, expectedRevision); }
+  fork(request: Parameters<JobsRepository['forkDraft']>[0]): JobDraft { return this.repository.forkDraft(request); }
+}
+
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';

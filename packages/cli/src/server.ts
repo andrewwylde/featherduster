@@ -1,3 +1,5 @@
+import { createJobsRuntime, type JobsRuntime, type JobsRuntimeDependencies } from './jobs/runtime.js';
+import { mountJobsRoutes } from './jobs/routes.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -113,10 +115,12 @@ import { ClaudeAuthManager } from './settings/claude-auth.js';
 import { CodexAuthManager } from './settings/codex-auth.js';
 import { getCredentialStore, type CredentialStore } from './settings/credentials.js';
 import { TypstRenderer } from './render/typst-renderer.js';
-import { LatexRenderer } from './render/latex-renderer.js';
+import { LatexRenderer } from './render/legacy-latex-renderer.js';
 import { checkWorkspace } from './commands/check.js';
 
 export interface CreateAppOptions {
+  jobsDependencies?: Partial<JobsRuntimeDependencies>;
+  jobsRuntimeFactory?: typeof createJobsRuntime;
   watcher?: WorkspaceWatcher;
   uiDir?: string;
   /** Override model runner construction (tests). */
@@ -312,7 +316,7 @@ export interface ResumeRecord {
   spec: ResumeSpec;
 }
 
-export function loadResumeSpecs(workspaceDir: string): ResumeRecord[] {
+export function loadResumeSpecs(workspaceDir: string, includeStarter = true): ResumeRecord[] {
   const records: ResumeRecord[] = [];
   const directories: Array<{ dir: string; type: 'template' | 'tailored' }> = [
     { dir: path.join(workspaceDir, 'resumes', 'templates'), type: 'template' },
@@ -365,7 +369,7 @@ export function loadResumeSpecs(workspaceDir: string): ResumeRecord[] {
   }
 
   // If no templates exist, provide a default starter template conforming to ResumeSpec
-  if (records.filter((r) => r.type === 'template').length === 0) {
+  if (includeStarter && records.filter((r) => r.type === 'template').length === 0) {
     records.unshift({
       id: 'template-starter',
       name: 'Starter Template',
@@ -390,9 +394,18 @@ export function loadResumeSpecs(workspaceDir: string): ResumeRecord[] {
 /**
  * Creates and configures the Hono local application instance for a workspace directory.
  */
-export function createApp(workspaceDir: string, options?: CreateAppOptions): Hono {
+export function createApp(workspaceDir: string, options?: CreateAppOptions): Hono & { initializeJobs(): void; disposeJobs(): Promise<void> } {
   const resolvedWorkspaceDir = path.resolve(workspaceDir);
   const app = new Hono();
+  let jobs: JobsRuntime | undefined;
+  const jobsStreams = new Set<() => void>();
+  const getJobs = () => jobs ??= (options?.jobsRuntimeFactory ?? createJobsRuntime)(resolvedWorkspaceDir, {
+    loadResumes: () => loadResumeSpecs(resolvedWorkspaceDir, false),
+    loadEvidence: () => loadEvidenceStore(resolvedWorkspaceDir),
+    loadPrivacyRules: () => loadPrivacyRules(resolvedWorkspaceDir),
+    runnerFactory: options?.runnerFactory,
+    ...options?.jobsDependencies,
+  });
   const watcher = options?.watcher ?? new WorkspaceWatcher(resolvedWorkspaceDir);
   const typstRenderer = options?.typstRenderer ?? new TypstRenderer();
   const latexRenderer = options?.latexRenderer ?? new LatexRenderer();
@@ -1360,14 +1373,19 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   });
 
   // 8. Server-Sent Events (SSE) stream endpoint
+  mountJobsRoutes(app, getJobs);
+
   app.get('/api/events', (c) => {
     return streamSSE(c, async (stream) => {
       let isCleanedUp = false;
       let unsubscribe: (() => void) | null = null;
 
+      const closeStream = () => { cleanup(); stream.abort(); };
+      jobsStreams.add(closeStream);
       const cleanup = () => {
         if (!isCleanedUp) {
           isCleanedUp = true;
+          jobsStreams.delete(closeStream);
           if (unsubscribe) {
             unsubscribe();
             unsubscribe = null;
@@ -1408,7 +1426,11 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
             cleanup();
           }
         });
+        const unsubscribeJobs = getJobs().subscribe(evt => {
+          void stream.writeSSE({ event: 'jobs', id: evt.id, data: JSON.stringify(evt) }).catch(() => cleanup());
+        });
         unsubscribe = () => {
+          unsubscribeJobs();
           unsubscribeWatcher();
           tailoringListeners.delete(tailoringListener);
         };
@@ -1497,7 +1519,10 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     return c.text('Featherduster Web UI is not built. Run "npm run build" in packages/ui.', 404);
   });
 
-  return app;
+  return Object.assign(app, {
+    initializeJobs() { getJobs().initialize(); },
+    async disposeJobs() { for (const close of jobsStreams) close(); await jobs?.dispose(); },
+  });
 }
 
 export interface StartServerOptions {
@@ -1525,11 +1550,20 @@ export async function startServer(options?: StartServerOptions): Promise<ServerI
 
   const app = createApp(workspaceDir, { watcher, uiDir: options?.uiDir });
 
-  const server = serve({
-    fetch: app.fetch,
-    port,
-    hostname: '127.0.0.1',
-  });
+  let server: ReturnType<typeof serve>;
+  try {
+    app.initializeJobs();
+    server = serve({ fetch: app.fetch, port, hostname: '127.0.0.1' });
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => { server.removeListener('listening', onListening); reject(error); };
+      const onListening = () => { server.removeListener('error', onError); resolve(); };
+      server.once('error', onError);
+      server.once('listening', onListening);
+    });
+  } catch (error) {
+    try { await app.disposeJobs(); } finally { await watcher.close(); }
+    throw error;
+  }
 
   if (options?.openBrowser) {
     try {
@@ -1543,16 +1577,19 @@ export async function startServer(options?: StartServerOptions): Promise<ServerI
     port,
     workspaceDir,
     close: async () => {
-      await watcher.close();
-      if (typeof (server as any).closeAllConnections === 'function') {
-        (server as any).closeAllConnections();
+      try { await app.disposeJobs(); } finally {
+        try { await watcher.close(); } finally {
+          if (typeof (server as any).closeAllConnections === 'function') {
+            (server as any).closeAllConnections();
+          }
+          await new Promise<void>((resolve, reject) => {
+            server.close((err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+        }
       }
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => {
-          if (err) reject(err);
-          else resolve();
-        });
-      });
     },
   };
 }

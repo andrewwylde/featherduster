@@ -164,3 +164,14 @@ describe('FakeRunner', () => {
     await expect(new FakeRunner().run(request())).rejects.toBeInstanceOf(RunnerError);
   });
 });
+
+it('disables SDK transport retries for bounded requests without changing manual defaults', async () => {
+  const options: unknown[] = [];
+  const client = { beta: { messages: { stream: (_: unknown, opts: unknown) => {
+    options.push(opts);
+    return { on: () => {}, finalMessage: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: '{"word":"ok"}' }] }) };
+  } } } };
+  const runner = new AnthropicApiRunner({ client: client as unknown as import('@anthropic-ai/sdk').default });
+  await runner.run(request({ transportRetryCount: 0 })); await runner.run(request());
+  expect(options[0]).toMatchObject({ maxRetries: 0 }); expect(options[1]).not.toHaveProperty('maxRetries');
+});

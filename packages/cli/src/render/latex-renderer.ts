@@ -1,92 +1,66 @@
-import { spawn } from 'node:child_process';
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { compileTemplateResume, LatexTemplateProfileSchema, type LatexTemplateProfile, type PrivacyRulesConfig, type ResumeSpec } from '@featherduster/core';
+import { listLatexTemplates } from '../jobs/templates.js';
+import { PdfVerifier, readPdf, type PdfPreview, type PdfValidationReport } from './pdf-verifier.js';
+import { checkAbort, detectTool, diagnostic, positiveLimit, runTool, type ToolLimits, type ToolOptions } from './tool-process.js';
 
-export interface LatexRendererOptions {
-  command?: string;
-  env?: NodeJS.ProcessEnv;
-  detectCacheMs?: number;
-  timeoutMs?: number;
+export interface LatexRendererOptions extends ToolLimits, ToolOptions {
+  /** Application-owned executable profiles only; never accept model/request templates. */
+  profiles?: readonly LatexTemplateProfile[];
+  verifier?: PdfVerifier;
+  /** Native MiKTeX requires --disable-installer; TeX Live never installs packages. */
+  distribution?: 'texlive' | 'miktex';
 }
-
-export interface LatexPdfRender {
-  available: boolean;
-  detail: string;
-  pdf: Buffer | null;
-  error: string | null;
+export interface LatexRenderResult {
+  status: 'passed' | 'blocked' | 'failed'; source?: string; pdf?: Buffer;
+  previews: PdfPreview[]; report?: PdfValidationReport;
+  diagnostics: { code: string; message: string }[];
 }
-
-const INSTALL_HINT = 'LaTeX compiler not found on PATH. Install MiKTeX or TeX Live to enable PDF export.';
-const OUTPUT_CAP = 16 * 1024 * 1024;
-
-function run(command: string, args: string[], env: NodeJS.ProcessEnv, timeoutMs: number): Promise<{ status: number | null; stdout: string; stderr: string; error: Error | null }> {
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(command, args, { windowsHide: true, env, stdio: ['ignore', 'pipe', 'pipe'] });
-    } catch (error: any) {
-      resolve({ status: null, stdout: '', stderr: '', error });
-      return;
-    }
-    let stdout = '', stderr = '', settled = false, timedOut = false;
-    const timer = setTimeout(() => { timedOut = true; child.kill(); }, timeoutMs);
-    child.stdout?.on('data', (data) => { if (stdout.length < OUTPUT_CAP) stdout += data; });
-    child.stderr?.on('data', (data) => { if (stderr.length < OUTPUT_CAP) stderr += data; });
-    const finish = (result: { status: number | null; stdout: string; stderr: string; error: Error | null }) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      resolve(result);
-    };
-    child.on('error', (error) => finish({ status: null, stdout, stderr, error }));
-    child.on('close', (status) => finish({ status, stdout, stderr, error: timedOut ? new Error(`LaTeX timed out after ${timeoutMs}ms`) : null }));
-  });
-}
-
 export class LatexRenderer {
-  private readonly command: string;
-  private readonly env: NodeJS.ProcessEnv;
-  private readonly detectCacheMs: number;
-  private readonly timeoutMs: number;
-  private cached: { at: number; available: boolean; detail: string } | null = null;
-
-  constructor(options: LatexRendererOptions = {}) {
-    // pdflatex is the broadly available engine and does not require Perl
-    // (unlike latexmk on a default MiKTeX installation).
-    this.command = options.command ?? 'pdflatex';
-    this.env = options.env ?? process.env;
-    this.detectCacheMs = options.detectCacheMs ?? 10_000;
-    this.timeoutMs = options.timeoutMs ?? 60_000;
+  private readonly profiles: LatexTemplateProfile[];
+  private readonly verifier: PdfVerifier;
+  constructor(private readonly options: LatexRendererOptions = {}) {
+    this.profiles = (options.profiles ?? listLatexTemplates()).map(p => LatexTemplateProfileSchema.parse(p));
+    if (new Set(this.profiles.map(p => p.id)).size !== this.profiles.length) throw new Error('Duplicate template IDs');
+    this.verifier = options.verifier ?? new PdfVerifier(options);
+    positiveLimit(options.timeoutMs, 30000); positiveLimit(options.probeTimeoutMs, 5000); positiveLimit(options.outputLimit, 1024 * 1024);
   }
-
-  async detect(): Promise<{ available: boolean; detail: string }> {
-    if (this.cached && Date.now() - this.cached.at < this.detectCacheMs) return this.cached;
-    const probe = await run(this.command, ['--version'], this.env, 15_000);
-    const result = probe.error || probe.status !== 0
-      ? { available: false, detail: INSTALL_HINT }
-      : { available: true, detail: (probe.stdout || probe.stderr).trim() || 'pdflatex' };
-    this.cached = { ...result, at: Date.now() };
-    return result;
+  async preflight(templateId: string, signal?: AbortSignal) {
+    const profile = this.profiles.find(p => p.id === templateId);
+    if (!profile) return { available: false, tools: [], diagnostics: [{ code: 'template', message: `Unknown LaTeX template: ${templateId}` }] };
+    const compiler = await detectTool('pdflatex', this.options, this.options, signal);
+    const inspection = await this.verifier.detect(signal);
+    const tools = [compiler, ...inspection.tools];
+    return { available: tools.every(t => t.available), tools, diagnostics: tools.filter(t => !t.available).map(t => ({ code: 'tool-unavailable', message: t.detail })) };
   }
-
-  async renderPdf(source: string): Promise<LatexPdfRender> {
-    const detection = await this.detect();
-    if (!detection.available) return { ...detection, pdf: null, error: null };
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'featherduster-latex-'));
+  async renderPdf(input: { templateId: string; spec: ResumeSpec; rules?: PrivacyRulesConfig; signal?: AbortSignal }): Promise<LatexRenderResult> {
+    const detection = await this.preflight(input.templateId, input.signal);
+    if (!detection.available) return { status: 'blocked', previews: [], diagnostics: detection.diagnostics };
+    const result: LatexRenderResult = { status: 'failed', previews: [], diagnostics: [] };
+    let dir: string | undefined;
     try {
-      const input = path.join(dir, 'resume.tex');
-      await fs.promises.writeFile(input, source, 'utf8');
-      const result = await run(this.command, ['-interaction=nonstopmode', '-halt-on-error', '-file-line-error', '-output-directory', dir, input], this.env, this.timeoutMs);
-      if (result.error || result.status !== 0) {
-        return { ...detection, pdf: null, error: `${result.stdout}\n${result.stderr}`.trim() || result.error?.message || `latexmk exited with code ${result.status}` };
-      }
+      checkAbort(input.signal);
+      const profile = this.profiles.find(p => p.id === input.templateId)!;
+      const compiled = compileTemplateResume(profile, input.spec, input.rules);
+      result.source = compiled.source;
+      dir = await fs.mkdtemp(path.join(os.tmpdir(), 'featherduster-latex-'));
+      await fs.writeFile(path.join(dir, 'resume.tex'), compiled.source);
+      // MiKTeX also advertises itself in its version banner, so default invocation is safe.
+      const miktex = this.options.distribution === 'miktex' || /miktex/i.test(detection.tools[0]?.detail ?? '');
+      await runTool('pdflatex', this.options, [
+        ...(miktex ? ['--disable-installer'] : []), '-no-shell-escape', '-interaction=nonstopmode', '-halt-on-error', '-file-line-error', '-output-directory', dir, 'resume.tex',
+      ], { ...this.options, cwd: dir, signal: input.signal });
       const pdfPath = path.join(dir, 'resume.pdf');
-      return { ...detection, pdf: await fs.promises.readFile(pdfPath), error: null };
-    } catch (error: any) {
-      return { ...detection, pdf: null, error: error?.message || 'LaTeX export failed' };
-    } finally {
-      await fs.promises.rm(dir, { recursive: true, force: true });
-    }
+      result.pdf = await readPdf(pdfPath);
+      const validation = await this.verifier.verify(pdfPath, { expectedText: compiled.expectedText, pageBudget: profile.page_budget, signal: input.signal });
+      result.report = validation.report;
+      result.previews = validation.previews;
+      result.diagnostics = validation.report.diagnostics;
+      if (validation.report.passed) result.status = 'passed';
+    } catch (error) { result.diagnostics.push(diagnostic(error)); }
+    finally { if (dir) await fs.rm(dir, { recursive: true, force: true }); }
+    return result;
   }
 }

@@ -84,7 +84,7 @@ export class AnthropicApiRunner implements ModelRunner {
           messages: [{ role: 'user', content: req.prompt }],
           output_config: { format: { type: 'json_schema', schema: req.schema } },
         },
-        { signal: req.signal }
+        { signal: req.signal, ...(req.transportRetryCount === undefined ? {} : { maxRetries: req.transportRetryCount }) }
       );
       stream.on('text', (delta) => req.onProgress({ kind: 'token', text: delta }));
       message = await stream.finalMessage();

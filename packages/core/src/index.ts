@@ -25,6 +25,13 @@ export * from './tailoring/apply.js';
 export * from './compilers/defense-brief-compiler.js';
 export * from './integrity/defense-simulator.js';
 export * from './compilers/page-budget.js';
+export * from './jobs/canonicalization.js';
+export * from './jobs/schemas.js';
+export * from './jobs/fit.js';
+export * from './jobs/transitions.js';
+export * from './jobs/preparation.js';
+
+export * from './jobs/template.js';
 export * from './tailoring/drafts.js';
 export * from './tailoring/draft-state.js';
 export * from './tailoring/resume-merge.js';
