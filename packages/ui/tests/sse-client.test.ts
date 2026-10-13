@@ -68,4 +68,18 @@ describe('sseClient singleton', () => {
 
     unsub();
   });
+  it('shares and releases the named jobs stream without delivering it to other listeners', () => {
+    vi.useFakeTimers();
+    const jobs = vi.fn(); const change = vi.fn();
+    const offJobs = sseClient.onJobs(jobs); const offChange = sseClient.onChange(change);
+    expect(global.EventSource).toHaveBeenCalledTimes(1);
+    const source = mockEventSourceInstances[0];
+    source.emit('jobs', { data: JSON.stringify({ job_id: 'job', payload: { kind: 'resume_review' } }) });
+    expect(jobs).toHaveBeenCalledWith({ job_id: 'job', payload: { kind: 'resume_review' } });
+    expect(change).not.toHaveBeenCalled();
+    offChange(); vi.advanceTimersByTime(5000); expect(source.close).not.toHaveBeenCalled();
+    offJobs(); vi.advanceTimersByTime(5000); expect(source.close).toHaveBeenCalledOnce();
+    vi.useRealTimers();
+  });
+
 });

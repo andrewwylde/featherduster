@@ -1,3 +1,4 @@
+import type { Job, PostingSnapshot, Attempt, ArtifactVersion, JobEvent, ScopedAnswer, WorkerControl, JobDraft, InputSnapshot, ResumeReview } from '@featherduster/core';
 import type {
   DraftAcknowledgement, DraftEnvelope, DraftContext, DraftCompletion, DraftRecord, DraftUpdate, RevisionToken, SetupPayload, ManualDraftPayload,
   AlignmentMatrix,
@@ -14,6 +15,27 @@ import type {
   ConfidentialityScanResult,
   ConfidentialityLeak,
 } from '@featherduster/core';
+
+export interface JobsDetail {
+  job: Job; posting: PostingSnapshot | null; attempt: Omit<Attempt, 'owner_token'> | null;
+  artifacts: ArtifactVersion[]; events: JobEvent[]; answers: ScopedAnswer[];
+  analysis: JobAnalysis | null; alignment: AlignmentMatrix | null; brief_markdown: string | null;
+}
+export interface JobsControl { control: WorkerControl; active: Omit<Attempt, 'owner_token'>[] }
+export interface JobReview {
+  artifact: ArtifactVersion; draft: JobDraft; base_resume: ResumeSpec;
+  analysis: JobAnalysis | null; alignment: AlignmentMatrix | null; brief_markdown: string | null;
+  validation_report: unknown; preview_count: number;
+}
+export interface IntakeItem {
+  index: number; original: string; valid: boolean; error: { code: string; message: string } | null;
+  fallback_available: boolean; job: Job | null; duplicate_id: string | null;
+  candidates: { company: string; role: string; original_url: string }[];
+}
+export interface IntakePreview { preview_id: string; preview: { workspace_id: string; items: IntakeItem[] } }
+export interface IntakeResult { items: (IntakeItem & { disposition: string; job_id: string | null; replayed?: boolean })[] }
+export type AnswerRequest = Pick<ScopedAnswer, 'key' | 'question' | 'scope' | 'status' | 'value'> & { expected_revision: number };
+export interface ReviewBinding { expected_job_revision: number; artifact_fingerprint: string; idempotency_key: string }
 
 /** Error thrown for non-2xx API responses; keeps the server's machine-readable code. */
 export class ApiError extends Error {
@@ -300,6 +322,22 @@ export interface DraftSyncPreview { upstreamFingerprint: string; conflicts: Draf
 export type DraftSyncResolutions = Record<string, 'local' | 'upstream'>;
 
 export class ApiClient {
+  getJobs() { return this.fetchJson<{ jobs: Job[] }>('/api/jobs'); }
+  getJob(id: string) { return this.fetchJson<JobsDetail>(`/api/jobs/${id}`); }
+  getJobsControl() { return this.fetchJson<JobsControl>('/api/jobs/control'); }
+  controlJobs(action: 'start' | 'pause' | 'stop', idempotency_key: string) { return this.fetchJson<unknown>(`/api/jobs/control/${action}`, this.jsonRequest('POST', { idempotency_key })); }
+  previewJobs(body: { mode: 'urls' | 'text'; input: string; fallback_job_id?: string; expected_revision?: number }) { return this.fetchJson<IntakePreview>('/api/jobs/preview', this.jsonRequest('POST', body)); }
+  addJobs(preview_id: string, idempotency_key: string) { return this.fetchJson<IntakeResult>('/api/jobs', this.jsonRequest('POST', { preview_id, idempotency_key })); }
+  captureJobInputs(id: string, expected_revision: number) { return this.fetchJson<{ input_snapshot: InputSnapshot }>(`/api/jobs/${id}/inputs`, this.jsonRequest('POST', { expected_revision })); }
+  prepareJob(id: string, action: 'prepare' | 'resume' | 'retry', body: { expected_revision: number; input_snapshot_id: string; idempotency_key: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/${action}`, this.jsonRequest('POST', body)); }
+  saveJobAnswer(id: string, body: AnswerRequest) { return this.fetchJson<{ job: Job; answer: ScopedAnswer }>(`/api/jobs/${id}/answers`, this.jsonRequest('PUT', body)); }
+  getJobReview(id: string, version: string) { return this.fetchJson<JobReview>(`/api/jobs/${id}/artifacts/${version}/review`); }
+  jobPdfUrl(id: string, version: string) { return `/api/jobs/${id}/artifacts/${version}/pdf`; }
+  jobPreviewUrl(id: string, version: string, page: number) { return `/api/jobs/${id}/artifacts/${version}/previews/${page}`; }
+  approveJobResume(id: string, version: string, body: ReviewBinding & { input_snapshot_id: string; input_fingerprint: string }) { return this.fetchJson<{ review: ResumeReview }>(`/api/jobs/${id}/artifacts/${version}/approve`, this.jsonRequest('POST', body)); }
+  editJobResume(id: string, version: string, body: ReviewBinding) { return this.fetchJson<{ draft: JobDraft }>(`/api/jobs/${id}/artifacts/${version}/continue-editing`, this.jsonRequest('POST', body)); }
+  getJobDraft(id: string, draft: string) { return this.fetchJson<{ draft: JobDraft }>(`/api/jobs/${id}/drafts/${draft}`); }
+  saveJobDraft(id: string, draft: string, expected_revision: number, candidate: ResumeSpec) { return this.fetchJson<{ draft: JobDraft }>(`/api/jobs/${id}/drafts/${draft}`, this.jsonRequest('PUT', { expected_revision, candidate })); }
   listTailoringDrafts(): Promise<DraftListResponse> { return this.fetchJson('/api/tailoring-drafts'); }
   getTailoringDraft(id: string): Promise<DraftEnvelope> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}`); }
   createTailoringDraft(input: { record: DraftSeed; mutationId: string }): Promise<DraftAcknowledgement> { return this.fetchJson('/api/tailoring-drafts', this.jsonRequest('POST', input)); }

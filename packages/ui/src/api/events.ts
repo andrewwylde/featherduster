@@ -10,6 +10,7 @@ class SseClient {
   private changeListeners = new Set<ChangeListener>();
   private draftListeners = new Set<DraftChangeListener>();
   private tailoringListeners = new Set<TailoringListener>();
+  private jobsListeners = new Set<ChangeListener>();
   private statusListeners = new Set<StatusListener>();
   private connected = false;
   private retryAttempts = 0;
@@ -21,7 +22,7 @@ class SseClient {
   }
 
   private totalListeners(): number {
-    return this.draftListeners.size + this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
+    return this.draftListeners.size + this.jobsListeners.size + this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
   }
 
   private setConnected(status: boolean) {
@@ -91,6 +92,12 @@ class SseClient {
             // Ignore subscriber error
           }
         }
+      });
+
+      source.addEventListener('jobs', (e: MessageEvent) => {
+        let data: unknown;
+        try { data = JSON.parse(e.data); } catch { return; }
+        for (const listener of this.jobsListeners) { try { listener(data); } catch { /* isolate observers */ } }
       });
 
       source.addEventListener('tailoring-draft', (e: MessageEvent) => {
@@ -177,6 +184,12 @@ class SseClient {
     };
   }
 
+  onJobs(listener: ChangeListener): () => void {
+    this.jobsListeners.add(listener);
+    this.connect();
+    return () => { this.jobsListeners.delete(listener); this.scheduleDisconnectIfOrphaned(); };
+  }
+
   onStatus(listener: StatusListener): () => void {
     this.statusListeners.add(listener);
     listener(this.connected);
@@ -206,6 +219,7 @@ class SseClient {
 
   resetForTesting() {
     this.close();
+    this.jobsListeners.clear();
     this.changeListeners.clear();
     this.tailoringListeners.clear();
     this.draftListeners.clear();

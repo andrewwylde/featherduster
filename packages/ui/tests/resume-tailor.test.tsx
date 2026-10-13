@@ -630,4 +630,21 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
       });
     });
   });
+  it('loads and saves linked drafts without selecting a normal variant, retaining edits on conflict', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const draft = { schema_version: 1 as const, id, workspace_id: 'w', job_id: id, revision: 3, input_snapshot_id: id, parent_artifact_version_id: id, candidate: sampleResumeRecord.spec, proposals: { proposals: [] }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+    vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft });
+    const save = vi.spyOn(apiClient, 'saveJobDraft').mockRejectedValue(new ApiError('Draft revision changed', 409));
+    render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} />);
+    await screen.findByRole('button', { name: 'Save job draft' });
+    expect(screen.queryByLabelText('Select resume variant')).not.toBeInTheDocument();
+    expect(screen.queryByText('Deliverables & Exports')).not.toBeInTheDocument();
+    const summary = screen.getByDisplayValue(sampleResumeRecord.spec.experiences[0].bullets[0].text);
+    fireEvent.change(summary, { target: { value: 'My retained linked edits' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save job draft' }));
+    await screen.findAllByText('Draft revision changed');
+    expect(summary).toHaveValue('My retained linked edits');
+    expect(save).toHaveBeenCalledWith(id, id, 3, expect.objectContaining({ experiences: expect.arrayContaining([expect.objectContaining({ bullets: expect.arrayContaining([expect.objectContaining({ text: 'My retained linked edits' })]) })]) }));
+  });
+
 });

@@ -14,6 +14,7 @@ const routeByTab: Record<NavTab, string> = {
   skills: '/skills',
   tailor: '/tailor',
   settings: '/settings',
+  jobs: '/jobs',
 };
 
 const tabByRoute: Record<string, NavTab> = {
@@ -25,6 +26,7 @@ const tabByRoute: Record<string, NavTab> = {
   '/rubrics': 'skills',
   '/tailor': 'tailor',
   '/settings': 'settings',
+  '/jobs': 'jobs',
 };
 
 /** Paths that moved when tailoring and exports merged into one tab. */
@@ -49,6 +51,7 @@ export function pathForTab(tab: NavTab): string {
 export function tabForPath(pathname: string): NavTab {
   const normalized = normalize(pathname);
   if (legacyRoutes[normalized]) return tabForPath(legacyRoutes[normalized]);
+  if (normalized.startsWith('/jobs/')) return 'jobs';
   if (normalized.startsWith('/tailor/')) return 'tailor';
   return tabByRoute[normalized] ?? 'briefing';
 }
@@ -79,4 +82,16 @@ export function tailorViewForPath(pathname: string): TailorView {
   const slug = tailoringSlugForPath(canonical);
   const step = new URL(pathname, 'http://local').searchParams.get('step');
   return slug ? { mode: 'run', slug, ...(TAILORING_STEPS.includes(step as TailoringStep) ? { step: step as TailoringStep } : {}) } : { mode: 'list' };
+}
+
+export const jobSections = { posting: 'Posting', fit: 'Fit', resume: 'Resume', answers: 'Answers', history: 'Application History' } as const;
+export type JobSection = keyof typeof jobSections;
+const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+export function jobsViewForPath(path: string): { id: string; section: JobSection } | null {
+  const match = new RegExp(`^/jobs/(${uuidPattern})(?:/(posting|fit|resume|answers|history))?$`, 'i').exec(normalize(path));
+  return match ? { id: match[1], section: (match[2] ?? 'posting').toLowerCase() as JobSection } : null;
+}
+export function jobDraftForPath(path: string): { jobId: string; draftId: string } | null {
+  const match = new RegExp(`^/tailor/canvas/jobs/(${uuidPattern})/(${uuidPattern})$`, 'i').exec(normalize(path));
+  return match ? { jobId: match[1], draftId: match[2] } : null;
 }

@@ -32,6 +32,7 @@ describe('static application routes', () => {
     ['/evidence', 'Evidence'],
     ['/skills', 'Skills'],
     ['/tailor', 'Tailor'],
+    ['/jobs', 'Jobs'],
   ])('renders %s directly', async (path, navLabel) => {
     window.history.replaceState({}, '', path);
     render(<App />);
@@ -66,6 +67,31 @@ describe('static application routes', () => {
     await waitFor(() => expect(window.location.pathname).toBe('/tailor/canvas'));
     expect(await screen.findByRole('heading', { name: /Resume Tailoring Canvas/i })).toBeInTheDocument();
   });
+  it('keeps manual edits while a separate linked job canvas is opened and revisited', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const spec = { profile: { name: 'Alex', title: 'Engineer', email: 'a@example.com' }, experiences: [{ company: 'Acme', role: 'Engineer', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Original bullet', citations: [] }] }], education: [], skills: [] };
+    vi.spyOn(apiClient, 'getResumes').mockResolvedValue([{ id: 'base', name: 'Base', type: 'template', filePath: 'base.yaml', spec }]);
+    vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft: { schema_version: 1, id, workspace_id: 'w', job_id: id, revision: 0, input_snapshot_id: id, parent_artifact_version_id: id, candidate: spec, proposals: { proposals: [] }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' } });
+    window.history.replaceState({}, '', '/tailor/canvas');
+    render(<App />);
+    const manual = await screen.findByDisplayValue('Original bullet');
+    fireEvent.change(manual, { target: { value: 'Unsaved manual bullet' } });
+    window.history.pushState({}, '', `/tailor/canvas/jobs/${id}/${id}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await screen.findByRole('button', { name: 'Save job draft' });
+    const linked = await screen.findByDisplayValue('Original bullet');
+    fireEvent.change(linked, { target: { value: 'Unsaved linked bullet' } });
+    window.history.pushState({}, '', '/tailor/canvas');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await waitFor(() => expect(manual).toHaveValue('Unsaved manual bullet'));
+    expect(manual).toBeVisible();
+    window.history.pushState({}, '', `/tailor/canvas/jobs/${id}/${id}`);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    await waitFor(() => expect(linked).toBeVisible());
+    expect(linked).toHaveValue('Unsaved linked bullet');
+    expect(apiClient.getJobDraft).toHaveBeenCalledTimes(1);
+  });
+
 });
 
 import { tailorViewForPath } from '../src/routing';

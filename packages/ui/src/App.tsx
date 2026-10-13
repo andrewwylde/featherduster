@@ -1,3 +1,6 @@
+import { ResumeTailor } from './views/ResumeTailor';
+import { JobsView } from './views/jobs/JobsView';
+import { JobDetail } from './views/jobs/JobDetail';
 import { useEffect, useRef, useState } from 'react';
 import { Layout, type NavTab } from './components/Layout';
 import { ThemeProvider } from './theme/ThemeContext';
@@ -9,6 +12,8 @@ import { EvidenceStrengthener } from './views/desk/EvidenceStrengthener';
 import { useDeskData } from './hooks/useDeskData';
 import {
   CANVAS_PATH,
+  jobDraftForPath,
+  jobsViewForPath,
   pathForTab,
   redirectForPath,
   tabForPath,
@@ -32,6 +37,12 @@ function canonicalPath(pathname: string): string {
 export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(canonicalPath(window.location.pathname + window.location.search)));
   const [tailorView, setTailorView] = useState<TailorView>(() => tailorViewForPath(window.location.pathname + window.location.search));
+  const [jobsView, setJobsView] = useState(() => jobsViewForPath(window.location.pathname + window.location.search));
+  const [linkedDraft, setLinkedDraft] = useState(() => jobDraftForPath(window.location.pathname + window.location.search));
+  const linkedDraftRef = useRef(linkedDraft);
+  linkedDraftRef.current = linkedDraft;
+  const lastPath = useRef(window.location.pathname + window.location.search);
+  const [linkedVisible, setLinkedVisible] = useState(() => !!jobDraftForPath(window.location.pathname + window.location.search));
   const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
   const desk = useDeskData();
   const [strengthenId, setStrengthenId] = useState<string | null>(null);
@@ -42,6 +53,12 @@ export function App() {
   const currentPath = useRef(window.location.pathname + window.location.search);
   const navigatePath = (path: string, replace = false) => {
     if (!replace && !navigationGuard.current()) { setNavigationError('Changes are not saved yet. Retry saving before leaving this draft.'); return; }
+    const draft = jobDraftForPath(path);
+    if (draft && linkedDraft && draft.draftId !== linkedDraft.draftId && !window.confirm('Replace the open job draft? Unsaved edits will be lost.')) return;
+    if (draft) setLinkedDraft(draft);
+    setLinkedVisible(!!draft);
+    setJobsView(jobsViewForPath(path));
+    lastPath.current = path;
     setNavigationError(null);
     if (window.location.pathname + window.location.search !== path) {
       window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
@@ -49,7 +66,7 @@ export function App() {
     if (path === '/tailor') setTailorListVisit(visit => visit + 1);
     currentPath.current = path;
     setCurrentTab(tabForPath(path));
-    setTailorView(tailorViewForPath(path));
+    if (!draft) setTailorView(tailorViewForPath(path));
   };
 
   const navigateTo = (tab: NavTab) => navigatePath(pathForTab(tab));
@@ -59,10 +76,19 @@ export function App() {
       if (!navigationGuard.current()) { window.history.pushState({}, '', currentPath.current); setNavigationError('Changes are not saved yet. Retry saving before leaving this draft.'); return; }
       setNavigationError(null);
       const path = canonicalPath(window.location.pathname + window.location.search);
+      const draft = jobDraftForPath(path);
+      if (draft && linkedDraftRef.current && draft.draftId !== linkedDraftRef.current.draftId && !window.confirm('Replace the open job draft? Unsaved edits will be lost.')) {
+        window.history.pushState({}, '', lastPath.current);
+        return;
+      }
+      lastPath.current = path;
+      if (draft) setLinkedDraft(draft);
+      setLinkedVisible(!!draft);
+      setJobsView(jobsViewForPath(path));
       if (path === '/tailor') setTailorListVisit(visit => visit + 1);
       currentPath.current = path;
       setCurrentTab(tabForPath(path));
-      setTailorView(tailorViewForPath(path));
+      if (!draft) setTailorView(tailorViewForPath(path));
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
@@ -115,7 +141,7 @@ export function App() {
         )}
 
         {currentTab === 'tailor' && (tailorView.mode === 'list' || tailorView.mode === 'draft' || tailorView.mode === 'canvas') && (
-          <TailoringDraftRoute
+          <div className={linkedVisible ? 'hidden' : 'block'}><TailoringDraftRoute
             key={tailorListVisit}
             canvas={tailorView.mode === 'canvas'}
             preferredResumeId={canvasResumeId}
@@ -124,9 +150,13 @@ export function App() {
             registerGuard={(guard) => { navigationGuard.current = guard; }}
             onOpenSettings={() => navigateTo('settings')}
             onOpenCanvas={() => navigatePath(CANVAS_PATH)}
-          />
+          /></div>
         )}
 
+        {currentTab === 'jobs' && (jobsView ? <JobDetail key={jobsView.id} id={jobsView.id} section={jobsView.section} navigate={navigatePath} /> : <JobsView navigate={navigatePath} />)}
+        {linkedDraft && <div className={currentTab === 'tailor' && linkedVisible ? 'block' : 'hidden'}>
+          <ResumeTailor key={linkedDraft.draftId} linkedJobDraft={linkedDraft} onBackToRuns={() => navigatePath(`/jobs/${linkedDraft.jobId}/resume`)} />
+        </div>}
         {currentTab === 'tailor' && tailorView.mode === 'unavailable' && <div><h1>Draft unavailable</h1><button onClick={() => navigatePath('/tailor')}>Back to tailoring</button></div>}
 
         {/* Runner Settings */}

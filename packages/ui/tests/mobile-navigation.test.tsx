@@ -82,4 +82,13 @@ describe('Mobile Navigation and Responsive Shell', () => {
     const searchInputs = screen.getAllByPlaceholderText(/Search across your work/i);
     expect(searchInputs.length).toBeGreaterThan(0);
   });
+  it('opens Jobs from More and keeps the More indicator active', () => {
+    render(<TestShell />);
+    fireEvent.click(screen.getByRole('button', { name: 'Mobile More' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Jobs' }));
+    expect(screen.getByTestId('active-content')).toHaveTextContent('Content for jobs');
+    expect(screen.getByRole('button', { name: 'Mobile More' }).className).toContain('text-vermilion-600');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
 });

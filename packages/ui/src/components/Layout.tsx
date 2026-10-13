@@ -8,7 +8,7 @@ import { OnboardingModal } from './desk/OnboardingModal';
 import { MobileBottomNav } from './desk/MobileBottomNav';
 import { MobileMoreDrawer } from './desk/MobileMoreDrawer';
 
-export type NavTab = 'briefing' | 'threads' | 'evidence' | 'skills' | 'tailor' | 'settings';
+export type NavTab = 'briefing' | 'threads' | 'evidence' | 'skills' | 'tailor' | 'settings' | 'jobs';
 
 interface LayoutProps {
   currentTab: NavTab;

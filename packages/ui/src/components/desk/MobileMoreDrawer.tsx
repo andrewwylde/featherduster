@@ -82,6 +82,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
 
         {/* Action Items List */}
         <div className="space-y-2">
+          <button type="button" className="w-full min-h-[44px] border rounded p-3 text-left" onClick={() => { onSelectTab('jobs'); onClose(); }}>Jobs</button>
           {/* Settings Tab */}
           <button
             type="button"

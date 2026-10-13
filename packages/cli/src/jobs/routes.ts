@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { JobSchema } from '@featherduster/core';
+import { JobSchema, ScopedAnswerSchema, ResumeSpecSchema } from '@featherduster/core';
 import type { Context, Hono } from 'hono';
+import { JobDraftRepository } from '../tailoring/drafts/repository.js';
 import type { IntakePreview } from './intake.js';
 import { RepositoryError } from './repository.js';
 import { jobDetail, publicJobsResult, type JobsRuntime } from './runtime.js';
@@ -51,6 +52,42 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
   for (const action of ['start', 'stop', 'pause'] as const) app.post(`/api/jobs/control/${action}`, handle(async (c, r) => {
     const body = z.object({ idempotency_key: key }).strict().parse(await c.req.json());
     return action === 'start' ? r.service.startAutomaticPreparation(body.idempotency_key) : action === 'stop' ? r.service.stopProcessing(body.idempotency_key) : r.service.pauseAfterCurrent(body.idempotency_key);
+  }));
+  app.put('/api/jobs/:id/answers', handle(async (c, r) => {
+    const id = uuid.parse(c.req.param('id'));
+    const body = ScopedAnswerSchema.innerType().pick({ key: true, question: true, scope: true, status: true, value: true }).extend({ expected_revision: revision }).strict().parse(await c.req.json());
+    return r.repository.database.db.transaction(() => {
+      const job = r.repository.getJob(id);
+      if (job.revision !== body.expected_revision) throw new RepositoryError('revision_conflict', 'Stale job revision; reload before saving');
+      if ((body.scope.kind === 'job' && body.scope.job_id !== id) || (body.scope.kind === 'employer' && body.scope.employer_id !== job.employer_id)) throw new RepositoryError('invalid_relationship', 'Answer scope does not belong to this job');
+      const now = new Date().toISOString(); const { expected_revision, ...answer } = body;
+      const saved = r.repository.saveAnswer({ ...answer, value: body.status === 'unknown' ? null : body.value, schema_version: 1, id: randomUUID(), workspace_id: job.workspace_id, confirmed_at: body.status === 'confirmed' ? now : null, updated_at: now, provenance: { source_type: 'user', reference: 'local-human', quote: null, recorded_at: now } });
+      return { answer: saved, job: r.repository.updateJob(job, expected_revision) };
+    }).immediate();
+  }));
+  const binding = z.object({ expected_job_revision: revision, artifact_fingerprint: key, idempotency_key: key }).strict();
+  app.get('/api/jobs/:id/artifacts/:versionId/review', handle((c, r) => r.artifacts.review(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')))));
+  for (const kind of ['pdf', 'previews/:page']) app.get(`/api/jobs/:id/artifacts/:versionId/${kind}`, handle((c, r) => {
+    const page = kind === 'pdf' ? undefined : z.coerce.number().int().positive().parse(c.req.param('page'));
+    const bytes = r.artifacts.content(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), page);
+    return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': page === undefined ? 'application/pdf' : 'image/png', 'Cache-Control': 'private, no-store' } });
+  }));
+  app.post('/api/jobs/:id/artifacts/:versionId/approve', handle(async (c, r) => {
+    const body = binding.extend({ input_snapshot_id: uuid, input_fingerprint: key }).parse(await c.req.json());
+    const job_id = uuid.parse(c.req.param('id')); const artifact_version_id = uuid.parse(c.req.param('versionId'));
+    r.artifacts.review(job_id, artifact_version_id);
+    return { review: r.artifacts.approveResume({ ...body, job_id, artifact_version_id, reviewer_id: 'local-human' }) };
+  }));
+  app.post('/api/jobs/:id/artifacts/:versionId/continue-editing', handle(async (c, r) => ({ draft: r.artifacts.continueEditing({ ...binding.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), artifact_version_id: uuid.parse(c.req.param('versionId')) }) })));
+  const getDraft = (c: Context, r: JobsRuntime) => {
+    const draft = new JobDraftRepository(r.repository).getLatest(uuid.parse(c.req.param('draftId')));
+    if (draft.job_id !== uuid.parse(c.req.param('id'))) throw new RepositoryError('invalid_relationship', 'Draft belongs to another job');
+    return draft;
+  };
+  app.get('/api/jobs/:id/drafts/:draftId', handle((c, r) => ({ draft: getDraft(c, r) })));
+  app.put('/api/jobs/:id/drafts/:draftId', handle(async (c, r) => {
+    const body = z.object({ expected_revision: revision, candidate: ResumeSpecSchema }).strict().parse(await c.req.json());
+    return { draft: new JobDraftRepository(r.repository).save({ ...getDraft(c, r), candidate: body.candidate }, body.expected_revision) };
   }));
   app.get('/api/jobs/:id', handle((c, r) => jobDetail(r, uuid.parse(c.req.param('id')))));
   app.put('/api/jobs/:id', handle(async (c, r) => {

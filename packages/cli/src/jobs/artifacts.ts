@@ -1,3 +1,4 @@
+import yaml from 'js-yaml';
 import { randomUUID } from 'node:crypto';
 import * as C from '@featherduster/core';
 import { z } from 'zod';
@@ -107,6 +108,47 @@ export class JobArtifactsService {
       if (input.fingerprint !== artifact.input_fingerprint || input.job_id !== artifact.job_id || draft.job_id !== artifact.job_id || draft.input_snapshot_id !== input.id || draft.parent_artifact_version_id !== artifact.parent_version_id) throw new Error('Draft binding mismatch');
       return { artifact, manifest };
     });
+  }
+  preparationContext(attemptId: string | null) {
+    return this.corrupt(() => {
+      if (!attemptId) return { analysis: null, alignment: null, brief_markdown: null };
+      const r = this.repository; const attempt = r.getAttempt(attemptId);
+      const input = this.getInputSnapshot(attempt.input_snapshot_id);
+      const read = <T>(stage: C.PreparationStage, schema: z.ZodType<T, z.ZodTypeDef, unknown>): T | null => {
+        const cp = r.listCheckpoints(attemptId).find(c => c.completed_stage === stage);
+        if (!cp) return null;
+        if (cp.job_id !== attempt.job_id || cp.input_fingerprint !== input.fingerprint || cp.output_references.length !== 1) throw new Error('Checkpoint binding mismatch');
+        const bytes = r.database.files.readArtifact(cp.output_references[0]!, attempt.job_id);
+        if (fingerprint(bytes) !== cp.output_fingerprint) throw new Error('Checkpoint hash mismatch');
+        return z.object({ schema_version: z.literal(1), stage: z.literal(stage), input_fingerprint: z.literal(input.fingerprint), data: schema }).parse(JSON.parse(bytes.toString())).data as T;
+      };
+      const analysis = read('analysis', C.JobAnalysisSchema);
+      const alignment = read('alignment', C.AlignmentMatrixSchema);
+      const brief = read('brief', C.DefensibilityBriefSchema);
+      return { analysis, alignment, brief_markdown: brief && analysis && alignment ? C.renderBriefMarkdown(brief, analysis, alignment) : null };
+    });
+  }
+  review(jobId: string, id: string) {
+    const { artifact, manifest } = this.verifiedArtifact(id);
+    if (artifact.job_id !== jobId) throw new RepositoryError('invalid_relationship', 'Artifact belongs to another job');
+    return this.corrupt(() => {
+      const r = this.repository; const files = r.database.files;
+      const input = this.getInputSnapshot(artifact.input_snapshot_id);
+      files.readArtifact(artifact.source, jobId, id);
+      if (artifact.pdf) files.readArtifact(artifact.pdf, jobId, id);
+      return { artifact, draft: r.getDraftRevision(manifest.draft_id, manifest.draft_revision),
+        base_resume: C.ResumeSpecSchema.parse(yaml.load(files.readSnapshot(input.base_resume, jobId, input.id).toString())),
+        ...this.preparationContext(artifact.attempt_id),
+        validation_report: artifact.validation_report ? JSON.parse(files.readArtifact(artifact.validation_report, jobId, id).toString()) : null,
+        preview_count: manifest.previews.length };
+    });
+  }
+  content(jobId: string, id: string, page?: number) {
+    const { artifact, manifest } = this.verifiedArtifact(id);
+    if (artifact.job_id !== jobId) throw new RepositoryError('invalid_relationship', 'Artifact belongs to another job');
+    const ref = page === undefined ? artifact.pdf : manifest.previews[page - 1];
+    if (!ref) throw new RepositoryError('not_found', 'Artifact content unavailable');
+    return this.corrupt(() => this.repository.database.files.readArtifact(ref, jobId, id));
   }
   getArtifact(id: string): C.ArtifactVersion { return this.verifiedArtifact(id).artifact; }
   approveResume(request: Parameters<JobsRepository['approveResume']>[0]): C.ResumeReview {

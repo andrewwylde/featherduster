@@ -32,6 +32,7 @@ import {
   cleanSlop,
   calculatePageBudget,
   type EvidenceRecord,
+  type JobDraft,
   type ResumeEducation,
   type ResumeSkillGroup,
 } from '@featherduster/core';
@@ -54,6 +55,7 @@ interface ModularExperience {
 }
 
 interface ResumeTailorProps {
+  linkedJobDraft?: { jobId: string; draftId: string };
   /** Complete hydrated document; changes explicitly replace the current payload. */
   initialPayload?: ManualDraftPayload;
   onPayloadChange?: (payload: ManualDraftPayload, source?: ResumeRecord) => void;
@@ -70,7 +72,10 @@ interface ResumeTailorProps {
   onBackToRuns?: () => void;
 }
 
-export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete }) => {
+export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete, linkedJobDraft }) => {
+  const [jobDraft, setJobDraft] = useState<JobDraft | null>(null);
+  const [savingJobDraft, setSavingJobDraft] = useState(false);
+  const savingDraftRef = useRef(false);
   // Remote data state
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
   const [evidenceList, setEvidenceList] = useState<EvidenceRecord[]>([]);
@@ -152,7 +157,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
   // Global Ctrl+E / Cmd+E shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
+      if (!linkedJobDraft && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'e') {
         e.preventDefault();
         setIsExportDrawerOpen((prev) => !prev);
       }
@@ -166,6 +171,13 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
     setLoading(true);
     setLoadError(null);
     try {
+      if (linkedJobDraft) {
+        const [{ draft }, evidence] = await Promise.all([apiClient.getJobDraft(linkedJobDraft.jobId, linkedJobDraft.draftId), apiClient.getEvidence()]);
+        initialized.current = true; setJobDraft(draft);
+        const next = manualFromSpec(draft.candidate, draft.id);
+        payloadRef.current = next; setPayload(next); setEvidenceList(evidence);
+        return;
+      }
       const [resumesData, evidenceData] = await Promise.all([
         apiClient.getResumes(),
         apiClient.getEvidence(),
@@ -186,7 +198,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [linkedJobDraft?.jobId, linkedJobDraft?.draftId]);
 
   useEffect(() => {
     loadInitialData();
@@ -586,7 +598,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
           </button>
 
           {/* Deliverables & Exports Trigger */}
-          <button
+          {!linkedJobDraft && <button
             onClick={() => setIsExportDrawerOpen(true)}
             className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white rounded-xl text-xs font-semibold transition-all inline-flex items-center gap-2 shadow-md shadow-purple-950/50"
             title="Open Deliverables & Exports slide-over flyout (Ctrl+E)"
@@ -596,10 +608,24 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
             <kbd className="hidden sm:inline-block px-1.5 py-0.5 text-[10px] font-mono bg-black/30 rounded border border-white/20">
               Ctrl+E
             </kbd>
-          </button>
+          </button>}
         </div>
       </div>
 
+      {linkedJobDraft && <section className="border rounded p-4 space-y-2">
+        <p>Linked job draft. Parent artifact: {jobDraft?.parent_artifact_version_id}. Saving is not approval or a newly validated PDF.</p>
+        <button className="min-h-[44px] border rounded px-3" disabled={!jobDraft || savingJobDraft} onClick={async () => {
+          if (!jobDraft || savingDraftRef.current) return;
+          savingDraftRef.current = true; setSavingJobDraft(true);
+          try {
+            const result = await apiClient.saveJobDraft(linkedJobDraft.jobId, linkedJobDraft.draftId, jobDraft.revision, currentSpec);
+            setJobDraft(result.draft); setSaveSuccessMessage('Job draft saved. Return to review; the parent artifact is unchanged.');
+          } catch (e) { setSaveSuccessMessage(e instanceof Error ? e.message : 'Save failed; editor contents retained'); }
+          finally { savingDraftRef.current = false; setSavingJobDraft(false); }
+        }}>Save job draft</button>
+        <button className="min-h-[44px] underline px-3" onClick={onBackToRuns}>Return to job review</button>
+        {saveSuccessMessage && <p role="status">{saveSuccessMessage}</p>}
+      </section>}
       {/* Mobile pane selector tablist (< xl) */}
       <div
         role="tablist"
@@ -641,7 +667,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
         {/* ========================================================================= */}
         <div className={`xl:col-span-5 space-y-5 ${mobilePane === 'matcher' ? 'block' : 'hidden xl:block'}`}>
           {/* Variant Loader Dropdown */}
-          <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3 shadow-md">
+          {!linkedJobDraft && <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3 shadow-md">
             <div className="flex items-center justify-between">
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-purple-400" />
@@ -667,7 +693,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                 </option>
               ))}
             </select>
-          </div>
+          </div>}
 
           {/* Target Job Description & Requirement Matcher */}
           <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3 shadow-md">
@@ -1244,7 +1270,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
 
       {/* Slide-Over Deliverables & Exports Drawer */}
       <ExportDrawer
-        isOpen={isExportDrawerOpen}
+        isOpen={!linkedJobDraft && isExportDrawerOpen}
         onClose={() => setIsExportDrawerOpen(false)}
         spec={currentSpec}
         variantName={resumes.find((r) => r.id === selectedResumeId)?.name || 'tailored'}

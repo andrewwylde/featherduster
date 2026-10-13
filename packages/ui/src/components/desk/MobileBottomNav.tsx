@@ -72,12 +72,12 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           aria-expanded={isMoreOpen}
           onClick={onOpenMore}
           className={`relative flex flex-col items-center justify-center flex-1 h-full min-h-[44px] px-1 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-vermilion-500 ${
-            isMoreOpen || currentTab === 'settings'
+            isMoreOpen || (currentTab === 'settings' || currentTab === 'jobs')
               ? 'text-vermilion-600 dark:text-vermilion-400 font-semibold'
               : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           }`}
         >
-          {(isMoreOpen || currentTab === 'settings') && (
+          {(isMoreOpen || (currentTab === 'settings' || currentTab === 'jobs')) && (
             <span
               className="absolute top-0 inset-x-2 h-[2px] bg-vermilion-500 rounded-full"
               aria-hidden="true"

@@ -45,6 +45,8 @@ describe('Desk Layout and Navigation Shell', () => {
     expect(screen.getByRole('link', { name: /Skills/i })).toHaveAttribute('href', '/skills');
     expect(screen.queryByRole('link', { name: /Exports/i })).not.toBeInTheDocument();
 
+    expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('href', '/jobs');
+
     // Header elements
     expect(screen.getByPlaceholderText(/Search across your work, notes, and people/i)).toBeInTheDocument();
 

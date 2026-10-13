@@ -9,7 +9,7 @@ import {
   Settings,
 } from 'lucide-react';
 
-export type DeskTab = 'briefing' | 'tailor' | 'threads' | 'evidence' | 'skills' | 'settings';
+export type DeskTab = 'briefing' | 'tailor' | 'threads' | 'evidence' | 'skills' | 'settings' | 'jobs';
 
 interface DeskSidebarProps {
   currentTab: DeskTab;
@@ -24,6 +24,7 @@ const pathByTab: Record<DeskTab, string> = {
   evidence: '/evidence',
   skills: '/skills',
   settings: '/settings',
+  jobs: '/jobs',
 };
 
 export const DeskSidebar: React.FC<DeskSidebarProps> = ({
@@ -33,6 +34,7 @@ export const DeskSidebar: React.FC<DeskSidebarProps> = ({
 }) => {
   const navItems: Array<{ id: DeskTab; label: string; icon: React.ElementType }> = [
     { id: 'briefing', label: 'Briefing', icon: FileText },
+    { id: 'jobs', label: 'Jobs', icon: FileText },
     { id: 'tailor', label: 'Tailor', icon: WandSparkles },
     { id: 'threads', label: 'Threads', icon: MessageSquare },
     { id: 'evidence', label: 'Evidence', icon: BookOpen },

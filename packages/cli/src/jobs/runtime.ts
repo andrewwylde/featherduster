@@ -87,5 +87,5 @@ export type JobsRuntime = ReturnType<typeof createJobsRuntime>;
 export function publicJobsResult<T>(value: T): T { return JSON.parse(JSON.stringify(value, (key, v) => key === 'owner_token' ? undefined : v)); }
 export function jobDetail(runtime: JobsRuntime, id: string) {
   const r = runtime.repository; const job = r.getJob(id);
-  return publicJobsResult({ job, posting: job.posting_snapshot_id ? r.getPostingSnapshot(job.posting_snapshot_id) : null, attempt: job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : null, artifacts: job.artifact_version_ids.map(id => runtime.artifacts.getArtifact(id)), events: r.listEvents(id) });
+  return publicJobsResult({ job, answers: [...r.listAnswers({ kind: 'candidate' }), ...(job.employer_id ? r.listAnswers({ kind: 'employer', employer_id: job.employer_id }) : []), ...r.listAnswers({ kind: 'job', job_id: id })], ...runtime.artifacts.preparationContext(job.current_attempt_id), posting: job.posting_snapshot_id ? r.getPostingSnapshot(job.posting_snapshot_id) : null, attempt: job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : null, artifacts: job.artifact_version_ids.map(id => runtime.artifacts.getArtifact(id)), events: r.listEvents(id) });
 }
