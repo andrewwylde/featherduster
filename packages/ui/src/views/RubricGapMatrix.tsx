@@ -1,3 +1,4 @@
+import { CorpusKnowledgePanel } from '../components/CorpusKnowledgePanel.js';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Target,
@@ -133,6 +134,8 @@ export const RubricGapMatrix: React.FC = () => {
     fetchGapAnalysis();
   }, [fetchGapAnalysis]);
 
+  useLiveSync(() => { void fetchGapAnalysis(); });
+
   // Summary Metric Calculations
   const totalCompetencies = gapAnalysis?.totalCompetencies ?? currentRubric?.competencies.length ?? 0;
   const metCount = gapAnalysis?.competencies.filter((c) => c.status === 'met').length ?? 0;
@@ -210,6 +213,7 @@ export const RubricGapMatrix: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fadeIn">
+      <CorpusKnowledgePanel onChanged={() => { void loadData(); void fetchGapAnalysis(); }} />
       {/* Top Header & Main Action Controls */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>

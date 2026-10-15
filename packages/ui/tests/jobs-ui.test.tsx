@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ArtifactVersion, Job, ResumeSpec } from '@featherduster/core';
 import { apiClient, ApiError, type JobReview, type JobsControl, type JobsDetail } from '../src/api/client.js';
-import { JobsView, matchesJobFilter } from '../src/views/jobs/JobsView.js';
+import { JobsView, matchesJobFilter, getJobPriority, compareJobs, isNeedsInput, isQueued } from '../src/views/jobs/JobsView.js';
 import { JobDetail } from '../src/views/jobs/JobDetail.js';
 import { JobIntake } from '../src/views/jobs/JobIntake.js';
 import { JobAnswers } from '../src/views/jobs/JobAnswers.js';
@@ -51,7 +51,8 @@ it('keeps application and preparation filters independent and retains archived r
   expect(matchesJobFilter(job({ application_lifecycle: 'submitted' }), 'Applied')).toBe(true);
   expect(matchesJobFilter(job({ preparation_state: 'failed' }), 'All')).toBe(true);
   render(<JobsView navigate={vi.fn()} />);
-  expect(await screen.findByText('Acme — Engineer')).toBeInTheDocument();
+  const heading = await screen.findByRole('heading', { level: 2, name: 'Acme — Engineer' });
+  expect(within(heading).getByRole('link')).toHaveAttribute('href', `/jobs/${id}`);
   expect(screen.getByText('Preparation: queued · Application: not_started')).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'Archived' } });
   expect(screen.getByText('Skipped and cancelled jobs; records are retained.')).toBeInTheDocument();
@@ -135,6 +136,16 @@ it('shows immutable actual candidate diff, PDF, brief and exact approval binding
   await waitFor(() => expect(onSaved).toHaveBeenCalled());
   expect(approve).toHaveBeenCalledWith(id, version, { expected_job_revision: 2, artifact_fingerprint: 'artifact-hash', input_snapshot_id: id, input_fingerprint: 'input-hash', idempotency_key: expect.any(String) });
 });
+it('keeps the previously loaded resume review visible when a reload times out', async () => {
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, latest_input_snapshot_id: id, input_snapshot_id: id });
+  vi.spyOn(apiClient, 'getJobReview').mockResolvedValueOnce(review).mockRejectedValueOnce(new Error('Request timed out after 15s: /api/jobs/job/artifacts/review'));
+  render(<JobResumeReview job={job()} artifacts={[artifact]} events={[]} onSaved={vi.fn()} navigate={vi.fn()} />);
+  await screen.findByText('Base to candidate diff');
+  fireEvent.click(screen.getByRole('button', { name: 'Reload review' }));
+  await screen.findByRole('alert');
+  expect(screen.getByText('Base to candidate diff')).toBeInTheDocument();
+  expect(screen.getByTitle('Resume PDF preview')).toHaveAttribute('src', `/api/jobs/${id}/artifacts/${version}/pdf`);
+});
 it('blocks failed validation but permits explicit historical draft fork', async () => {
   vi.spyOn(apiClient, 'getJobReview').mockResolvedValue({ ...review, artifact: { ...artifact, validation_result: 'failed' } });
   const fork = vi.spyOn(apiClient, 'editJobResume').mockResolvedValue({ draft: review.draft }); const navigate = vi.fn();
@@ -153,4 +164,124 @@ it('suppresses late reads from a previous job and reconciles without writes', as
   view.rerender(<View load={second} />); await screen.findByText('second job');
   resolve('stale job'); await waitFor(() => expect(screen.queryByText('stale job')).not.toBeInTheDocument());
   expect(apiClient.controlJobs).not.toHaveBeenCalled();
+});
+it('sorts jobs by needs_input, queued, then others, sub-sorted by created date', async () => {
+  const jobOlderSubmitted = job({
+    id: '00000000-0000-4000-8000-000000000001',
+    company: 'Alpha Corp',
+    role: 'Engineer 1',
+    preparation_state: 'skipped',
+    application_lifecycle: 'submitted',
+    created_at: '2026-06-01T00:00:00Z',
+  });
+  const jobNewerSubmitted = job({
+    id: '00000000-0000-4000-8000-000000000002',
+    company: 'Beta Inc',
+    role: 'Engineer 2',
+    preparation_state: 'skipped',
+    application_lifecycle: 'submitted',
+    created_at: '2026-06-02T00:00:00Z',
+  });
+  const jobOlderQueued = job({
+    id: '00000000-0000-4000-8000-000000000003',
+    company: 'Gamma LLC',
+    role: 'Engineer 3',
+    preparation_state: 'queued',
+    application_lifecycle: 'not_started',
+    created_at: '2026-06-03T00:00:00Z',
+  });
+  const jobNewerQueued = job({
+    id: '00000000-0000-4000-8000-000000000004',
+    company: 'Delta Co',
+    role: 'Engineer 4',
+    preparation_state: 'queued',
+    application_lifecycle: 'not_started',
+    created_at: '2026-06-04T00:00:00Z',
+  });
+  const jobNeedsInput = job({
+    id: '00000000-0000-4000-8000-000000000005',
+    company: 'Epsilon Tech',
+    role: 'Engineer 5',
+    preparation_state: 'needs_input',
+    application_lifecycle: 'not_started',
+    created_at: '2026-06-05T00:00:00Z',
+  });
+
+  expect(getJobPriority(jobNeedsInput)).toBe(0);
+  expect(getJobPriority(jobOlderQueued)).toBe(1);
+  expect(getJobPriority(jobOlderSubmitted)).toBe(2);
+
+  const unsorted = [jobOlderSubmitted, jobNewerSubmitted, jobOlderQueued, jobNewerQueued, jobNeedsInput];
+  const sortedDesc = [...unsorted].sort((a, b) => compareJobs(a, b, 'desc'));
+  expect(sortedDesc.map(j => j.company)).toEqual([
+    'Epsilon Tech',
+    'Delta Co',
+    'Gamma LLC',
+    'Beta Inc',
+    'Alpha Corp',
+  ]);
+
+  const sortedAsc = [...unsorted].sort((a, b) => compareJobs(a, b, 'asc'));
+  expect(sortedAsc.map(j => j.company)).toEqual([
+    'Epsilon Tech',
+    'Gamma LLC',
+    'Delta Co',
+    'Alpha Corp',
+    'Beta Inc',
+  ]);
+
+  vi.spyOn(apiClient, 'getJobs').mockResolvedValue({ jobs: unsorted });
+  render(<JobsView navigate={vi.fn()} />);
+
+  await screen.findByText(/Epsilon Tech — Engineer 5/);
+  const headings = screen
+    .getAllByRole('heading', { level: 2 })
+    .map(h => h.textContent)
+    .filter(t => t !== 'Add jobs');
+  expect(headings[0]).toContain('Epsilon Tech — Engineer 5');
+  expect(headings[1]).toContain('Delta Co — Engineer 4');
+  expect(headings[2]).toContain('Gamma LLC — Engineer 3');
+  expect(headings[3]).toContain('Beta Inc — Engineer 2');
+  expect(headings[4]).toContain('Alpha Corp — Engineer 1');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Toggle sort order' }));
+  const toggledHeadings = screen
+    .getAllByRole('heading', { level: 2 })
+    .map(h => h.textContent)
+    .filter(t => t !== 'Add jobs');
+  expect(toggledHeadings[0]).toContain('Epsilon Tech — Engineer 5');
+  expect(toggledHeadings[1]).toContain('Gamma LLC — Engineer 3');
+  expect(toggledHeadings[2]).toContain('Delta Co — Engineer 4');
+  expect(toggledHeadings[3]).toContain('Alpha Corp — Engineer 1');
+  expect(toggledHeadings[4]).toContain('Beta Inc — Engineer 2');
+});
+
+it('keeps isQueued and isNeedsInput strictly mutually exclusive for jobs with missing inputs', () => {
+  const jobWithMissingInput = job({
+    preparation_state: 'queued',
+    missing_inputs: [{
+      key: 'preparation_setup',
+      question: 'Configure runner',
+      scope: { kind: 'job', job_id: id },
+      reason: 'Setup required',
+    }],
+  });
+  expect(isNeedsInput(jobWithMissingInput)).toBe(true);
+  expect(isQueued(jobWithMissingInput)).toBe(false);
+  expect(matchesJobFilter(jobWithMissingInput, 'Needs input')).toBe(true);
+  expect(matchesJobFilter(jobWithMissingInput, 'Queued')).toBe(false);
+});
+
+
+it.each([false, true])('routes setup to Settings independently of existing review (%s)', async (hasReview) => {
+  const navigate = vi.fn();
+  vi.mocked(apiClient.getJob).mockResolvedValue({ ...detail(job({ preparation_state: 'needs_input', recovery: { kind: 'setup' } as Job['recovery'] })), ...(hasReview ? { proposal_review: { availability: 'available' as const, review_id: 'review', revision: 0, status: 'blocked' as const, blocking_count: 1, input_stale: true } } : {}) });
+  render(<JobDetail id={id} section="posting" navigate={navigate} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Resolve setup' }));
+  expect(navigate).toHaveBeenLastCalledWith('/settings');
+  if (hasReview) {
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve proposals' }));
+    expect(navigate).toHaveBeenLastCalledWith(`/jobs/${id}/resume`);
+  }
+  expect(apiClient.prepareJob).not.toHaveBeenCalled();
 });

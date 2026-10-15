@@ -33,6 +33,17 @@ function fixture() {
 }
 
 describe('immutable job inputs and revisioned drafts', () => {
+  it.each(['codex', 'claude-code'])('captures the %s CLI default without requiring a model override', runner => {
+    const f = fixture();
+    const input = f.service.captureInputs({ ...f.capture, runner_configuration: { runner, model: '' } });
+    expect(f.service.getInputSnapshot(input.id)).toEqual(input);
+    const saved = f.repo.database.files.readSnapshot(input.runner_configuration, f.job.id, input.id);
+    expect(JSON.parse(saved.toString())).toEqual({ runner, model: '' });
+  });
+  it.each(['ollama', 'anthropic-api', 'test'])('rejects an empty model for %s in an immutable bundle', runner => {
+    const f = fixture();
+    expect(() => f.service.captureInputs({ ...f.capture, runner_configuration: { runner, model: '' } })).toThrow();
+  });
   it('captures every input, persists across connections and isolates live changes', () => {
     const f = fixture(); f.capture.base_resume = 'edited live resume'; f.capture.selected_evidence[0]!.bytes = 'edited evidence';
     const reopened = new JobArtifactsService(open(f.root));
@@ -164,4 +175,26 @@ describe('artifact publication and immutable human review', () => {
     fs.rmSync(path.join(f.root, a.source.id)); expect(() => f.service.approveResume(request)).toThrow(expect.objectContaining({ code: 'corrupt_data' }));
     expect(f.repo.listEvents(f.job.id).filter(e => e.payload.kind === 'resume_review')).toHaveLength(0);
   });
+});
+
+it('always captures knowledge and verifies its bytes with the manifest', () => {
+  const f = fixture();
+  expect(f.input.corpus_knowledge).toBeDefined();
+  const knowledge = JSON.parse(f.repo.database.files.readSnapshot(f.input.corpus_knowledge!, f.job.id, f.input.id).toString());
+  expect(knowledge).toEqual({ schema_version: 1, revision: 0, updates: [] });
+  fs.writeFileSync(path.join(f.root, f.input.corpus_knowledge!.id), '{}');
+  expect(() => f.service.getInputSnapshot(f.input.id)).toThrow(expect.objectContaining({ code: 'corrupt_data' }));
+});
+
+it('reads legacy manifests without inserting a default knowledge reference or changing hashes', () => {
+  const f = fixture(); const files = f.repo.database.files;
+  const manifestPath = `${files.bundlePath('snapshots', f.job.id, f.input.id)}/manifest.json`;
+  const manifest = JSON.parse(fs.readFileSync(path.join(f.root, manifestPath), 'utf8'));
+  delete manifest.snapshot.corpus_knowledge;
+  const bytes = JSON.stringify(manifest);
+  fs.writeFileSync(path.join(f.root, manifestPath), bytes);
+  const { corpus_knowledge: _, ...legacy } = f.input; legacy.fingerprint = fingerprint(bytes);
+  f.repo.database.db.prepare('UPDATE input_snapshots SET payload=?,fingerprint=? WHERE id=?').run(JSON.stringify(legacy), legacy.fingerprint, legacy.id);
+  expect(f.service.getInputSnapshot(legacy.id)).toEqual(legacy);
+  expect(fs.readFileSync(path.join(f.root, manifestPath), 'utf8')).toBe(bytes);
 });

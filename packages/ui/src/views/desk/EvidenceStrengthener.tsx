@@ -1,3 +1,4 @@
+import { EvidenceAmendmentEditor } from '../../components/EvidenceAmendmentEditor.js';
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
 import type { ConfidenceLevel, EvidenceEntry, EvidenceRecord, MetricEntry } from '@featherduster/core';
@@ -91,8 +92,7 @@ export const EvidenceStrengthener: React.FC<EvidenceStrengthenerProps> = ({ reco
         >
           {ledgerPath && (
             <p role="note" className="rounded-desk bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
-              This entry lives in a consolidated ledger ({ledgerPath}). Use the gaps on the left as a checklist and edit it in
-              that file; Featherduster does not rewrite ledgers.
+              This entry lives in a consolidated ledger ({ledgerPath}). Use the companion amendment preview below; Featherduster never rewrites the ledger.
             </p>
           )}
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
@@ -163,6 +163,7 @@ export const EvidenceStrengthener: React.FC<EvidenceStrengthenerProps> = ({ reco
             <p role="status" className="text-sm text-emerald-700 dark:text-emerald-300">Saved to {savedPath}.</p>
           )}
 
+          <EvidenceAmendmentEditor entry={draft} narrative={narrative} onSaved={onSaved} />
           <div className="sticky bottom-0 -mx-5 -mb-5 mt-4 flex justify-end bg-white/95 p-3.5 backdrop-blur pb-safe dark:bg-[#121622]/95 border-t border-slate-100 dark:border-slate-800/80 sm:static sm:mx-0 sm:mb-0 sm:p-0 sm:bg-transparent sm:border-0 z-10">
             <button type="submit" disabled={saving || !!ledgerPath} className="rounded-desk bg-vermilion-500 px-4 py-2 text-sm font-semibold text-white hover:bg-vermilion-600 disabled:opacity-40 min-h-[44px] flex items-center justify-center">
               {saving ? 'Saving…' : 'Save to ledger file'}

@@ -33,6 +33,9 @@ export class JobsRepository {
     const data = { ...columns, payload: JSON.stringify(value) };
     this.database.db.prepare(`INSERT INTO ${table} (${Object.keys(data).join(',')}) VALUES (${Object.keys(data).map(() => '?').join(',')})`).run(...Object.values(data));
   }
+  withReceipt<T>(operation: string, key: string, request: unknown, fn: () => T): { result: T; replayed: boolean } {
+    return this.receipt(operation, key, request, fn);
+  }
   private receipt<T>(operation: string, key: string, request: unknown, fn: () => T): { result: T; replayed: boolean } {
     if (!key.trim()) this.error('idempotency_conflict', 'An idempotency key is required');
     return this.tx(() => {
@@ -219,8 +222,8 @@ export class JobsRepository {
     this.appendEvent({ schema_version: 1, id: this.uuid(), workspace_id: job.workspace_id, job_id: job.id, created_at: this.now(), actor: { kind: 'worker', id: 'repository' }, attempt_id: job.current_attempt_id, idempotency_key: null, payload });
   }
   private preparation(job: C.Job, action: C.PreparationAction, reason: string): C.Job {
-    const next = this.putJob({ ...C.transitionPreparation(job, action), state_reason: reason });
-    this.event(next, { kind: 'preparation_transition', from: job.preparation_state, to: next.preparation_state, reason }); return next;
+    const next = this.putJob({ ...C.transitionPreparation(job, action), recovery: action === 'complete' ? undefined : job.recovery, state_reason: reason });
+    this.event(next, { kind: 'preparation_transition', ...(next.recovery ? { recovery: next.recovery } : {}), from: job.preparation_state, to: next.preparation_state, reason }); return next;
   }
   transitionApplication(jobId: string, target: C.ApplicationLifecycle, expectedRevision: number, key: string) {
     return this.receipt('application', key, { jobId, target, expectedRevision }, () => {
@@ -228,7 +231,7 @@ export class JobsRepository {
       const next = this.putJob(C.transitionApplication(job, target)); this.event(next, { kind: 'application_transition', from: job.application_lifecycle, to: target, reason: 'Explicit application update' }); return next;
     });
   }
-  transitionPreparation(jobId: string, action: C.PreparationAction, expectedRevision: number, key: string, fence?: OwnershipFence, metadata: { reason?: string; error?: C.Attempt['error']; elapsed_ms?: number; missing_inputs?: C.Job['missing_inputs'] } = {}) {
+  transitionPreparation(jobId: string, action: C.PreparationAction, expectedRevision: number, key: string, fence?: OwnershipFence, metadata: { recovery?: C.JobRecovery; reason?: string; error?: C.Attempt['error']; elapsed_ms?: number; missing_inputs?: C.Job['missing_inputs'] } = {}) {
     return this.receipt('preparation', key, { jobId, action, expectedRevision, fence, metadata }, () => {
       const job = this.getJob(jobId); this.revision(job.revision, expectedRevision);
       if (action === 'claim') this.error('invalid_ownership', 'Use claimJob');
@@ -238,7 +241,21 @@ export class JobsRepository {
         if (action === 'complete' && !job.artifact_version_ids.some(id => { const a = this.getArtifact(id); return a.attempt_id === attempt.id && a.input_snapshot_id === attempt.input_snapshot_id && a.validation_result === 'passed'; })) this.error('invalid_relationship', 'Completion requires passed artifacts');
         this.putAttempt({ ...attempt, error: metadata.error ?? attempt.error, resource_usage: { ...attempt.resource_usage, elapsed_ms: Math.max(attempt.resource_usage.elapsed_ms, metadata.elapsed_ms ?? 0) }, status: action === 'complete' ? 'completed' : action === 'fail' || action === 'block' ? 'failed' : action === 'interrupt' ? 'interrupted' : 'cancelled', finished_at: this.now(), cancelled_at: action === 'cancel' ? this.now() : null });
       }
-      return this.preparation({ ...job, missing_inputs: metadata.missing_inputs ?? job.missing_inputs }, action, metadata.reason ?? `Explicit ${action}`);
+      return this.preparation({ ...job, recovery: metadata.recovery ?? job.recovery, missing_inputs: metadata.missing_inputs ?? job.missing_inputs }, action, metadata.reason ?? `Explicit ${action}`);
+    });
+  }
+  cancelJob(jobId: string, expectedRevision: number, key: string, reason = 'Cancelled by user') {
+    return this.receipt('cancel_job', key, { jobId, expectedRevision, reason }, () => {
+      const job = this.getJob(jobId);
+      this.revision(job.revision, expectedRevision);
+      if (!['queued', 'preparing', 'needs_input'].includes(job.preparation_state)) {
+        this.error('ineligible', `Cannot cancel job in "${job.preparation_state}" state`);
+      }
+      const active = this.active().find(a => a.job_id === jobId);
+      if (active) {
+        this.putAttempt({ ...active, status: 'cancelled', finished_at: this.now(), cancelled_at: this.now() });
+      }
+      return this.preparation(job, 'cancel', reason);
     });
   }
   getControl(): C.WorkerControl { return this.decode(this.database.db.prepare('SELECT payload FROM worker_control WHERE workspace_id=?').get(this.database.workspaceId), C.WorkerControlSchema); }
@@ -297,9 +314,10 @@ export class JobsRepository {
       this.preparation({ ...job, current_attempt_id: attempt.id }, 'claim', 'Preparation claimed'); return attempt;
     });
   }
-  requestPreparation(request: { job_id: string; expected_revision: number; input_snapshot_id: string; action?: 'resume' | 'retry' | 'reprepare'; idempotency_key: string; lease_ms: number }) {
+  requestPreparation(request: { job_id: string; expected_revision: number; input_snapshot_id: string; action?: 'resume' | 'retry' | 'reprepare'; idempotency_key: string; lease_ms: number }, admission?: () => void) {
     const { idempotency_key, ...data } = request;
     return this.receipt('request_preparation', idempotency_key, data, () => {
+      admission?.();
       let job = this.getJob(data.job_id); this.revision(job.revision, data.expected_revision);
       this.sameJob(this.getInputSnapshot(data.input_snapshot_id), job.id);
       const previous_attempt_id = job.current_attempt_id;

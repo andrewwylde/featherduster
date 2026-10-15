@@ -8,20 +8,22 @@ import { createApp } from '../src/server.js';
 import { createJobsRuntime, type JobsRuntime } from '../src/jobs/runtime.js';
 import { openJobsDatabase } from '../src/jobs/database.js';
 import { JobsRepository } from '../src/jobs/repository.js';
+import { defaultRunnerFactory, type RunnerFactory } from '../src/runners/registry.js';
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); vi.useRealTimers(); });
-function fixture() {
+function fixture(runnerFactory?: RunnerFactory) {
   const root = mkdtempSync(path.join(tmpdir(), 'jobs-api-'));
   mkdirSync(path.join(root, 'resumes/templates'), { recursive: true });
   writeFileSync(path.join(root, 'resumes/templates/base.json'), JSON.stringify({ profile: { name: 'Test', title: 'Engineer', email: 'a@b.com' }, experiences: [], education: [], skills: [] }));
   let runtime!: JobsRuntime;
   const run = vi.fn(async () => ({ company: '', role: '', seniority: '', mission: '', requirements: [], rows: [], proposals: [] }));
+  const evidence = new EvidenceStore([{ entry: { id: 'ev-one', date: '2026-01-01', company: 'acme', title: 'Systems', summary: 'Built systems', impact: 'Reliability', themes: [], confidence: 'verified', in_flight: false, metrics: [], internal_references: [] }, narrative: 'Preserve this narrative' }]);
   const app = createApp(root, {
     jobsRuntimeFactory: (w, d) => runtime = createJobsRuntime(w, d),
     jobsDependencies: { automaticDrain: false,
-      loadEvidence: () => new EvidenceStore([{ entry: { id: 'ev-one', date: '2026-01-01', company: 'acme', title: 'Systems', summary: 'Built systems', impact: 'Reliability', themes: [], confidence: 'verified', in_flight: false, metrics: [], internal_references: [] }, narrative: 'Preserve this narrative' }]),
-      runnerFactory: () => ({ id: 'fake', model: 'fake', label: 'Fake', locality: 'local', detect: async () => ({ available: true, detail: '' }), run }),
+      loadEvidence: () => evidence,
+      runnerFactory: runnerFactory ?? (() => ({ id: 'fake', model: 'fake', label: 'Fake', locality: 'local', detect: async () => ({ available: true, detail: '' }), run })),
       fetcher: async url => { if (url.includes('unavailable')) throw new Error('Unavailable'); return { original_url: url, html: '<html><body>Engineer posting</body></html>', final_url: url, retrieved_at: new Date().toISOString() }; },
       renderer: { preflight: async () => ({ available: true, tools: [], diagnostics: [] }), renderPdf: async () => ({ status: 'passed', source: 'latex', pdf: Buffer.from('pdf'), previews: [{ page: 1, mimeType: 'image/png', bytes: Buffer.from('png') }], report: { passed: true, pageCount: 1, pageBudget: 1, coverage: 1, missingFragments: [], diagnostics: [] }, diagnostics: [] }) },
     },
@@ -29,8 +31,42 @@ function fixture() {
   cleanup.push(async () => { await app.disposeJobs(); rmSync(root, { recursive: true, force: true }); });
   const request = (url: string, body?: unknown, method = 'POST') => app.request(url, body === undefined ? undefined : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
   const add = async () => { const p = await (await request('/api/jobs/preview', { mode: 'text', input: 'Build systems' })).json(); const res = await request('/api/jobs', { preview_id: p.preview_id, idempotency_key: randomUUID() }); return (await res.json()).items[0].job_id as string; };
-  return { root, app, request, add, run, runtime: () => runtime };
+  return { root, app, request, add, run, evidence, runtime: () => runtime };
 }
+it.each(['codex', 'claude-code'] as const)('prepares with the %s CLI default model saved in the input snapshot', async runnerId => {
+  const run = vi.fn(async () => ({ company: '', role: '', seniority: '', mission: '', requirements: [], rows: [], proposals: [] }));
+  const f = fixture((id, config) => {
+    const runner = defaultRunnerFactory(id, config);
+    if (runner) {
+      runner.detect = async () => ({ available: true, detail: 'Installed and signed in' });
+      runner.run = run;
+    }
+    return runner;
+  });
+  expect((await f.request('/api/settings/runner', { default: runnerId, [runnerId]: { model: '' } }, 'PUT')).status).toBe(200);
+  expect((await f.request('/api/runners/consent', { runner: runnerId })).status).toBe(200);
+  const id = await f.add(); const job = f.runtime().repository.getJob(id);
+  const capture = await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision });
+  expect(capture.status).toBe(201);
+  const input = (await capture.json()).input_snapshot;
+  const saved = f.runtime().repository.database.files.readSnapshot(input.runner_configuration, id, input.id);
+  expect(JSON.parse(saved.toString())).toEqual({ runner: runnerId, model: '' });
+  // Live settings must not replace the saved CLI-default choice on execution.
+  await f.request('/api/settings/runner', { [runnerId]: { model: 'new-live-model' } }, 'PUT');
+  expect((await f.request(`/api/jobs/${id}/prepare`, { expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: 'cli-default' })).status).toBe(202);
+  await f.runtime().service.worker.whenIdle();
+  expect(f.runtime().repository.getJob(id).preparation_state).toBe('resume_ready');
+  expect(run).toHaveBeenCalledTimes(4);
+});
+it('still rejects an Ollama runner without an explicit model', async () => {
+  const f = fixture(defaultRunnerFactory);
+  await f.request('/api/settings/runner', { default: 'ollama', ollama: { model: '' } }, 'PUT');
+  const id = await f.add(); const job = f.runtime().repository.getJob(id);
+  const capture = await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision });
+  expect(capture.status).toBe(400);
+  expect(await capture.json()).toMatchObject({ code: 'invalid_relationship', error: 'Configure a runner and model first' });
+  expect(f.runtime().repository.database.db.prepare('SELECT COUNT(*) AS count FROM input_snapshots').get()).toEqual({ count: 0 });
+});
 it('preview is read-only, commit preserves identity, replay and forged tokens are safe', async () => {
   const f = fixture();
   const p = await (await f.request('/api/jobs/preview', { mode: 'text', input: 'Build things' })).json();
@@ -187,4 +223,121 @@ it('serves verified historical review and bytes, binds approvals and forks edita
   writeFileSync(path.join(f.root, artifact.pdf.id), 'tampered');
   expect((await f.request(`${prefix}/review`)).status).toBe(500);
   expect((await f.request(`${prefix}/pdf`)).status).toBe(500);
+});
+
+it('cancels a queued job via POST /api/jobs/:id/cancel and rejects stale revisions', async () => {
+  const f = fixture();
+  const id = await f.add();
+  const repo = f.runtime().repository;
+  const original = repo.getJob(id);
+  const res = await f.request(`/api/jobs/${id}/cancel`, {
+    expected_revision: original.revision,
+    idempotency_key: 'cancel-op',
+    reason: 'Not interested anymore',
+  });
+  expect(res.status).toBe(202);
+  const updated = repo.getJob(id);
+  expect(updated.preparation_state).toBe('cancelled');
+  expect(updated.state_reason).toBe('Not interested anymore');
+
+  const stale = await f.request(`/api/jobs/${id}/cancel`, {
+    expected_revision: original.revision,
+    idempotency_key: 'cancel-stale',
+  });
+  expect(stale.status).toBe(409);
+});
+
+
+it('captures applicable selected-source support once, independent of later withdrawals and source edits', async () => {
+  const f = fixture(); const id = await f.add(); const runtime = f.runtime();
+  const view = runtime.corpus.read(); const source = view.records[0];
+  const request = { workspace_id: view.workspace_id, expected_revision: 0, idempotency_key: 'learn', explanation: 'Systems are backend work', change: { kind: 'skill_support' as const, value: { skill: 'backend', facet: 'systems', permitted_terms: ['backend'], support: 'direct' as const, scope: { kind: 'workspace' as const }, sources: [{ evidence_id: source.source.id, evidence_fingerprint: source.fingerprint, quote: 'Built systems' }], explanation: 'Systems' } } };
+  const update = runtime.corpus.remember(request).result;
+  const job = runtime.repository.getJob(id);
+  const input = runtime.captureInputs(id, job.revision);
+  const captured = runtime.artifacts.capturedContext(input.id);
+  expect(captured.skillSupport).toHaveLength(1);
+  expect(captured.knowledge.materialized?.sources[0].entry).toEqual(source.source.entry);
+  expect(runtime.artifacts.capturedContext(runtime.captureInputs(id, job.revision, { evidence_ids: [] }).id).skillSupport).toEqual([]);
+  runtime.corpus.withdraw({ ...request, expected_revision: 1, idempotency_key: 'withdraw', change: { kind: 'withdrawal', update_id: update.id, reason: 'Withdraw' } });
+  f.evidence.add({ ...source.source.entry, summary: 'Changed source', confidence: 'retracted' }, 'Changed narrative');
+  expect(runtime.artifacts.capturedContext(input.id).skillSupport).toEqual(captured.skillSupport);
+  const fresh = runtime.captureInputs(id, job.revision);
+  expect(fresh.fingerprint).not.toBe(input.fingerprint);
+  expect(runtime.artifacts.capturedContext(fresh.id).skillSupport).toEqual([]);
+  // Execution sees frozen support, not the now-withdrawn live relationship.
+  f.run.mockResolvedValueOnce({ company: '', role: '', seniority: '', mission: '', requirements: [{ id: 'r', tier: 'must', text: 'backend', quote: 'Build systems', terms: ['backend'] }] } as any)
+    .mockResolvedValueOnce({ rows: [] } as any)
+    .mockResolvedValueOnce({ proposals: [{ id: 'p', type: 'summary.rewrite', target: {}, after: 'Built backend', citations: ['ev-one'] }] } as any);
+  expect((await f.request(`/api/jobs/${id}/prepare`, { expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: 'captured' })).status).toBe(202);
+  await runtime.service.worker.whenIdle();
+  expect(runtime.repository.getJob(id).preparation_state).toBe('resume_ready');
+  expect(f.run).toHaveBeenCalledTimes(4);
+  expect(JSON.stringify(f.run.mock.calls)).toContain('backend');
+});
+
+it('rejects changed captured knowledge before constructing or calling a runner', async () => {
+  const factory = vi.fn(() => ({ id: 'fake' as const, model: 'fake', label: 'Fake', locality: 'local' as const, detect: vi.fn(async () => ({ available: true, detail: '' })), run: vi.fn() }));
+  const f = fixture(factory); const id = await f.add(); const runtime = f.runtime(); const job = runtime.repository.getJob(id);
+  const input = runtime.captureInputs(id, job.revision); factory.mockClear();
+  writeFileSync(path.join(f.root, input.corpus_knowledge!.id), 'changed');
+  await f.request(`/api/jobs/${id}/prepare`, { expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: 'changed' });
+  await runtime.service.worker.whenIdle();
+  expect(factory).not.toHaveBeenCalled(); expect(f.run).not.toHaveBeenCalled();
+});
+
+it('exposes strict zero-model review transport, exact admission, and explicit input refresh', async () => {
+  const f = fixture(); const id = await f.add();
+  const input = (await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: f.runtime().repository.getJob(id).revision })).json()).input_snapshot;
+  await f.request(`/api/jobs/${id}/prepare`, { expected_revision: f.runtime().repository.getJob(id).revision, input_snapshot_id: input.id, idempotency_key: 'first' });
+  await f.runtime().service.worker.whenIdle(); expect(f.run).toHaveBeenCalledTimes(4);
+  const view = await (await f.request(`/api/jobs/${id}/proposals`)).json();
+  expect(view.availability).toBe('available'); expect(JSON.stringify(view)).not.toContain('owner_token');
+  const binding = () => ({ expected_job_revision: f.runtime().repository.getJob(id).revision, expected_review_revision: view.review.revision, input_fingerprint: input.fingerprint });
+  const url = `/api/jobs/${id}/proposals/${view.review.id}`;
+  for (const extra of [{ ready: true }, { job_id: id }, { candidate_preview: {} }, { recorded_by: 'human' }]) {
+    expect((await f.request(url, { ...binding(), patches: [], groundings: [], feedback_kind: 'rejection', explanation: '', idempotency_key: 'invalid', ...extra }, 'PUT')).status).toBe(400);
+  }
+  expect((await f.app.request(url, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{' })).status).toBe(400);
+  expect((await f.request(`${url}/recheck`, { ...binding(), input_fingerprint: 'foreign' })).status).toBe(400);
+  const foreign = await f.add();
+  expect((await f.request(`/api/jobs/${foreign}/proposals/${view.review.id}/recheck`, binding())).status).toBe(409);
+  const save = { ...binding(), patches: [], groundings: [], feedback_kind: 'rejection', explanation: '', idempotency_key: 'save' };
+  const savedResponse = await f.request(url, save, 'PUT'); expect(savedResponse.status).toBe(200);
+  const saved = (await savedResponse.json()).result; view.review = saved.review;
+  expect((await f.request(url, save, 'PUT')).status).toBe(200);
+  expect((await f.request(url, { ...save, explanation: 'changed' }, 'PUT')).status).toBe(409);
+  expect((await f.request(`${url}/recheck`, binding())).status).toBe(200);
+  expect(f.run).toHaveBeenCalledTimes(4);
+  const controls = await (await f.request('/api/jobs/control')).json(); expect(controls).toHaveProperty('needs_review_count');
+  await f.request('/api/jobs/control/stop', { idempotency_key: 'stop' });
+  const continuation = { ...binding(), validation_fingerprint: saved.review.validation.fingerprint, idempotency_key: 'continue' };
+  expect((await f.request(`${url}/continue`, continuation)).status).toBe(409);
+  await f.request('/api/jobs/control/start', { idempotency_key: 'start' }); await f.runtime().service.worker.whenIdle();
+  const admitted = await f.request(`${url}/continue`, continuation); expect(admitted.status).toBe(202); expect(await admitted.text()).not.toContain('owner_token');
+  await f.runtime().service.worker.whenIdle(); expect(f.run).toHaveBeenCalledTimes(5);
+  expect((await f.request(`${url}/continue`, continuation)).status).toBe(202);
+  const refreshed = await f.request(`/api/jobs/${id}/inputs`, { expected_revision: f.runtime().repository.getJob(id).revision }); expect(refreshed.status).toBe(201);
+  const nextInput = (await refreshed.json()).input_snapshot;
+  expect((await (await f.request(`/api/jobs/${id}/proposals`)).json()).input_stale).toBe(true);
+  expect((await f.request(`${url}/recheck`, binding())).status).toBe(409);
+  expect(f.run).toHaveBeenCalledTimes(5);
+  expect((await f.request(`/api/jobs/${id}/reprepare`, { expected_revision: f.runtime().repository.getJob(id).revision, input_snapshot_id: nextInput.id, idempotency_key: 'new-version' })).status).toBe(202);
+  await f.runtime().service.worker.whenIdle(); expect(f.run).toHaveBeenCalledTimes(9);
+});
+it('saves remembered review corrections in the same transaction and emits corpus only once', async () => {
+  const f = fixture(); const id = await f.add(); const runtime = f.runtime();
+  const input = (await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: runtime.repository.getJob(id).revision })).json()).input_snapshot;
+  await f.request(`/api/jobs/${id}/prepare`, { expected_revision: runtime.repository.getJob(id).revision, input_snapshot_id: input.id, idempotency_key: 'prepare' }); await runtime.service.worker.whenIdle();
+  const view = await (await f.request(`/api/jobs/${id}/proposals`)).json();
+  const record = runtime.corpus.read().records[0]; const listener = vi.fn(); const unsub = runtime.subscribeCorpus(listener);
+  const change = { kind: 'skill_support', value: { skill: 'backend', facet: 'applications', permitted_terms: ['backend'], support: 'direct', scope: { kind: 'workspace' }, sources: [{ evidence_id: record.source.id, evidence_fingerprint: record.fingerprint, quote: 'Built systems' }], explanation: 'Application systems' } };
+  const url = `/api/jobs/${id}/proposals/${view.review.id}`;
+  const request = { expected_job_revision: runtime.repository.getJob(id).revision, expected_review_revision: 0, input_fingerprint: input.fingerprint, patches: [], groundings: [], feedback_kind: 'grounding', explanation: 'Application systems', remember: { expected_corpus_revision: 0, change }, idempotency_key: 'remember' };
+  const response = await f.request(url, request, 'PUT'); expect(response.status).toBe(200);
+  const saved = (await response.json()).result; expect(saved.corpus_revision).toBe(1);
+  expect(saved.review.corpus_update_ids).toEqual([saved.update.id]); expect(listener).toHaveBeenCalledTimes(1);
+  expect((await (await f.request('/api/corpus')).json()).snapshot.updates).toHaveLength(1);
+  expect((await f.request(url, request, 'PUT')).status).toBe(200); runtime.flushEvents(); expect(listener).toHaveBeenCalledTimes(1);
+  expect(f.run).toHaveBeenCalledTimes(4); unsub();
 });

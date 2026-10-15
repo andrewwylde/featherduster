@@ -145,6 +145,11 @@ describe('ExportDrawer Component Tests', () => {
     await waitFor(() => {
       expect(screen.getByText(/# Compiled \[markdown\] Output/)).toBeInTheDocument();
     });
+    // Omitted keyword props must not change effect dependencies on internal renders.
+    expect(apiClient.compileResume).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: /On-Disk Shelf/i }));
+    await screen.findByText('resume_starter.md');
+    expect(apiClient.compileResume).toHaveBeenCalledTimes(1);
   });
 
   it('does not render anything when isOpen is false', () => {

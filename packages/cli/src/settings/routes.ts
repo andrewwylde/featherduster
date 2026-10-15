@@ -121,8 +121,8 @@ export function mountSettingsRoutes(app: Hono, deps: SettingsRouteDeps): void {
     }
   });
 
-  app.get('/api/settings/claude-code/auth', (c) =>
-    c.json({ status: deps.claudeAuth.status(), login: deps.claudeAuth.loginJob })
+  app.get('/api/settings/claude-code/auth', async (c) =>
+    c.json({ status: await deps.claudeAuth.status(), login: deps.claudeAuth.loginJob })
   );
 
   app.post('/api/settings/claude-code/login', async (c) => {
@@ -133,12 +133,12 @@ export function mountSettingsRoutes(app: Hono, deps: SettingsRouteDeps): void {
 
   app.post('/api/settings/claude-code/login/cancel', (c) => c.json({ login: deps.claudeAuth.cancelLogin() }));
 
-  app.post('/api/settings/claude-code/logout', (c) => {
+  app.post('/api/settings/claude-code/logout', async (c) => {
     const result = deps.claudeAuth.logout();
-    return c.json({ ...result, status: deps.claudeAuth.status() }, result.ok ? 200 : 500);
+    return c.json({ ...result, status: await deps.claudeAuth.status() }, result.ok ? 200 : 500);
   });
 
-  app.get('/api/settings/codex/auth', (c) => c.json({ status: deps.codexAuth.status(), login: deps.codexAuth.loginJob }));
+  app.get('/api/settings/codex/auth', async (c) => c.json({ status: await deps.codexAuth.status(), login: deps.codexAuth.loginJob }));
 
   app.post('/api/settings/codex/login', async (c) => {
     const { mode } = await body(c);
@@ -153,11 +153,11 @@ export function mountSettingsRoutes(app: Hono, deps: SettingsRouteDeps): void {
       return c.json({ error: 'That does not look like a complete OpenAI API key.', code: 'invalid_key' }, 400);
     }
     const result = deps.codexAuth.loginWithApiKey(apiKey.trim());
-    return c.json({ ...result, status: deps.codexAuth.status() }, result.ok ? 200 : 502);
+    return c.json({ ...result, status: await deps.codexAuth.status() }, result.ok ? 200 : 502);
   });
 
-  app.post('/api/settings/codex/logout', (c) => {
+  app.post('/api/settings/codex/logout', async (c) => {
     const result = deps.codexAuth.logout();
-    return c.json({ ...result, status: deps.codexAuth.status() }, result.ok ? 200 : 500);
+    return c.json({ ...result, status: await deps.codexAuth.status() }, result.ok ? 200 : 500);
   });
 }

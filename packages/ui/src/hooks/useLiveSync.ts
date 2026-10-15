@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { sseClient } from '../api/events';
+import { sseClient } from '../api/events.js';
 
 export interface LiveSyncState {
   isConnected: boolean;
@@ -37,7 +37,12 @@ export function useLiveSync(onSync?: (event?: any) => void): LiveSyncState {
       }
     });
 
+    const unsubCorpus = sseClient.onCorpus((data) => {
+      setLastEvent(data); setLastSyncTime(new Date()); setSyncCount(prev => prev + 1);
+      onSyncRef.current?.(data);
+    });
     return () => {
+      unsubCorpus();
       unsubStatus();
       unsubChange();
     };

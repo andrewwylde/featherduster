@@ -51,7 +51,9 @@ export function compileTemplateResume(template: LatexTemplateProfile, spec: Resu
   };
   if (!expectedText.length) throw new Error('Resume has no public text');
   return {
-    source: `${profile.preamble}\n\\begin{document}\n${profile.body.replace(/\{\{([^{}]*)\}\}/g, (_, key: typeof slots[number]) => parts[key])}\n\\end{document}\n`,
+    // Preserve extractable ligatures and avoid discretionary word splits. The PDF
+    // verifier still requires every expected fragment, with no fuzzy matching.
+    source: `${profile.preamble}\n\\usepackage{lmodern}\n\\input{glyphtounicode}\n\\pdfgentounicode=1\n\\hyphenpenalty=10000\n\\exhyphenpenalty=10000\n\\emergencystretch=\\linewidth\n\\begin{document}\n${profile.body.replace(/\{\{([^{}]*)\}\}/g, (_, key: typeof slots[number]) => parts[key])}\n\\end{document}\n`,
     expectedText,
   };
 }

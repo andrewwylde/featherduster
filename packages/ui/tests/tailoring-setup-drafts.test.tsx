@@ -12,6 +12,7 @@ beforeEach(() => {
   vi.spyOn(apiClient, 'getHealth').mockResolvedValue({ status: 'ok', workspaceDir: '/workspace', workspaceId: 'workspace' });
   vi.spyOn(apiClient, 'getIntegrityCheck').mockResolvedValue({ isClean: true, issues: [] });
   vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
+  vi.spyOn(apiClient, 'getCorpus').mockResolvedValue({ records: [], history: [], feedback: [], issues: [], snapshot: { revision: 0 } } as any);
   vi.spyOn(apiClient, 'getRubrics').mockResolvedValue([]);
   vi.spyOn(apiClient, 'getResumes').mockResolvedValue([{ id: 'base', name: 'Base', type: 'template' }] as any);
   vi.spyOn(apiClient, 'getRunners').mockResolvedValue({ runners: [{ id: 'claude', label: 'Claude', available: true, isDefault: true, locality: 'cloud' }] } as any);

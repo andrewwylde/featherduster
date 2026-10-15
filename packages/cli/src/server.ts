@@ -1,3 +1,6 @@
+import { loadEffectiveCorpus } from './corpus/load.js';
+import { mountCorpusRoutes } from './corpus/routes.js';
+import { applicableSkillSupport, queryCorpus } from '@featherduster/core';
 import { createJobsRuntime, type JobsRuntime, type JobsRuntimeDependencies } from './jobs/runtime.js';
 import { mountJobsRoutes } from './jobs/routes.js';
 import fs from 'node:fs';
@@ -180,6 +183,9 @@ export function findFiles(
 }
 
 export function loadEvidenceStore(workspaceDir: string): EvidenceStore {
+  return loadEffectiveCorpus(workspaceDir, loadSourceEvidenceStore(workspaceDir)).evidence;
+}
+export function loadSourceEvidenceStore(workspaceDir: string): EvidenceStore {
   const store = new EvidenceStore();
   const candidateDirs = [
     path.join(workspaceDir, 'evidence'),
@@ -401,7 +407,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   const jobsStreams = new Set<() => void>();
   const getJobs = () => jobs ??= (options?.jobsRuntimeFactory ?? createJobsRuntime)(resolvedWorkspaceDir, {
     loadResumes: () => loadResumeSpecs(resolvedWorkspaceDir, false),
-    loadEvidence: () => loadEvidenceStore(resolvedWorkspaceDir),
+    loadEvidence: () => loadSourceEvidenceStore(resolvedWorkspaceDir),
     loadPrivacyRules: () => loadPrivacyRules(resolvedWorkspaceDir),
     runnerFactory: options?.runnerFactory,
     ...options?.jobsDependencies,
@@ -442,6 +448,10 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     workspaceDir: resolvedWorkspaceDir,
     runnerFactory: options?.runnerFactory ?? defaultRunnerFactory,
     loadEvidence: () => loadEvidenceStore(resolvedWorkspaceDir),
+    loadEffectiveCorpus: context => {
+      const corpus = loadEffectiveCorpus(resolvedWorkspaceDir, loadSourceEvidenceStore(resolvedWorkspaceDir));
+      return { ...corpus, support: applicableSkillSupport(corpus.support, context) };
+    },
     loadPrivacyRules: () => loadPrivacyRules(resolvedWorkspaceDir),
     loadResumes: () => loadResumeSpecs(resolvedWorkspaceDir),
     emit: emitTailoring,
@@ -505,9 +515,12 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     });
   });
 
+  mountCorpusRoutes(app, () => getJobs().corpus);
+
   // 2. Evidence list & query
   app.get('/api/evidence', (c) => {
-    const store = loadEvidenceStore(resolvedWorkspaceDir);
+    const corpus = loadEffectiveCorpus(resolvedWorkspaceDir, loadSourceEvidenceStore(resolvedWorkspaceDir));
+    const store = corpus.evidence;
     const url = new URL(c.req.url);
     const company = url.searchParams.get('company') ?? undefined;
     const theme = url.searchParams.get('theme') ?? undefined;
@@ -523,7 +536,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       company || theme || search || confidence || in_flight !== undefined || hasMissingMetrics !== undefined;
 
     const records = hasFilters
-      ? store.query({ company, theme, search, confidence, in_flight, hasMissingMetrics })
+      ? queryCorpus(corpus, { company, theme, search, confidence, in_flight, hasMissingMetrics }, { employer: url.searchParams.get('employer') ?? undefined, project: url.searchParams.get('project') ?? undefined, role: url.searchParams.get('role') ?? undefined, job_id: url.searchParams.get('job_id') ?? undefined }).map(match => match.record)
       : store.getAll();
 
     return c.json(records);
@@ -587,7 +600,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
       const serialized = serializeEvidenceMarkdown(validatedEntry, narrative);
 
       if (!body.filePath) {
-        const existing = loadEvidenceStore(resolvedWorkspaceDir).get(validatedEntry.id);
+        const existing = loadSourceEvidenceStore(resolvedWorkspaceDir).get(validatedEntry.id);
         if (existing) {
           return c.json(
             {
@@ -673,7 +686,7 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     try {
       const id = c.req.param('id');
       const body = await c.req.json();
-      const record = loadEvidenceStore(resolvedWorkspaceDir).get(id);
+      const record = loadSourceEvidenceStore(resolvedWorkspaceDir).get(id);
       if (!record || !record.filePath) {
         return c.json({ success: false, code: 'not_found', error: `Evidence ${id} not found` }, 404);
       }
@@ -1429,7 +1442,11 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         const unsubscribeJobs = getJobs().subscribe(evt => {
           void stream.writeSSE({ event: 'jobs', id: evt.id, data: JSON.stringify(evt) }).catch(() => cleanup());
         });
+        const unsubscribeCorpus = getJobs().subscribeCorpus(evt => {
+          void stream.writeSSE({ event: 'corpus', data: JSON.stringify(evt) }).catch(() => cleanup());
+        });
         unsubscribe = () => {
+          unsubscribeCorpus();
           unsubscribeJobs();
           unsubscribeWatcher();
           tailoringListeners.delete(tailoringListener);

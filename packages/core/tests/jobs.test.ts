@@ -400,7 +400,7 @@ describe('fit preference boundaries', () => {
 
 it('exhaustively enforces preparation action edges', () => {
   const edges: [jobs.PreparationAction, jobs.PreparationState[], jobs.PreparationState][] = [
-    ['claim', ['queued'], 'preparing'], ['block', ['preparing'], 'needs_input'],
+    ['claim', ['queued'], 'preparing'], ['block', ['queued', 'preparing'], 'needs_input'],
     ['complete', ['preparing'], 'resume_ready'], ['fail', ['preparing'], 'failed'],
     ['interrupt', ['preparing'], 'interrupted'], ['skip', ['queued', 'preparing'], 'skipped'],
     ['cancel', ['queued', 'preparing', 'needs_input'], 'cancelled'], ['resume', ['needs_input'], 'queued'],

@@ -1,4 +1,5 @@
 import yaml from 'js-yaml';
+import { sourceFingerprint } from '../corpus/load.js';
 import { randomUUID } from 'node:crypto';
 import * as C from '@featherduster/core';
 import { z } from 'zod';
@@ -7,6 +8,12 @@ import { JobsRepository, RepositoryError, type OwnershipFence } from './reposito
 
 const canonical = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
 type Bytes = string | Uint8Array;
+/** An empty CLI model records the choice to use that CLI's default. */
+export const JobRunnerConfigurationSchema = z.object({
+  runner: z.string().min(1), model: z.string(),
+}).strict().refine(({ runner, model }) => model.length > 0 || runner === 'codex' || runner === 'claude-code', {
+  message: 'Configure a model for this runner', path: ['model'],
+});
 export interface CaptureInputsRequest {
   job_id: string; posting_id: string; base_resume: Bytes;
   selected_evidence: { source_id: string; bytes: Bytes }[];
@@ -14,6 +21,7 @@ export interface CaptureInputsRequest {
   /** Explicit non-secret provider/model settings, never a credentials file. */
   runner_configuration: { runner: string; model: string };
   policy: C.PreparationPolicy;
+  corpus_knowledge?: C.CorpusSnapshot;
 }
 const inputManifest = z.object({
   schema_version: z.literal(1), snapshot: C.InputSnapshotSchema.omit({ fingerprint: true }),
@@ -46,9 +54,20 @@ export class JobArtifactsService {
       const bundle: Record<string, Bytes> = {};
       const add = (name: string, bytes: Bytes): C.ImmutableReference => { bundle[name] = bytes; return { id: `${parent}/${name}`, fingerprint: fingerprint(bytes) }; };
       const policy = C.PreparationPolicySchema.parse(request.policy);
-      const runner = z.object({ runner: z.string().min(1), model: z.string().min(1) }).strict().parse(request.runner_configuration);
+      const runner = JobRunnerConfigurationSchema.parse(request.runner_configuration);
+      const knowledge = C.CorpusSnapshotSchema.parse(request.corpus_knowledge ?? { schema_version: 1, revision: 0, updates: [] });
+      if (!knowledge.materialized && knowledge.updates.length) {
+        const evidence = new C.EvidenceStore();
+        for (const selected of request.selected_evidence) {
+          const bytes = typeof selected.bytes === 'string' ? selected.bytes : Buffer.from(selected.bytes).toString();
+          for (const entry of bytes.trimStart().startsWith('---') ? [C.parseEvidenceMarkdown(bytes)] : C.parseEvidenceLedger(bytes)) evidence.add(entry);
+        }
+        const resolved = C.applyCorpusSnapshot(evidence, { ...knowledge, updates: knowledge.updates.filter(u => u.change.kind !== 'evidence_amendment') }, { fingerprint: sourceFingerprint });
+        knowledge.materialized = { support: C.applicableSkillSupport(resolved.support, { job_id: job.id, employer: job.employer_id ?? undefined, role: job.role ?? undefined }), sources: [] };
+      }
       const snapshot = {
         schema_version: 1 as const, id, workspace_id: job.workspace_id, job_id: job.id, created_at: this.now(),
+        corpus_knowledge: add('corpus-knowledge.json', canonical(knowledge)),
         posting: { id: posting.id, fingerprint: posting.content_fingerprint }, base_resume: add('base-resume.yaml', request.base_resume),
         selected_evidence: request.selected_evidence.map((e, i) => add(`evidence-${i}.txt`, e.bytes)),
         privacy_rules: add('privacy-rules.json', canonical(request.privacy_rules)), template: add('template.json', canonical(C.LatexTemplateProfileSchema.parse(request.template))),
@@ -72,8 +91,27 @@ export class JobArtifactsService {
       const posting = this.repository.getPostingSnapshot(input.posting.id);
       if (posting.job_id !== input.job_id || fingerprint(read(manifest.posting_file)) !== input.posting.fingerprint || posting.content_fingerprint !== input.posting.fingerprint) throw new Error('Posting mismatch');
       if (read(manifest.policy_file).toString() !== canonical(input.policy) || fingerprint(canonical(input.policy)) !== input.policy_fingerprint) throw new Error('Policy mismatch');
-      for (const ref of [input.base_resume, ...input.selected_evidence, input.privacy_rules, input.template, input.runner_configuration]) read(ref);
+      for (const ref of [input.base_resume, ...input.selected_evidence, input.privacy_rules, input.template, input.runner_configuration, ...(input.corpus_knowledge ? [input.corpus_knowledge] : [])]) read(ref);
       return input;
+    });
+  }
+  capturedContext(id: string) {
+    const input = this.getInputSnapshot(id);
+    return this.corrupt(() => {
+      const read = (ref: C.ImmutableReference) => this.repository.database.files.readSnapshot(ref, input.job_id, input.id).toString();
+      const evidence = new C.EvidenceStore();
+      for (const ref of input.selected_evidence) {
+        const bytes = read(ref);
+        for (const entry of bytes.trimStart().startsWith('---') ? [C.parseEvidenceMarkdown(bytes)] : C.parseEvidenceLedger(bytes)) evidence.add(entry);
+      }
+      const knowledge = C.CorpusSnapshotSchema.parse(input.corpus_knowledge ? JSON.parse(read(input.corpus_knowledge)) : { schema_version: 1, revision: 0, updates: [] });
+      // Materialized evidence already contains amendments. Never apply them a second time.
+      const skillSupport = (knowledge.materialized?.support ?? []).filter(s => s.sources.every(binding => {
+        const record = evidence.get(binding.evidence_id);
+        return record && sourceFingerprint(record) === binding.evidence_fingerprint && record.confidence !== 'retracted' && [record.title, record.summary, record.impact, record.narrative].some(t => t.includes(binding.quote))
+          && (!binding.source_status || (binding.source_status.confidence === record.confidence && binding.source_status.in_flight === record.in_flight));
+      }));
+      return { input, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport };
     });
   }
   publishCandidate(request: { draft_id: string; expected_draft_revision: number; fence: OwnershipFence; source: Bytes; pdf?: Bytes; previews?: Bytes[]; validation_report?: Bytes; validation_result: C.ArtifactVersion['validation_result'] }): C.ArtifactVersion {
@@ -125,7 +163,7 @@ export class JobArtifactsService {
       const analysis = read('analysis', C.JobAnalysisSchema);
       const alignment = read('alignment', C.AlignmentMatrixSchema);
       const brief = read('brief', C.DefensibilityBriefSchema);
-      return { analysis, alignment, brief_markdown: brief && analysis && alignment ? C.renderBriefMarkdown(brief, analysis, alignment) : null };
+      return { captured: this.capturedContext(input.id), analysis, alignment, brief_markdown: brief && analysis && alignment ? C.renderBriefMarkdown(brief, analysis, alignment) : null };
     });
   }
   review(jobId: string, id: string) {

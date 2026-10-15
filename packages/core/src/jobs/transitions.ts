@@ -3,7 +3,7 @@ import type { ApplicationLifecycle, Job, PreparationState } from './schemas.js';
 
 const preparationEdges: Record<string, { from: PreparationState[]; to: PreparationState }> = {
   claim: { from: ['queued'], to: 'preparing' },
-  block: { from: ['preparing'], to: 'needs_input' },
+  block: { from: ['queued', 'preparing'], to: 'needs_input' },
   complete: { from: ['preparing'], to: 'resume_ready' },
   fail: { from: ['preparing'], to: 'failed' },
   interrupt: { from: ['preparing'], to: 'interrupted' },

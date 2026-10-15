@@ -3,7 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { createApp } from '../src/server.js';
+import { sourceFingerprint } from '../src/corpus/load.js';
+import { createApp, loadSourceEvidenceStore } from '../src/server.js';
 import { FakeRunner, type FakeResponse } from '../src/runners/fake.js';
 import type { ModelRunner, RunnerId } from '../src/runners/types.js';
 import type { TailoringOrchestrator } from '../src/tailoring/orchestrator.js';
@@ -134,6 +135,26 @@ describe('Tailoring runs API', () => {
     return run;
   }
 
+  it('loads applicable corpus support for manual alignment prompts without changing approvals', async () => {
+    build([ANALYSIS]);
+    const view = (await call('GET', '/api/corpus')).json;
+    const record = loadSourceEvidenceStore(ws).get('ev-002')!;
+    const learned = await call('POST', '/api/corpus/updates', {
+      workspace_id: view.workspace_id, expected_revision: 0, idempotency_key: 'backend', explanation: 'API terminology',
+      change: { kind: 'skill_support', value: { skill: 'backend', facet: 'application development', permitted_terms: ['backend'], support: 'direct', scope: { kind: 'role', key: ANALYSIS.role }, explanation: 'Go gateway implements backend services', sources: [{ evidence_id: record.id, evidence_fingerprint: sourceFingerprint(record), quote: record.summary }] } },
+    });
+    expect(learned.status).toBe(200);
+    const slug = await createRun();
+    await runAndApprove(slug, 'analysis');
+    expect(() => orchestrator.previewInput(slug, 'alignment')).toThrow(/Approve/);
+    await call('POST', `/api/tailoring/${slug}/steps/analysis/approve`);
+    expect(orchestrator.previewInput(slug, 'alignment').prompt).toContain('Go gateway implements backend services');
+    const id = learned.json.result.id;
+    await call('POST', `/api/corpus/updates/${id}/withdraw`, { workspace_id: view.workspace_id, expected_revision: 1, idempotency_key: 'withdraw-backend', explanation: 'Undo', change: { kind: 'withdrawal', update_id: id, reason: 'Undo' } });
+    expect(orchestrator.previewInput(slug, 'alignment').prompt).not.toContain('Go gateway implements backend services');
+    await app.disposeJobs();
+  });
+
   beforeEach(() => {
     ws = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-tailoring-'));
     fs.mkdirSync(path.join(ws, '.featherduster'), { recursive: true });
@@ -160,7 +181,8 @@ describe('Tailoring runs API', () => {
     fs.writeFileSync(path.join(ws, 'resumes', 'templates', 'master.yaml'), yaml.dump(BASE_RESUME));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await app?.disposeJobs();
     fs.rmSync(ws, { recursive: true, force: true });
   });
 

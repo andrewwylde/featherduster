@@ -1,4 +1,5 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { discoveryProcess } from './discovery-process.js';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -79,19 +80,15 @@ export class CodexRunner implements ModelRunner {
   }
 
   async detect(): Promise<RunnerDetection> {
-    const version = spawnSync(this.command, [...this.prefixArgs, '--version'], {
-      encoding: 'utf-8',
+    const version = await discoveryProcess(this.command, [...this.prefixArgs, '--version'], {
       timeout: 15000,
-      windowsHide: true,
       env: this.childEnv(),
     });
     if (version.error || version.status !== 0) {
       return { available: false, detail: 'Codex CLI not found. Install it, then sign in from Settings.' };
     }
-    const status = spawnSync(this.command, [...this.prefixArgs, 'login', 'status'], {
-      encoding: 'utf-8',
+    const status = await discoveryProcess(this.command, [...this.prefixArgs, 'login', 'status'], {
       timeout: 20000,
-      windowsHide: true,
       env: this.childEnv(),
     });
     const parsed = parseCodexLoginStatus(`${status.stdout ?? ''}\n${status.stderr ?? ''}`, status.status);

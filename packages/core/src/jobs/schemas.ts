@@ -30,8 +30,17 @@ export const AnswerScopeSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('job'), job_id: uuid }).strict(),
 ]);
 export type AnswerScope = z.infer<typeof AnswerScopeSchema>;
+export const JobRecoverySchema = z.object({
+  kind: z.enum(['proposals', 'candidate', 'setup', 'fact', 'render', 'stale_inputs']),
+  recovery_attempt_id: uuid.optional(), review_id: uuid.optional(), generation_id: uuid.optional(), failed_output: ImmutableReferenceSchema.optional(),
+  subject: z.object({ proposal_id: text.optional(), path: text.optional() }).strict(),
+  action: z.enum(['review_proposals', 'refresh_inputs', 'configure', 'answer_fact', 'retry_render']),
+}).strict();
+export type JobRecovery = z.infer<typeof JobRecoverySchema>;
+export const CorpusNotificationSchema = z.object({ revision: count, update_ids: z.array(uuid) }).strict();
+export type CorpusNotification = z.infer<typeof CorpusNotificationSchema>;
 export const JobSchema = z.object({
-  ...entity, revision: count, kind: z.enum(['job', 'discovery']),
+  ...entity, recovery: JobRecoverySchema.optional(), revision: count, kind: z.enum(['job', 'discovery']),
   original_url: z.string().url().nullable(), canonical_url: z.string().url().nullable(),
   employer_id: text.nullable(), external_job_id: text.nullable(), company: text.nullable(), role: text.nullable(),
   parent_discovery_id: uuid.nullable(), posting_snapshot_id: uuid.nullable(),
@@ -109,7 +118,7 @@ export const PreparationPolicySchema = z.object({
 export type PreparationPolicy = z.infer<typeof PreparationPolicySchema>;
 export const InputSnapshotSchema = z.object({
   ...jobEntity, created_at: timestamp, fingerprint: text, posting: ImmutableReferenceSchema,
-  base_resume: ImmutableReferenceSchema, selected_evidence: z.array(ImmutableReferenceSchema),
+  base_resume: ImmutableReferenceSchema, corpus_knowledge: ImmutableReferenceSchema.optional(), selected_evidence: z.array(ImmutableReferenceSchema),
   privacy_rules: ImmutableReferenceSchema, template: ImmutableReferenceSchema, runner_configuration: ImmutableReferenceSchema,
   policy: PreparationPolicySchema, policy_fingerprint: text,
 }).strict();
@@ -154,8 +163,9 @@ export const JobEventSchema = z.object({
       original_status: z.string().nullable(), resume_path: z.string().nullable(), tex_path: z.string().nullable(),
       notes: z.string().nullable(), events_json: z.string(),
     }).strict(),
-    z.object({ kind: z.literal('preparation_transition'), from: PreparationStateSchema, to: PreparationStateSchema, reason: text }).strict(),
+    z.object({ kind: z.literal('preparation_transition'), recovery: JobRecoverySchema.optional(), from: PreparationStateSchema, to: PreparationStateSchema, reason: text }).strict(),
     z.object({ kind: z.literal('application_transition'), from: ApplicationLifecycleSchema, to: ApplicationLifecycleSchema, reason: text }).strict(),
+    z.object({ kind: z.literal('proposal_review'), review_id: uuid, revision: count, generation_id: uuid, input_fingerprint: text }).strict(),
     z.object({ kind: z.literal('resume_review'), review_id: uuid, ...reviewBinding }).strict(),
     z.object({ kind: z.literal('channel_action'), action: z.enum(['form_draft_prepared', 'resume_attached', 'application_submitted', 'email_drafted', 'email_sent', 'survey_completed', 'user_reported_outcome']),
       channel: text, destination: text, source_type: z.enum(['user', 'posting', 'import', 'model']), timestamp,

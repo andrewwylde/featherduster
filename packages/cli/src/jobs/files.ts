@@ -10,8 +10,17 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export class JobFiles {
   readonly workspace: string;
   readonly databasePath: string;
+  private readScope: Map<string, Buffer> | undefined;
+  /** Deduplicate verified immutable bytes within one synchronous, read-only operation.
+   * Never retained across requests: later tampering must still be detected.
+   */
+  withReadScope<T>(read: () => T): T {
+    if (this.readScope) return read();
+    this.readScope = new Map();
+    try { return read(); } finally { this.readScope = undefined; }
+  }
   constructor(workspace: string) {
-    this.workspace = realpathSync(workspace);
+    this.workspace = realpathSync.native(workspace);
     this.directory('.featherduster/jobs');
     this.databasePath = this.checked('.featherduster/jobs/jobs.sqlite3');
     for (const suffix of ['-wal', '-shm']) this.checked(`.featherduster/jobs/jobs.sqlite3${suffix}`);
@@ -39,7 +48,9 @@ export class JobFiles {
       this.inside(current);
       try {
         if (lstatSync(current).isSymbolicLink()) throw new Error('Private path contains a symlink');
-        this.inside(realpathSync(current));
+        // The JS resolver re-walks every ancestor with synchronous lstat calls.
+        // Native resolution keeps the same containment check without that repeated walk.
+        this.inside(realpathSync.native(current));
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       }
@@ -96,10 +107,14 @@ export class JobFiles {
   readSnapshot(reference: ImmutableReference, jobId: string, id: string): Buffer {
     const parent = this.bundlePath('snapshots', jobId, id);
     if (path.posix.dirname(reference.id) !== parent) throw new Error('Invalid snapshot reference');
+    const key = JSON.stringify(reference);
+    const cached = this.readScope?.get(key);
+    if (cached) return Buffer.from(cached);
     const target = this.checked(reference.id);
     if (!lstatSync(target).isFile()) throw new Error('Snapshot is not a regular file');
     const bytes = readFileSync(target);
     if (fingerprint(bytes) !== reference.fingerprint) throw new Error('Snapshot fingerprint mismatch');
+    this.readScope?.set(key, Buffer.from(bytes));
     return bytes;
   }
   writeArtifact(jobId: string, versionId: string, filename: string, bytes: Uint8Array | string): ImmutableReference {
@@ -113,10 +128,14 @@ export class JobFiles {
   readArtifact(reference: ImmutableReference, jobId?: string, versionId?: string): Buffer {
     const parts = this.parts(reference.id);
     if (parts[0] !== '.featherduster' || parts.length !== 6 || parts[2] !== 'artifacts' || !uuid.test(parts[3]!) || !uuid.test(parts[4]!) || (jobId && parts[3] !== jobId) || (versionId && parts[4] !== versionId)) throw new Error('Invalid artifact reference');
+    const key = JSON.stringify(reference);
+    const cached = this.readScope?.get(key);
+    if (cached) return Buffer.from(cached);
     const target = this.checked(reference.id);
     if (!lstatSync(target).isFile()) throw new Error('Artifact is not a regular file');
     const bytes = readFileSync(target);
     if (fingerprint(bytes) !== reference.fingerprint) throw new Error('Artifact fingerprint mismatch');
+    this.readScope?.set(key, Buffer.from(bytes));
     return bytes;
   }
 }

@@ -130,3 +130,22 @@ it('headless manual execution never drains a second queued job even when enabled
     expect(f.run).toHaveBeenCalledTimes(4);
   } finally { await service.dispose(); }
 });
+
+it('transitions queued job to needs_input and attaches missing_inputs when setup resolution fails', async () => {
+  const f = fixture(); const a = f.seed();
+  const service = new JobsService({
+    ...f.deps,
+    resolveInput() { throw new Error('Configure a runner and model first'); },
+  });
+  try {
+    f.repo.startAutomaticPreparation('start');
+    service.durableEnqueue();
+    await service.worker.whenIdle();
+    const updated = f.repo.getJob(a.job.id);
+    expect(updated.preparation_state).toBe('needs_input');
+    expect(updated.missing_inputs.length).toBeGreaterThan(0);
+    expect(updated.missing_inputs[0].key).toBe('preparation_setup');
+    expect(updated.state_reason).toContain('Configure a runner and model first');
+  } finally { await service.dispose(); }
+});
+

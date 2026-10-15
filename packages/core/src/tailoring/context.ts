@@ -1,3 +1,4 @@
+import type { SkillSupport } from '../corpus/schemas.js';
 import type { PrivacyRulesConfig } from '../schemas/privacy.js';
 import type { ResumeSpec } from '../schemas/resume.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
@@ -30,6 +31,8 @@ export class RedactionBlockedError extends Error {
 }
 
 export interface ContextOptions {
+  /** Source-verified, applicable relationships; not arbitrary feedback. */
+  skillSupport?: SkillSupport[];
   locality: RunnerLocality;
   rules: PrivacyRulesConfig;
   /** All known evidence IDs; protected from redaction so citations survive. */
@@ -242,6 +245,7 @@ export function buildAlignmentPrompt(
     section('Target Role', { role: s.clean('analysis', analysis.role), seniority: analysis.seniority }),
     section('Requirements', requirements),
     section('Evidence Ledger Digest', digest),
+    supportSection(opts, s),
     section('Base Resume Skills (candidate-declared, not proof)', skills),
   ].join('\n\n');
   return s.finish(prompt);
@@ -281,6 +285,7 @@ export function buildProposalsPrompt(
     }),
     section('Requirements', requirements),
     section('Approved Alignment Matrix', matrix),
+    supportSection(opts, s),
     section('Base Resume', sanitizeResume(baseResume, s)),
     section('Cited Evidence (full)', citedEvidence.map((r) => fullEvidence(r, s))),
   ].join('\n\n');
@@ -332,4 +337,14 @@ export function buildBriefPrompt(
 /** Rough token estimate used for context budgeting (≈4 chars/token). */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+function supportSection(opts: ContextOptions, s: Sanitizer): string {
+  return section('Human source associations (bounded terminology only; not new facts, metrics, ownership or posting requirements)',
+    (opts.skillSupport ?? []).slice(0, 100).map(value => ({
+      skill: s.clean('corpus support', value.skill), facet: s.clean('corpus support', value.facet),
+      permitted_terms: value.permitted_terms.map(t => s.clean('corpus support', t)), support: value.support,
+      sources: value.sources.map(source => ({ evidence_id: source.evidence_id, quote: s.clean('corpus support', source.quote) })),
+      explanation: s.clean('corpus support', value.explanation),
+    })));
 }

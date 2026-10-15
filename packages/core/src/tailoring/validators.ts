@@ -1,3 +1,5 @@
+import { supportsTerm } from '../corpus/knowledge.js';
+import type { SkillSupport } from '../corpus/schemas.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
 import type { ResumeSpec } from '../schemas/resume.js';
 import { auditSlop } from '../integrity/deslop-engine.js';
@@ -165,6 +167,8 @@ export function alignmentSummary(matrix: AlignmentMatrix): Record<'backed' | 'tr
 // ---------------------------------------------------------------------------
 
 export interface ProposalValidationContext {
+  /** Source-verified and scope-filtered by the caller. */
+  skillSupport?: SkillSupport[];
   analysis: JobAnalysis;
   alignment: AlignmentMatrix;
   baseResume: ResumeSpec;
@@ -324,6 +328,7 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
         containsTerm(after, term) &&
         !containsTerm(before, term) &&
         !containsTerm(grounding, term) &&
+        !supportsTerm(term, p.citations, cited, ctx.skillSupport ?? []) &&
         !baseSkills.some((s) => s.toLowerCase() === term.toLowerCase()) &&
         !confirmedTerms.has(term.toLowerCase()) &&
         !backedTerms.has(term.toLowerCase())

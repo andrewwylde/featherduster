@@ -1,3 +1,4 @@
+import { CorpusNotificationSchema, type CorpusNotification } from '@featherduster/core';
 import { DraftRevisionTokenSchema, type RevisionToken } from '@featherduster/core';
 export interface DraftChangeEvent { draftId: string; token?: RevisionToken }
 export type DraftChangeListener = (event: DraftChangeEvent) => void;
@@ -10,6 +11,7 @@ class SseClient {
   private changeListeners = new Set<ChangeListener>();
   private draftListeners = new Set<DraftChangeListener>();
   private tailoringListeners = new Set<TailoringListener>();
+  private corpusListeners = new Set<(event: CorpusNotification) => void>();
   private jobsListeners = new Set<ChangeListener>();
   private statusListeners = new Set<StatusListener>();
   private connected = false;
@@ -22,7 +24,7 @@ class SseClient {
   }
 
   private totalListeners(): number {
-    return this.draftListeners.size + this.jobsListeners.size + this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
+    return this.draftListeners.size + this.corpusListeners.size + this.jobsListeners.size + this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
   }
 
   private setConnected(status: boolean) {
@@ -92,6 +94,10 @@ class SseClient {
             // Ignore subscriber error
           }
         }
+      });
+
+      source.addEventListener('corpus', (e: MessageEvent) => {
+        try { const data = CorpusNotificationSchema.parse(JSON.parse(e.data)); for (const listener of this.corpusListeners) { try { listener(data); } catch { /* isolate observers */ } } } catch { /* invalid frame */ }
       });
 
       source.addEventListener('jobs', (e: MessageEvent) => {
@@ -184,6 +190,11 @@ class SseClient {
     };
   }
 
+  onCorpus(listener: (event: CorpusNotification) => void): () => void {
+    this.corpusListeners.add(listener); this.connect();
+    return () => { this.corpusListeners.delete(listener); this.scheduleDisconnectIfOrphaned(); };
+  }
+
   onJobs(listener: ChangeListener): () => void {
     this.jobsListeners.add(listener);
     this.connect();
@@ -219,6 +230,7 @@ class SseClient {
 
   resetForTesting() {
     this.close();
+    this.corpusListeners.clear();
     this.jobsListeners.clear();
     this.changeListeners.clear();
     this.tailoringListeners.clear();

@@ -36,6 +36,20 @@ describe('sseClient singleton', () => {
     vi.restoreAllMocks();
   });
 
+  it('delivers typed corpus events on the shared connection and releases its listener', () => {
+    vi.useFakeTimers();
+    const listener = vi.fn(); const unsubscribe = sseClient.onCorpus(listener);
+    const source = mockEventSourceInstances[0];
+    source.emit('corpus', { data: '{' });
+    source.emit('corpus', { data: JSON.stringify({ revision: -1, update_ids: [] }) });
+    expect(listener).not.toHaveBeenCalled();
+    const data = { revision: 1, update_ids: ['11111111-1111-4111-8111-111111111111'] };
+    source.emit('corpus', { data: JSON.stringify(data) });
+    expect(listener).toHaveBeenCalledWith(data);
+    unsubscribe(); vi.advanceTimersByTime(5000); expect(source.close).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
   it('shares a single EventSource connection across multiple subscribers', () => {
     const changeHandler1 = vi.fn();
     const changeHandler2 = vi.fn();

@@ -1,3 +1,4 @@
+import { discoveryProcess } from '../runners/discovery-process.js';
 import { spawnSync } from 'node:child_process';
 import { LoginProcess, maskSecrets, withoutEnv, type LoginJob } from './login-process.js';
 
@@ -55,11 +56,9 @@ export class CodexAuthManager {
     return withoutEnv(this.env, CODEX_HIDDEN_ENV);
   }
 
-  status(): CodexAuthStatus {
-    const result = spawnSync(this.command, [...this.prefixArgs, 'login', 'status'], {
-      encoding: 'utf-8',
+  async status(): Promise<CodexAuthStatus> {
+    const result = await discoveryProcess(this.command, [...this.prefixArgs, 'login', 'status'], {
       timeout: 20000,
-      windowsHide: true,
       env: this.childEnv(),
     });
     if (result.error) {

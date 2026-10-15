@@ -99,7 +99,7 @@ describe('CodexRunner', () => {
 describe('CodexAuthManager', () => {
   it('reports status and logs in with ChatGPT or device code', async () => {
     const manager = auth();
-    expect(manager.status()).toMatchObject({ installed: true, loggedIn: true, method: 'chatgpt' });
+    expect(await manager.status()).toMatchObject({ installed: true, loggedIn: true, method: 'chatgpt' });
 
     manager.startLogin('device');
     const done = await waitFor(() => manager.loginJob!, (j) => j.state !== 'running');

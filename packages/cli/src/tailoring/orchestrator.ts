@@ -1,3 +1,4 @@
+import type { EffectiveCorpus, CorpusContext } from '@featherduster/core';
 import { randomUUID } from 'node:crypto';
 import {
   canonicalJson,
@@ -75,6 +76,7 @@ export interface OrchestratorDeps {
   workspaceDir: string;
   runnerFactory: RunnerFactory;
   loadEvidence: () => EvidenceStore;
+  loadEffectiveCorpus?: (context: CorpusContext) => EffectiveCorpus;
   loadPrivacyRules: () => PrivacyRulesConfig;
   loadResumes: () => BaseResumeRef[];
   emit: (event: TailoringEvent) => void;
@@ -695,13 +697,15 @@ export class TailoringOrchestrator {
     const analysis = this.requireAnalysis(slug);
     const alignment = this.requireAlignment(slug);
     const base = this.requireBaseResume(manifest);
+    const corpus = this.deps.loadEffectiveCorpus?.({ employer: analysis.company, role: analysis.role });
     const validated = validateProposals(
       proposals.map((p) => ({ ...p, checks: [] })),
       {
         analysis,
         alignment,
         baseResume: base.spec,
-        evidence: this.deps.loadEvidence().getAll(),
+        evidence: (corpus?.evidence ?? this.deps.loadEvidence()).getAll(),
+        skillSupport: corpus?.support,
         deslopWarnBand: this.config().deslop_warn_band,
       }
     );
@@ -721,12 +725,15 @@ export class TailoringOrchestrator {
 
   private buildInput(slug: string, step: TailoringStep, runner: ModelRunner): { system: string; prompt: string } {
     const skill = loadTailoringSkill(this.deps.workspaceDir);
-    const evidence = this.deps.loadEvidence();
+    const analysisContext = step === 'analysis' ? undefined : this.requireAnalysis(slug);
+    const corpus = this.deps.loadEffectiveCorpus?.({ employer: analysisContext?.company, role: analysisContext?.role });
+    const evidence = corpus?.evidence ?? this.deps.loadEvidence();
     const all = evidence.getAll();
     const opts = {
       locality: runner.locality,
       rules: this.deps.loadPrivacyRules(),
       evidenceIds: all.map((r) => r.id),
+      skillSupport: corpus?.support,
     };
     const manifest = this.associatedManifest(slug);
     try {

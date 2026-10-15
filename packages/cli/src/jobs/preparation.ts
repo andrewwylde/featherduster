@@ -1,3 +1,7 @@
+import { CorpusRepository } from '../corpus/repository.js';
+import { CorpusService } from '../corpus/service.js';
+import { ProposalRepository } from './proposal-repository.js';
+import { ProposalService } from './proposal-service.js';
 import { randomUUID } from 'node:crypto';
 import yaml from 'js-yaml';
 import { z } from 'zod';
@@ -12,7 +16,9 @@ import { fingerprint } from './files.js';
 import { JobsRepository, type OwnershipFence } from './repository.js';
 
 export const attemptFence = (a: C.Attempt): OwnershipFence => ({ attempt_id: a.id, owner_token: a.owner_token, stop_generation: a.stop_generation });
-export class PreparationBlocked extends Error {}
+export class PreparationBlocked extends Error {
+  constructor(message: string, readonly recovery?: C.JobRecovery) { super(message); }
+}
 /** Stops logical execution even when a provider ignores cancellation; late rejections are observed. */
 export function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -39,6 +45,11 @@ export class JobPreparation {
   async run(attempt: C.Attempt, signal: AbortSignal, previousAttemptId?: string): Promise<void> {
     const { repository: r, artifacts, renderer } = this.deps;
     const fence = attemptFence(attempt);
+    const proposalsRepository = new ProposalRepository(r);
+    const reviews = new ProposalService(r, proposalsRepository, artifacts, new CorpusService(new CorpusRepository(r), () => new C.EvidenceStore()));
+    const selection = proposalsRepository.getAttemptReview(attempt.id);
+    let activeReview: C.ProposalReviewRevision | null = selection;
+    const recovery = (kind: 'proposals' | 'candidate' | 'render'): C.JobRecovery => ({ kind, subject: {}, action: kind === 'render' ? 'retry_render' : 'review_proposals', ...(activeReview ? { review_id: activeReview.id, generation_id: activeReview.generation_id } : {}) });
     const guard = () => { signal.throwIfAborted(); if (!r.isAttemptCurrent(fence)) throw new Error('Ownership lost'); };
     guard();
     const input = artifacts.getInputSnapshot(attempt.input_snapshot_id);
@@ -57,18 +68,15 @@ export class JobPreparation {
     if (!detection.available) throw new PreparationBlocked(detection.detail);
     const tools = await abortable(renderer.preflight(template.id, signal), signal); guard();
     if (!tools.available) throw new PreparationBlocked(tools.diagnostics.map(d => d.message).join('; '));
-    const evidence = new C.EvidenceStore();
-    for (const ref of input.selected_evidence) {
-      const text = read(ref);
-      const entries = text.trimStart().startsWith('---') ? [C.parseEvidenceMarkdown(text)] : C.parseEvidenceLedger(text);
-      for (const entry of entries) evidence.add(entry);
-    }
-    const all = evidence.getAll();
+    const captured = artifacts.capturedContext(input.id);
+    const all = captured.evidence.getAll();
+    const skillSupport = captured.skillSupport;
     const posting = r.getPostingSnapshot(input.posting.id).text;
     const skill = loadTailoringSkill(r.database.files.workspace);
-    const opts = { locality: runner.locality, rules, evidenceIds: all.map(e => e.id) };
+    const opts = { locality: runner.locality, rules, skillSupport, evidenceIds: all.map(e => e.id) };
     let prefix = true;
     let old: C.Checkpoint[] = [];
+    if (selection) previousAttemptId = proposalsRepository.getGeneration(selection.generation_id).attempt_id;
     if (previousAttemptId) {
       const prior = r.getAttempt(previousAttemptId);
       if (prior.job_id !== attempt.job_id || prior.workspace_id !== attempt.workspace_id) throw new Error('Checkpoint job mismatch');
@@ -76,6 +84,7 @@ export class JobPreparation {
     }
     const stage = async <T>(name: C.PreparationStage, schema: z.ZodType<T, z.ZodTypeDef, unknown>, execute: () => Promise<T>): Promise<T> => {
       guard(); r.recordAttemptProgress(fence, { stage: name });
+      if (selection && name === 'proposals') prefix = false;
       const cp = prefix ? old.find(c => c.completed_stage === name) : undefined;
       let data: T;
       if (cp) {
@@ -114,23 +123,47 @@ export class JobPreparation {
       return C.validateAlignment({ rows: value.rows.map(row => ({ ...row, candidate_confirmed: false })) }, analysis, all);
     });
     if (alignment.rows.some(row => row.issues?.some(i => i.severity === 'block'))) throw new PreparationBlocked('Resolve evidence alignment issues');
+    let reviewed: ReturnType<ProposalService['evaluate']> | undefined;
     const proposals = await stage('proposals', C.ProposalSetSchema, async () => {
+      if (selection) {
+        const generation = proposalsRepository.getGeneration(selection.generation_id);
+        reviewed = reviews.evaluate(generation, selection);
+        if (reviewed.validation.fingerprint !== selection.validation.fingerprint || reviewed.validation.status !== 'ready') throw new Error('Selected review validation mismatch');
+        return { proposals: reviewed.proposals };
+      }
       const value = await model('proposals', C.buildProposalsPrompt(analysis, alignment, base, all, opts), C.ProposalSetSchema);
-      const fresh = value.proposals.map(p => ({ ...p, decision: 'pending' as const, edited_after: undefined, checks: [] }));
-      const validated = C.applyCandidateProposals(base, fresh, { analysis, alignment, evidence: all });
-      if (!validated.valid) throw new PreparationBlocked(validated.issues.filter(i => i.severity === 'block').map(i => i.message).join('; '));
-      return { proposals: validated.proposals };
+      guard();
+      const raw = JSON.stringify(value); const id = randomUUID();
+      const generation = proposalsRepository.saveGeneration({ schema_version: 1, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, raw_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/raw-output.json`, fingerprint: fingerprint(raw) }, proposals: { proposals: C.normalizeGenerationProposals(value.proposals) }, created_at: new Date().toISOString() }, fence, raw);
+      activeReview = reviews.initial(generation, fence);
+      reviewed = reviews.evaluate(generation, activeReview);
+      if (r.getJob(attempt.job_id).recovery?.recovery_attempt_id === attempt.id) throw new PreparationBlocked('Recovered output saved; inspect and explicitly continue', recovery('proposals'));
+      if (reviewed.validation.status !== 'ready') throw new PreparationBlocked('Resolve saved proposal or candidate issues', recovery('proposals'));
+      return { proposals: reviewed.proposals };
     });
-    const applied = C.applyCandidateProposals(base, proposals.proposals, { analysis, alignment, evidence: all });
-    if (!applied.valid) throw new PreparationBlocked(applied.issues.filter(i => i.severity === 'block').map(i => i.message).join('; '));
+    const applied = reviewed ? { candidate: reviewed.candidate_preview, proposals: reviewed.proposals, appliedProposalIds: reviewed.appliedProposalIds, valid: reviewed.validation.status === 'ready' } : C.applyCandidateProposals(base, proposals.proposals, { analysis, alignment, evidence: all, skillSupport });
+    if (!applied.valid) throw new PreparationBlocked('Resolve candidate issues', recovery('candidate'));
     await stage('brief', C.DefensibilityBriefSchema, () => model('brief', C.buildBriefPrompt(analysis, alignment, applied.proposals.filter(p => applied.appliedProposalIds.includes(p.id)), all, opts), C.DefensibilityBriefSchema));
     const cleaned = await stage('deslop', deslopSchema, async () => C.deslopCandidate(applied.candidate));
-    if (cleaned.issues.some(i => i.severity === 'block')) throw new PreparationBlocked('Candidate editorial checks blocked publication');
+    if (cleaned.issues.some(i => i.severity === 'block')) throw new PreparationBlocked('Candidate editorial checks blocked publication', recovery('candidate'));
     const compiled = await stage('compile', renderedSchema, async () => {
-      const result = await abortable(renderer.renderPdf({ templateId: template.id, spec: cleaned.candidate, rules, signal }), signal); guard();
-      if (result.status === 'blocked') throw new PreparationBlocked(result.diagnostics.map(d => d.message).join('; '));
-      if (result.status !== 'passed') throw new Error(result.diagnostics.map(d => d.message).join('; ') || 'PDF validation failed');
-      return renderedSchema.parse({ source: result.source, pdf: result.pdf?.toString('base64'), previews: result.previews.map(p => p.bytes.toString('base64')), report: result.report });
+      const retainFailure = (result: unknown, message: string): never => {
+        guard(); const id = randomUUID();
+        const bytes = JSON.stringify({ schema_version: 1, stage: 'compile', status: 'failed', attempt_id: attempt.id, input_snapshot_id: input.id, review_id: activeReview?.id ?? null, review_revision: activeReview?.revision ?? null, candidate: cleaned.candidate, result });
+        r.database.files.writeBundle('artifacts', attempt.job_id, id, { 'failure.json': bytes });
+        throw new PreparationBlocked(message, { ...recovery('render'), failed_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/failure.json`, fingerprint: fingerprint(bytes) } });
+      };
+      let result: Awaited<ReturnType<typeof renderer.renderPdf>>;
+      try { result = await abortable(renderer.renderPdf({ templateId: template.id, spec: cleaned.candidate, rules, signal }), signal); }
+      catch (error) { guard(); return retainFailure({ diagnostics: [{ code: 'renderer_exception', message: String(error) }] }, String(error)); }
+      guard();
+      if (result.status !== 'passed') {
+        return retainFailure({ ...result, pdf: result.pdf?.toString('base64'), previews: result.previews.map(p => ({ ...p, bytes: p.bytes.toString('base64') })) }, result.diagnostics.map(d => d.message).join('; ') || 'PDF validation failed');
+      }
+      const output = { source: result.source, pdf: result.pdf?.toString('base64'), previews: result.previews.map(p => p.bytes.toString('base64')), report: result.report };
+      const parsed = renderedSchema.safeParse(output);
+      if (!parsed.success || parsed.data.report.pageCount > input.policy.page_budget || parsed.data.report.pageBudget !== input.policy.page_budget) return retainFailure({ ...output, diagnostics: [{ code: 'invalid_pdf', message: 'Invalid PDF/page budget' }] }, 'Invalid PDF/page budget');
+      return parsed.data;
     });
     await stage('verify', z.literal(true), async () => {
       if (compiled.report.pageCount > input.policy.page_budget || compiled.report.pageBudget !== input.policy.page_budget || !Buffer.from(compiled.pdf, 'base64').length || compiled.previews.some(p => !Buffer.from(p, 'base64').length)) throw new Error('Invalid PDF/page budget');

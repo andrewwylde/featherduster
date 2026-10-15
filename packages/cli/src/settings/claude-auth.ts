@@ -1,3 +1,4 @@
+import { discoveryProcess } from '../runners/discovery-process.js';
 import { spawnSync } from 'node:child_process';
 import { LoginProcess, withoutEnv, type LoginJob } from './login-process.js';
 
@@ -44,11 +45,9 @@ export class ClaudeAuthManager {
     return this.login.current;
   }
 
-  status(): ClaudeAuthStatus {
-    const result = spawnSync(this.command, [...this.prefixArgs, 'auth', 'status', '--json'], {
-      encoding: 'utf-8',
+  async status(): Promise<ClaudeAuthStatus> {
+    const result = await discoveryProcess(this.command, [...this.prefixArgs, 'auth', 'status', '--json'], {
       timeout: 20000,
-      windowsHide: true,
       env: withoutEnv(this.env, HIDDEN_ENV),
     });
     const empty = { loggedIn: false, authMethod: null, apiProvider: null, email: null, orgName: null, subscriptionType: null };

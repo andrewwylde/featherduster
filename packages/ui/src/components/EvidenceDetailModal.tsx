@@ -1,3 +1,5 @@
+import { EvidenceCorrection } from './EvidenceAmendmentEditor.js';
+import { CorpusKnowledgePanel } from './CorpusKnowledgePanel.js';
 import React, { useState, useRef } from 'react';
 import {
   X,
@@ -27,6 +29,7 @@ export const EvidenceDetailModal: React.FC<EvidenceDetailModalProps> = ({
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y({ isOpen, onClose, containerRef: modalRef });
+  const [knowledgeRevision, setKnowledgeRevision] = useState(0);
   const [copiedCitation, setCopiedCitation] = useState(false);
 
   if (!isOpen || !evidence) return null;
@@ -160,11 +163,13 @@ export const EvidenceDetailModal: React.FC<EvidenceDetailModalProps> = ({
             </p>
           </div>
 
+          <CorpusKnowledgePanel key={knowledgeRevision} evidenceId={evidence.id} />
+          {evidence.entry && <EvidenceCorrection key={evidence.id} entry={evidence.entry} narrative={evidence.narrative} onSaved={() => setKnowledgeRevision(n => n + 1)} />}
           {/* Metrics Section */}
           <div className="space-y-2">
             <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Verified Metrics ({evidence.metrics?.length ?? 0})</span>
+              <span>Metrics ({evidence.metrics?.length ?? 0})</span>
             </h3>
             {evidence.metrics && evidence.metrics.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

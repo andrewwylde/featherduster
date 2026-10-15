@@ -22,6 +22,16 @@ describe('trusted templates', () => {
     expect(JSON.stringify(spec)).toBe(before);
     expect(result.source.indexOf('Skills')).toBeLessThan(result.source.indexOf('Experience'));
   });
+  it('emits searchable glyph mappings and keeps words intact for exact PDF verification', () => {
+    const spec = structuredClone(DEFAULT_STARTER_RESUME);
+    spec.summary = 'Configuration filters, feature flags, and management signoff.';
+    const result = compileTemplateResume(LatexTemplateProfileSchema.parse(raw), spec);
+    expect(result.source).toContain('\\usepackage{lmodern}');
+    expect(result.source).toContain('\\input{glyphtounicode}');
+    expect(result.source).toContain('\\pdfgentounicode=1');
+    expect(result.source).toContain('\\hyphenpenalty=10000');
+    expect(result.expectedText).toContain(spec.summary);
+  });
   it('blocks banned terms including dates and redacts link values', () => {
     const spec = structuredClone(DEFAULT_STARTER_RESUME);
     const profile = LatexTemplateProfileSchema.parse(raw);

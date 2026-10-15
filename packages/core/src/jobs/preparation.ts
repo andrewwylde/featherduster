@@ -1,3 +1,4 @@
+import { supportsTerm } from '../corpus/knowledge.js';
 import type { z } from 'zod';
 import type { ResumeSpec } from '../schemas/resume.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
@@ -75,7 +76,7 @@ export function validateCandidateProposals(proposals: Proposal[], context: Propo
       // Check all posting vocabulary, including omitted requirement_ids and terms already on the base.
       const grounding = cited.map(r => [r.entry.title, r.entry.summary, r.entry.impact, r.entry.themes.join(' '), r.narrative].join('\n')).join('\n');
       const terms = context.analysis.requirements.flatMap(r => r.terms)
-        .filter(term => containsTerm(text, term) && !containsTerm(grounding, term));
+        .filter(term => containsTerm(text, term) && !containsTerm(grounding, term) && !supportsTerm(term, p.citations, cited, context.skillSupport ?? []));
       if (terms.length) checks.push(block('unsupported_experience', `Direct experience is not supported by cited evidence: ${[...new Set(terms)].join(', ')}.`));
     }
     p.checks = checks.filter((issue, i) => checks.findIndex(other => other.kind === issue.kind && other.severity === issue.severity && other.message === issue.message) === i);
@@ -92,8 +93,8 @@ export interface CandidateApplicationResult {
 }
 
 /** Applies a working copy; neither this result nor its machine checks are human approval. */
-export function applyCandidateProposals(baseResume: ResumeSpec, proposals: Proposal[], context: Omit<ProposalValidationContext, 'baseResume'>): CandidateApplicationResult {
-  const validated = validateCandidateProposals(proposals, { ...context, baseResume });
+export function applyCandidateProposals(baseResume: ResumeSpec, proposals: Proposal[], context: Omit<ProposalValidationContext, 'baseResume'>, supportFor?: (proposal: Proposal) => ProposalValidationContext['skillSupport']): CandidateApplicationResult {
+  const validated = supportFor ? proposals.flatMap(p => validateCandidateProposals([p], { ...context, baseResume, skillSupport: supportFor(p) })) : validateCandidateProposals(proposals, { ...context, baseResume });
   const selected = validated.filter(p => p.decision !== 'rejected' && !isBlocked(p));
   const candidate = applyProposals(structuredClone(baseResume), structuredClone(selected).map(p => ({ ...p, decision: 'accepted' })));
   const issues = validated.filter(p => p.decision !== 'rejected').flatMap(p => p.checks);

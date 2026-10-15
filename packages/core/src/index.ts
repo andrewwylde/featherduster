@@ -32,6 +32,12 @@ export * from './jobs/transitions.js';
 export * from './jobs/preparation.js';
 
 export * from './jobs/template.js';
+export * from './corpus/schemas.js';
+export * from './corpus/knowledge.js';
+
+export * from './jobs/proposal-review.js';
+
+export * from './jobs/proposal-transport.js';
 export * from './tailoring/drafts.js';
 export * from './tailoring/draft-state.js';
 export * from './tailoring/resume-merge.js';

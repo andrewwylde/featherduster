@@ -1,3 +1,4 @@
+import { discoveryProcess } from './discovery-process.js';
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -67,10 +68,8 @@ export class ClaudeCodeRunner implements ModelRunner {
   }
 
   async detect(): Promise<RunnerDetection> {
-    const result = spawnSync(this.command, [...this.prefixArgs, '--version'], {
-      encoding: 'utf-8',
+    const result = await discoveryProcess(this.command, [...this.prefixArgs, '--version'], {
       timeout: 15000,
-      windowsHide: true,
     });
     if (result.error || result.status !== 0) {
       return {

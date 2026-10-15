@@ -417,3 +417,19 @@ describe('validateProposals + renderBriefMarkdown', () => {
     expect(md).toContain('1 backed · 1 transferable · 1 gaps');
   });
 });
+
+it('sanitizes learned prose and omits audit metadata from bounded prompt context', () => {
+  const store = makeStore();
+  const support: import('../src/index.js').SkillSupport = {
+    skill: 'backend', facet: 'SampleCorp APIs', permitted_terms: ['backend'], support: 'direct', scope: { kind: 'workspace' },
+    explanation: 'SampleCorp AUTH-892 implementation', sources: [{ evidence_id: 'kong-002', evidence_fingerprint: 'a'.repeat(64), quote: 'SampleCorp AUTH-892 gateway' }],
+  };
+  const opts = { locality: 'cloud' as const, rules: DEFAULT_INIT_RULES, evidenceIds: store.getAll().map(e => e.id), skillSupport: [support] };
+  for (const prompt of [buildAlignmentPrompt(analysis, store.getAll(), baseResume, opts), buildProposalsPrompt(analysis, alignment, baseResume, store.getAll(), opts)]) {
+    expect(prompt).toContain('backend'); expect(prompt).toContain('kong-002');
+    expect(prompt).not.toContain('AUTH-892'); expect(prompt).not.toContain('SampleCorp');
+    expect(prompt).not.toContain('evidence_fingerprint'); expect(prompt).not.toContain('recorded_by');
+  }
+  expect(buildAnalysisPrompt('Go engineer', '', opts)).not.toContain('Human source associations');
+  expect(() => buildAlignmentPrompt(analysis, store.getAll(), baseResume, { ...opts, skillSupport: [{ ...support, explanation: 'PROJECT_APOLLO' }] })).toThrow(RedactionBlockedError);
+});

@@ -183,3 +183,26 @@ describe('preparation snapshots', () => {
     for (const patch of [{ input_fingerprint: null }, { workspace_id: 'other' }, { job_id: 'other' }, { input_snapshot_id: 'old' }]) expect(isPreparationOutputCurrent({ ...output, ...patch }, snapshot)).toBe(false);
   });
 });
+
+describe('source-bound terminology in candidate validation', () => {
+  it('permits only the bound direct term without clearing other requirements or metrics', () => {
+    const ctx = context();
+    ctx.analysis.requirements[0].terms = ['backend', 'Kafka', 'music', 'ownership'];
+    const support: import('../src/index.js').SkillSupport = {
+      skill: 'backend', facet: 'application development', permitted_terms: ['backend'], support: 'direct',
+      scope: { kind: 'workspace' }, explanation: 'Go services implement backend applications',
+      sources: [{ evidence_id: 'source', evidence_fingerprint: 'a'.repeat(64), quote: 'Built Go and RabbitMQ services.', source_status: { confidence: 'verified', in_flight: false } }],
+    };
+    expect(blocked('Built backend services.', ctx)).toBe(true);
+    ctx.skillSupport = [support];
+    expect(blocked('Built backend services.', ctx)).toBe(false);
+    for (const text of ['Built backend Kafka services.', 'Built backend music services.', 'Backend ownership.', 'Built backend services with 90% improvement.']) expect(blocked(text, ctx)).toBe(true);
+    for (const level of ['transferable', 'unsupported'] as const) {
+      ctx.skillSupport = [{ ...support, support: level }];
+      expect(blocked('Built backend services.', ctx)).toBe(true);
+    }
+    ctx.skillSupport = [support];
+    (ctx.evidence as ReturnType<EvidenceStore['getAll']>)[0].summary = 'Changed work';
+    expect(blocked('Built backend services.', ctx)).toBe(true);
+  });
+});

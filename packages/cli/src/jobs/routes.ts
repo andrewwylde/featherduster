@@ -1,3 +1,4 @@
+import { SaveReviewSchema, ReviewBindingSchema, ContinueReviewSchema, RecoverReviewSchema } from './proposal-service.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { JobSchema, ScopedAnswerSchema, ResumeSpecSchema } from '@featherduster/core';
@@ -89,6 +90,11 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     const body = z.object({ expected_revision: revision, candidate: ResumeSpecSchema }).strict().parse(await c.req.json());
     return { draft: new JobDraftRepository(r.repository).save({ ...getDraft(c, r), candidate: body.candidate }, body.expected_revision) };
   }));
+  app.get('/api/jobs/:id/proposals', handle((c, r) => r.proposals.read(uuid.parse(c.req.param('id')))));
+  app.put('/api/jobs/:id/proposals/:reviewId', handle(async (c, r) => r.proposals.save({ ...SaveReviewSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), review_id: uuid.parse(c.req.param('reviewId')) })));
+  app.post('/api/jobs/:id/proposals/:reviewId/recheck', handle(async (c, r) => r.proposals.recheck({ ...ReviewBindingSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), review_id: uuid.parse(c.req.param('reviewId')) })));
+  app.post('/api/jobs/:id/proposals/:reviewId/continue', handle(async (c, r) => r.proposals.continue({ ...ContinueReviewSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), review_id: uuid.parse(c.req.param('reviewId')) }), 202));
+  app.post('/api/jobs/:id/proposals/recover', handle(async (c, r) => r.proposals.recover({ ...RecoverReviewSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')) }), 202));
   app.get('/api/jobs/:id', handle((c, r) => jobDetail(r, uuid.parse(c.req.param('id')))));
   app.put('/api/jobs/:id', handle(async (c, r) => {
     const id = uuid.parse(c.req.param('id'));
@@ -99,5 +105,10 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     const body = z.object({ expected_revision: revision, base_resume_id: z.string().min(1).optional(), template_id: z.string().min(1).optional(), runner: z.enum(['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake']).optional(), evidence_ids: z.array(z.string().min(1)).optional() }).strict().parse(await c.req.json());
     return { input_snapshot: r.captureInputs(uuid.parse(c.req.param('id')), body.expected_revision, body) };
   }, 201));
-  for (const action of ['prepare', 'resume', 'retry'] as const) app.post(`/api/jobs/:id/${action}`, handle(async (c, r) => r.service[action]({ ...preparationRequest.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')) }), 202));
+  for (const action of ['prepare', 'resume', 'retry', 'reprepare'] as const) app.post(`/api/jobs/:id/${action}`, handle(async (c, r) => r.service[action]({ ...preparationRequest.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')) }), 202));
+  app.post('/api/jobs/:id/cancel', handle(async (c, r) => {
+    const id = uuid.parse(c.req.param('id'));
+    const body = z.object({ expected_revision: revision, idempotency_key: key, reason: z.string().optional() }).strict().parse(await c.req.json());
+    return r.service.cancelJob(id, body.expected_revision, body.idempotency_key, body.reason);
+  }, 202));
 }

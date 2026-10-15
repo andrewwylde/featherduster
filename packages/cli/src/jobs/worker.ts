@@ -72,7 +72,17 @@ export class JobWorker {
         catch (error) {
           // Invalid configuration must not create a hot claim loop. Persist an actionable input gate.
           const fresh = r.getJob(job.id);
-          r.updateJob({ ...fresh, state_reason: String(error).slice(0, 8192), missing_inputs: [{ key: 'preparation_setup', question: 'Correct preparation inputs and explicitly prepare again.', scope: { kind: 'job', job_id: job.id }, reason: String(error).slice(0, 8192) }] }, fresh.revision);
+          const reason = String(error).slice(0, 8192);
+          r.transitionPreparation(fresh.id, 'block', fresh.revision, randomUUID(), undefined, {
+            reason,
+            missing_inputs: [{
+              key: 'preparation_setup',
+              question: 'Correct preparation inputs and explicitly prepare again.',
+              scope: { kind: 'job', job_id: fresh.id },
+              reason,
+            }],
+          });
+          this.notify(fresh.id, events);
           continue;
         }
         const claim = r.claimJob({ job_id: job.id, input_snapshot_id: input, mode: 'automatic', stop_generation: control.stop_generation, lease_ms: this.leaseMs, idempotency_key: randomUUID() });
@@ -102,7 +112,7 @@ export class JobWorker {
       if (r.isAttemptCurrent(fence)) {
         const blocked = error instanceof PreparationBlocked;
         const message = (error instanceof Error ? error.message : String(error)).slice(0, 8192) || 'Preparation failed';
-        r.transitionPreparation(attempt.job_id, this.disposed ? 'interrupt' : blocked ? 'block' : 'fail', r.getJob(attempt.job_id).revision, randomUUID(), fence, { reason: message, elapsed_ms: Date.now() - started, error: { code: timedOut ? 'timeout' : blocked ? 'blocked' : 'preparation_failed', message }, ...(blocked ? { missing_inputs: [{ key: 'preparation', question: 'Resolve the preparation blocker and explicitly resume.', scope: { kind: 'job' as const, job_id: attempt.job_id }, reason: message }] } : {}) });
+        r.transitionPreparation(attempt.job_id, this.disposed ? 'interrupt' : blocked ? 'block' : 'fail', r.getJob(attempt.job_id).revision, randomUUID(), fence, { reason: message, elapsed_ms: Date.now() - started, error: { code: timedOut ? 'timeout' : blocked ? 'blocked' : 'preparation_failed', message }, ...(blocked ? { recovery: error.recovery ?? { kind: 'setup' as const, subject: {}, action: 'configure' as const }, missing_inputs: [{ key: error.recovery?.kind ?? 'preparation_setup', question: 'Resolve the preparation blocker and explicitly resume.', scope: { kind: 'job' as const, job_id: attempt.job_id }, reason: message }] } : {}) });
       }
     } finally {
       clearTimeout(deadline); clearInterval(heartbeat); this.controller = null; this.notify(attempt.job_id, events);

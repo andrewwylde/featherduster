@@ -20,6 +20,27 @@ CREATE TABLE events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NUL
 CREATE TABLE artifacts (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id), attempt_id TEXT NOT NULL REFERENCES attempts(id), input_snapshot_id TEXT NOT NULL REFERENCES input_snapshots(id), parent_version_id TEXT REFERENCES artifacts(id), payload TEXT NOT NULL);
 CREATE TABLE draft_revisions (id TEXT NOT NULL, revision INTEGER NOT NULL, job_id TEXT NOT NULL REFERENCES jobs(id), input_snapshot_id TEXT NOT NULL REFERENCES input_snapshots(id), parent_artifact_version_id TEXT REFERENCES artifacts(id), payload TEXT NOT NULL, PRIMARY KEY(id,revision));
 CREATE TABLE mutation_receipts (workspace_id TEXT NOT NULL REFERENCES workspace_metadata(workspace_id), operation TEXT NOT NULL, idempotency_key TEXT NOT NULL, fingerprint TEXT NOT NULL, result TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(workspace_id,operation,idempotency_key));
+` }, { version: 2, sql: `
+CREATE TABLE corpus_heads (workspace_id TEXT PRIMARY KEY REFERENCES workspace_metadata(workspace_id), revision INTEGER NOT NULL CHECK(revision>=0));
+INSERT INTO corpus_heads SELECT workspace_id,0 FROM workspace_metadata;
+CREATE TABLE corpus_feedback (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspace_metadata(workspace_id), payload TEXT NOT NULL);
+CREATE TABLE corpus_updates (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES corpus_heads(workspace_id), revision INTEGER NOT NULL, feedback_id TEXT NOT NULL REFERENCES corpus_feedback(id), supersedes TEXT REFERENCES corpus_updates(id), payload TEXT NOT NULL, UNIQUE(workspace_id,revision));
+CREATE TABLE corpus_feedback_updates (feedback_id TEXT PRIMARY KEY REFERENCES corpus_feedback(id), update_id TEXT NOT NULL REFERENCES corpus_updates(id));
+CREATE TRIGGER corpus_feedback_no_update BEFORE UPDATE ON corpus_feedback BEGIN SELECT RAISE(ABORT,'immutable feedback'); END;
+CREATE TRIGGER corpus_feedback_no_delete BEFORE DELETE ON corpus_feedback BEGIN SELECT RAISE(ABORT,'immutable feedback'); END;
+CREATE TRIGGER corpus_updates_no_update BEFORE UPDATE ON corpus_updates BEGIN SELECT RAISE(ABORT,'immutable corpus history'); END;
+CREATE TRIGGER corpus_updates_no_delete BEFORE DELETE ON corpus_updates BEGIN SELECT RAISE(ABORT,'immutable corpus history'); END;
+` }, { version: 3, sql: `
+CREATE TABLE proposal_generations (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspace_metadata(workspace_id), job_id TEXT NOT NULL REFERENCES jobs(id), attempt_id TEXT NOT NULL REFERENCES attempts(id), input_snapshot_id TEXT NOT NULL REFERENCES input_snapshots(id), payload TEXT NOT NULL);
+CREATE TABLE proposal_review_revisions (id TEXT NOT NULL, revision INTEGER NOT NULL CHECK(revision>=0), generation_id TEXT NOT NULL REFERENCES proposal_generations(id), job_id TEXT NOT NULL REFERENCES jobs(id), input_snapshot_id TEXT NOT NULL REFERENCES input_snapshots(id), payload TEXT NOT NULL, PRIMARY KEY(id,revision));
+CREATE TABLE job_proposal_reviews (job_id TEXT PRIMARY KEY REFERENCES jobs(id), review_id TEXT NOT NULL, revision INTEGER NOT NULL, FOREIGN KEY(review_id,revision) REFERENCES proposal_review_revisions(id,revision));
+CREATE TABLE attempt_proposal_reviews (attempt_id TEXT PRIMARY KEY REFERENCES attempts(id), review_id TEXT NOT NULL, revision INTEGER NOT NULL, validation_fingerprint TEXT NOT NULL, FOREIGN KEY(review_id,revision) REFERENCES proposal_review_revisions(id,revision));
+CREATE TRIGGER proposal_generations_no_update BEFORE UPDATE ON proposal_generations BEGIN SELECT RAISE(ABORT,'immutable generation'); END;
+CREATE TRIGGER proposal_generations_no_delete BEFORE DELETE ON proposal_generations BEGIN SELECT RAISE(ABORT,'immutable generation'); END;
+CREATE TRIGGER proposal_reviews_no_update BEFORE UPDATE ON proposal_review_revisions BEGIN SELECT RAISE(ABORT,'immutable review'); END;
+CREATE TRIGGER proposal_reviews_no_delete BEFORE DELETE ON proposal_review_revisions BEGIN SELECT RAISE(ABORT,'immutable review'); END;
+CREATE TRIGGER attempt_reviews_no_update BEFORE UPDATE ON attempt_proposal_reviews BEGIN SELECT RAISE(ABORT,'immutable selection'); END;
+CREATE TRIGGER attempt_reviews_no_delete BEFORE DELETE ON attempt_proposal_reviews BEGIN SELECT RAISE(ABORT,'immutable selection'); END;
 ` }];
 
 export function runMigrations(db: Database.Database, steps: Migration[] = migrations): void {
@@ -52,6 +73,7 @@ export function openJobsDatabase(workspaceDir: string): JobsDatabase {
       }
       const id = randomUUID();
       db.prepare('INSERT INTO workspace_metadata VALUES (1,?)').run(id);
+      db.prepare('INSERT INTO corpus_heads VALUES (?,0)').run(id);
       db.prepare('INSERT INTO worker_control VALUES (?,0,0,0,0,NULL,?,?)').run(id, new Date().toISOString(), JSON.stringify({ schema_version: 1, workspace_id: id, revision: 0, automatic_preparation_enabled: false, pause_after_current: false, stop_generation: 0, stopped_at: null, updated_at: new Date().toISOString() }));
       return id;
     }).immediate();

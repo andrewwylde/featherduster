@@ -104,16 +104,16 @@ describe('runner settings writer', () => {
 });
 
 describe('ClaudeAuthManager', () => {
-  it('reads status JSON and hides API key env vars from the CLI', () => {
+  it('reads status JSON and hides API key env vars from the CLI', async () => {
     const record = path.join(os.tmpdir(), `fd-auth-env-${Date.now()}.json`);
-    const status = authManager({ ANTHROPIC_API_KEY: 'should-not-leak', FAKE_CLAUDE_ENV_RECORD: record }).status();
+    const status = await authManager({ ANTHROPIC_API_KEY: 'should-not-leak', FAKE_CLAUDE_ENV_RECORD: record }).status();
     expect(status).toMatchObject({ installed: true, loggedIn: true, email: 'dev@example.com', subscriptionType: 'pro' });
     expect(JSON.parse(fs.readFileSync(record, 'utf-8')).hasKey).toBe(false);
     fs.rmSync(record, { force: true });
   });
 
-  it('reports a missing CLI', () => {
-    expect(new ClaudeAuthManager({ command: 'definitely-not-claude-xyz' }).status()).toMatchObject({ installed: false, loggedIn: false });
+  it('reports a missing CLI', async () => {
+    expect(await new ClaudeAuthManager({ command: 'definitely-not-claude-xyz' }).status()).toMatchObject({ installed: false, loggedIn: false });
   });
 
   it('tracks a successful login and captures the sign-in URL', async () => {
