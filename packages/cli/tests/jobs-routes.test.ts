@@ -229,6 +229,8 @@ it('cancels a queued job via POST /api/jobs/:id/cancel and rejects stale revisio
   const f = fixture();
   const id = await f.add();
   const repo = f.runtime().repository;
+  const saved = repo.getJob(id);
+  repo.transitionPreparation(id, 'prepare', saved.revision, 'legacy-admission');
   const original = repo.getJob(id);
   const res = await f.request(`/api/jobs/${id}/cancel`, {
     expected_revision: original.revision,
@@ -340,4 +342,98 @@ it('saves remembered review corrections in the same transaction and emits corpus
   expect((await (await f.request('/api/corpus')).json()).snapshot.updates).toHaveLength(1);
   expect((await f.request(url, request, 'PUT')).status).toBe(200); runtime.flushEvents(); expect(listener).toHaveBeenCalledTimes(1);
   expect(f.run).toHaveBeenCalledTimes(4); unsub();
+});
+
+it('HTTP saving neither wakes unrelated work nor requests preparation', async () => {
+  const f = fixture();
+  await f.request('/api/jobs/control/start', { idempotency_key: 'enable' });
+  const runtime = f.runtime();
+  await runtime.service.worker.whenIdle();
+  const wake = vi.spyOn(runtime.service, 'durableEnqueue');
+  const control = runtime.repository.getControl();
+  const id = await f.add();
+  const reopened = await (await f.request(`/api/jobs/${id}`)).json();
+  expect(reopened.job.preparation_state).toBe('saved');
+  expect(reopened.job.current_attempt_id).toBeNull();
+  expect(reopened.posting.text).toBe('Build systems');
+  expect(wake).not.toHaveBeenCalled();
+  expect(f.run).not.toHaveBeenCalled();
+  expect(runtime.repository.getControl()).toEqual(control);
+});
+
+it('saves manual context without capture, versions posting edits and rejects stale or conflicting retries', async () => {
+  const f = fixture(() => null);
+  rmSync(path.join(f.root, 'resumes'), { recursive: true, force: true });
+  const details = { company: 'Manual Co', role: 'Systems engineer', notes: 'Ask about team', context_url: 'https://example.com/position' };
+  const p = await (await f.request('/api/jobs/preview', { mode: 'text', input: 'Original posting', details })).json();
+  const saved = await (await f.request('/api/jobs', { preview_id: p.preview_id, idempotency_key: 'manual' })).json();
+  const id = saved.items[0].job_id;
+  const before = await (await f.request(`/api/jobs/${id}`)).json();
+  expect(before.job).toMatchObject({ ...details, preparation_state: 'saved' });
+  const body = { expected_revision: before.job.revision, idempotency_key: 'edit-details', changes: { notes: 'Updated notes' }, posting_text: 'Revised posting' };
+  expect((await f.request(`/api/jobs/${id}/details`, body, 'PUT')).status).toBe(200);
+  expect((await f.request(`/api/jobs/${id}/details`, body, 'PUT')).status).toBe(200);
+  expect((await f.request(`/api/jobs/${id}/details`, { ...body, posting_text: 'Wrong' }, 'PUT')).status).toBe(409);
+  expect((await f.request(`/api/jobs/${id}/details`, { ...body, idempotency_key: 'stale' }, 'PUT')).status).toBe(409);
+  const after = await (await f.request(`/api/jobs/${id}`)).json();
+  expect(after.job).toMatchObject({ ...details, notes: 'Updated notes', preparation_state: 'saved', current_attempt_id: null });
+  expect(after.posting.text).toBe('Revised posting');
+  expect(after.posting.id).not.toBe(before.posting.id);
+  const reopened = openJobsDatabase(f.root);
+  try {
+    const repository = new JobsRepository(reopened);
+    expect(repository.getJob(id)).toEqual(after.job);
+    expect(repository.getPostingSnapshot(after.posting.id)).toEqual(after.posting);
+  } finally { reopened.close(); }
+  expect(f.runtime().repository.getPostingSnapshot(before.posting.id).text).toBe('Original posting');
+  expect(f.run).not.toHaveBeenCalled();
+  expect((await f.request('/api/jobs/preview', { mode: 'text', input: 'Posting', details: { context_url: 'javascript:alert(1)' } })).status).toBe(400);
+});
+
+
+it('retains prior output on context edits and requires current inputs without starting work', async () => {
+  const f = fixture(); const id = await f.add();
+  let job = f.runtime().repository.getJob(id);
+  const input = (await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision })).json()).input_snapshot;
+  await f.request(`/api/jobs/${id}/prepare`, { expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: 'initial-resume' });
+  await f.runtime().service.worker.whenIdle();
+  job = f.runtime().repository.getJob(id);
+  expect(job.preparation_state).toBe('resume_ready');
+  const controls = f.runtime().repository.getControl();
+  const calls = f.run.mock.calls.length;
+  await f.request(`/api/jobs/${id}/details`, { expected_revision: job.revision, idempotency_key: 'notes-only', changes: { notes: 'Private reminder' } }, 'PUT');
+  job = f.runtime().repository.getJob(id);
+  expect(job.preparation_state).toBe('resume_ready');
+  const artifacts = job.artifact_version_ids;
+  await f.request(`/api/jobs/${id}/details`, { expected_revision: job.revision, idempotency_key: 'posting-edit', changes: {}, posting_text: 'Different requirements' }, 'PUT');
+  job = f.runtime().repository.getJob(id);
+  expect(job).toMatchObject({ preparation_state: 'needs_input', recovery: { kind: 'stale_inputs' }, artifact_version_ids: artifacts });
+  expect((await f.request(`/api/jobs/${id}/resume`, { expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: 'old-input' })).status).toBe(409);
+  expect(f.run).toHaveBeenCalledTimes(calls);
+  expect(f.runtime().repository.getControl()).toEqual(controls);
+});
+
+it('corrects a job-local starting snapshot with CAS and receipts without touching shared files or starting work', async () => {
+  const f = fixture();
+  const id = await f.add();
+  const job = f.runtime().repository.getJob(id);
+  const input = (await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision })).json()).input_snapshot;
+  const original = f.runtime().artifacts.capturedContext(input.id).base_resume;
+  const control = f.runtime().repository.getControl();
+  const body = { expected_job_revision: job.revision, input_snapshot_id: input.id, idempotency_key: randomUUID(), base_resume: { ...original, summary: 'Job-local correction' } };
+  const response = await f.request(`/api/jobs/${id}/starting-resume`, body, 'PUT');
+  expect(response.status).toBe(200);
+  const saved = await response.json();
+  expect(saved.result.input_snapshot.id).not.toBe(input.id);
+  expect(f.runtime().artifacts.capturedContext(saved.result.input_snapshot.id).base_resume.summary).toBe('Job-local correction');
+  expect(f.runtime().artifacts.capturedContext(input.id).base_resume).toEqual(original);
+  expect(f.runtime().repository.getJob(id).revision).toBe(job.revision + 1);
+  expect((await (await f.request(`/api/jobs/${id}/starting-resume`, body, 'PUT')).json()).replayed).toBe(true);
+  expect((await f.request(`/api/jobs/${id}/starting-resume`, { ...body, idempotency_key: randomUUID() }, 'PUT')).status).toBe(409);
+  expect((await f.request(`/api/jobs/${id}/starting-resume`, { ...body, expected_job_revision: job.revision + 1, idempotency_key: randomUUID() }, 'PUT')).status).toBe(409);
+  expect(f.run).not.toHaveBeenCalled();
+  expect(f.runtime().repository.getControl()).toEqual(control);
+  expect(f.runtime().repository.getJob(id).current_attempt_id).toBeNull();
+  const fresh = (await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision + 1 })).json()).input_snapshot;
+  expect(f.runtime().artifacts.capturedContext(fresh.id).base_resume).toEqual(original);
 });

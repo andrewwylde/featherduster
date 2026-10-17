@@ -11,11 +11,11 @@ const entity = { ...version, id: uuid, workspace_id: text };
 const jobEntity = { ...entity, job_id: uuid };
 const dates = { created_at: timestamp, updated_at: timestamp };
 
-export const PreparationStateSchema = z.enum(['queued', 'preparing', 'needs_input', 'resume_ready', 'failed', 'interrupted', 'skipped', 'cancelled']);
+export const PreparationStateSchema = z.enum(['saved', 'queued', 'preparing', 'needs_input', 'resume_ready', 'failed', 'interrupted', 'skipped', 'cancelled']);
 export type PreparationState = z.infer<typeof PreparationStateSchema>;
 export const ApplicationLifecycleSchema = z.enum(['not_started', 'draft', 'needs_input', 'submitted', 'outcome_recorded', 'unknown']);
 export type ApplicationLifecycle = z.infer<typeof ApplicationLifecycleSchema>;
-export const PreparationStageSchema = z.enum(['preflight', ...TAILORING_STEPS, 'deslop', 'compile', 'verify']);
+export const PreparationStageSchema = z.enum(['preflight', ...TAILORING_STEPS, 'deslop', 'compile', 'verify', 'fit', 'material']);
 export type PreparationStage = z.infer<typeof PreparationStageSchema>;
 export const JobProvenanceSchema = z.object({
   source_type: z.enum(['user', 'posting', 'import', 'model']), reference: text,
@@ -43,6 +43,8 @@ export const JobSchema = z.object({
   ...entity, recovery: JobRecoverySchema.optional(), revision: count, kind: z.enum(['job', 'discovery']),
   original_url: z.string().url().nullable(), canonical_url: z.string().url().nullable(),
   employer_id: text.nullable(), external_job_id: text.nullable(), company: text.nullable(), role: text.nullable(),
+  notes: z.string().max(100000).optional(),
+  context_url: z.string().url().refine(url => /^https?:\/\//i.test(url), 'Use an HTTP or HTTPS link').nullable().optional(),
   parent_discovery_id: uuid.nullable(), posting_snapshot_id: uuid.nullable(),
   preparation_state: PreparationStateSchema, application_lifecycle: ApplicationLifecycleSchema,
   preparation_stage: PreparationStageSchema.nullable(), base_resume_id: text.nullable(), template_id: text.nullable(),
@@ -123,6 +125,24 @@ export const InputSnapshotSchema = z.object({
   policy: PreparationPolicySchema, policy_fingerprint: text,
 }).strict();
 export type InputSnapshot = z.infer<typeof InputSnapshotSchema>;
+/** Version 2 is fit-only; legacy resume snapshots are deliberately unchanged. */
+export const FitInputSnapshotSchema = InputSnapshotSchema.omit({ base_resume: true, template: true, policy: true }).extend({
+  schema_version: z.literal(2), activity: z.literal('fit'),
+  selection: ImmutableReferenceSchema,
+  return_state: z.enum(['saved', 'resume_ready', 'needs_input']),
+  return_recovery: JobRecoverySchema.optional(),
+  return_missing_inputs: JobSchema.shape.missing_inputs,
+  policy: z.object({ timeout_ms: z.number().int().positive(), max_model_calls: z.literal(2), max_repair_attempts: z.literal(0), model_retry_count: z.literal(0) }).strict(),
+}).strict();
+export type FitInputSnapshot = z.infer<typeof FitInputSnapshotSchema>;
+export const MaterialInputSnapshotSchema = FitInputSnapshotSchema.extend({
+  schema_version: z.literal(3), activity: z.enum(['cover_letter', 'interview_brief']),
+  expected_material_revision_id: uuid.nullable(),
+  resume: ImmutableReferenceSchema.nullable(), resume_content: ImmutableReferenceSchema.nullable(),
+  policy: z.object({ timeout_ms: z.number().int().positive(), max_model_calls: z.literal(1), max_repair_attempts: z.literal(0), model_retry_count: z.literal(0) }).strict(),
+}).strict();
+export type MaterialInputSnapshot = z.infer<typeof MaterialInputSnapshotSchema>;
+export const ExecutionInputSchema = z.union([InputSnapshotSchema, FitInputSnapshotSchema, MaterialInputSnapshotSchema]);
 export const AttemptSchema = z.object({
   ...jobEntity, input_snapshot_id: uuid, status: z.enum(['active', 'completed', 'failed', 'interrupted', 'cancelled']),
   owner_token: text, lease_expires_at: timestamp, stop_generation: count, current_stage: PreparationStageSchema.nullable(),

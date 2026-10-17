@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import yaml from 'js-yaml';
-import { createApp } from '../src/server.js';
+import { createApp, isAllowedHost, isAllowedOrigin } from '../src/server.js';
 import {
   EvidenceEntry,
   LevelingRubric,
@@ -1213,6 +1213,83 @@ experiences:
       expect(items[0]).toHaveProperty('updatedAt');
     });
 
+    describe('Host and Origin security (including Tailscale support)', () => {
+      it('validates allowed and forbidden hosts correctly', () => {
+        expect(isAllowedHost('localhost')).toBe(true);
+        expect(isAllowedHost('localhost:4173')).toBe(true);
+        expect(isAllowedHost('127.0.0.1')).toBe(true);
+        expect(isAllowedHost('127.0.0.1:4173')).toBe(true);
+        expect(isAllowedHost('glowbert.tail47fe9a.ts.net')).toBe(true);
+        expect(isAllowedHost('glowbert.tail47fe9a.ts.net:4173')).toBe(true);
+        expect(isAllowedHost('ts.net')).toBe(true);
+        expect(isAllowedHost('100.85.12.34')).toBe(true);
+        expect(isAllowedHost('100.85.12.34:4173')).toBe(true);
+
+        expect(isAllowedHost('evil.com')).toBe(false);
+        expect(isAllowedHost('evil.com:4173')).toBe(false);
+        expect(isAllowedHost('evil-ts.net')).toBe(false);
+        expect(isAllowedHost('glowbert.tail47fe9a.ts.net.evil.com')).toBe(false);
+      });
+
+      it('validates allowed and forbidden origins correctly', () => {
+        expect(isAllowedOrigin('http://localhost:4173')).toBe(true);
+        expect(isAllowedOrigin('http://127.0.0.1:4173')).toBe(true);
+        expect(isAllowedOrigin('https://glowbert.tail47fe9a.ts.net:4173')).toBe(true);
+        expect(isAllowedOrigin('https://glowbert.tail47fe9a.ts.net')).toBe(true);
+        expect(isAllowedOrigin('http://100.85.12.34:4173')).toBe(true);
+
+        expect(isAllowedOrigin('https://evil.com')).toBe(false);
+        expect(isAllowedOrigin('https://evil-ts.net')).toBe(false);
+        expect(isAllowedOrigin('invalid-origin')).toBe(false);
+      });
+
+      it('allows requests with Tailscale .ts.net Host header', async () => {
+        const app = createApp(tmpWorkspace);
+        const res = await app.request('/api/health', {
+          headers: {
+            Host: 'glowbert.tail47fe9a.ts.net:4173',
+          },
+        });
+        expect(res.status).toBe(200);
+        const data = await res.json();
+        expect(data.status).toBe('ok');
+      });
+
+      it('rejects requests with unauthorized Host header', async () => {
+        const app = createApp(tmpWorkspace);
+        const res = await app.request('/api/health', {
+          headers: {
+            Host: 'evil.com',
+          },
+        });
+        expect(res.status).toBe(403);
+        const text = await res.text();
+        expect(text).toBe('Forbidden: Invalid Host Header');
+      });
+
+      it('allows requests with Tailscale .ts.net Origin header', async () => {
+        const app = createApp(tmpWorkspace);
+        const res = await app.request('/api/health', {
+          headers: {
+            Origin: 'https://glowbert.tail47fe9a.ts.net:4173',
+          },
+        });
+        expect(res.status).toBe(200);
+      });
+
+      it('rejects requests with unauthorized Origin header', async () => {
+        const app = createApp(tmpWorkspace);
+        const res = await app.request('/api/health', {
+          headers: {
+            Origin: 'https://evil.com',
+          },
+        });
+        expect(res.status).toBe(403);
+        const text = await res.text();
+        expect(text).toBe('Forbidden: Cross-Origin Request Blocked');
+      });
+    });
+
     it('POST /api/exports/brief compiles standalone defense briefs in Markdown and HTML directly to disk', async () => {
       const app = createApp(tmpWorkspace);
 
@@ -1256,4 +1333,3 @@ experiences:
     });
   });
 });
-

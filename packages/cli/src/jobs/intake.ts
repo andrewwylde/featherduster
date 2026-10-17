@@ -5,7 +5,7 @@ import { fingerprint } from './files.js';
 import { fetchPosting, MAX_POSTING_BYTES, type PostingFetchResult } from './posting-fetcher.js';
 import { extractPosting, type Opening } from './posting-extractor.js';
 
-export type IntakeRequest = C.JobIntakeInput & { fallback_job_id?: string; expected_revision?: number };
+export type IntakeRequest = C.JobIntakeInput & { fallback_job_id?: string; expected_revision?: number; details?: Partial<Pick<C.Job, 'company' | 'role' | 'notes' | 'context_url'>> };
 export interface IntakeItem {
   index: number; original: string; valid: boolean; error: { code: string; message: string } | null;
   fallback_available: boolean; job: C.Job | null; snapshot: C.PostingSnapshot | null; candidates: Opening[];
@@ -27,7 +27,8 @@ export class PostingIntakeService {
         const existing = row.mode === 'urls' ? this.repository.findByAlias(row.canonical_url) ?? this.repository.findByAlias(row.original.trim()) : null;
         if (existing) { item.duplicate_id = existing.id; continue; }
         const id = request.fallback_job_id ?? uuid(); const time = now();
-        const job: C.Job = { schema_version: 1, id, workspace_id, revision: 0, kind: 'job', original_url: row.mode === 'urls' ? row.original.trim() : null, canonical_url: row.mode === 'urls' ? row.canonical_url : null, employer_id: null, external_job_id: null, company: null, role: null, parent_discovery_id: null, posting_snapshot_id: null, preparation_state: 'queued', application_lifecycle: 'not_started', preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null, current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null, created_at: time, updated_at: time };
+        const job: C.Job = { schema_version: 1, id, workspace_id, revision: 0, kind: 'job', original_url: row.mode === 'urls' ? row.original.trim() : null, canonical_url: row.mode === 'urls' ? row.canonical_url : null, employer_id: null, external_job_id: null, company: null, role: null, parent_discovery_id: null, posting_snapshot_id: null, preparation_state: 'saved', application_lifecycle: 'not_started', preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null, current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null, created_at: time, updated_at: time };
+        if (request.details) Object.assign(job, C.JobSchema.parse({ ...job, ...request.details }));
         item.job = job;
         if (request.fallback_job_id) {
           if (row.mode !== 'text' || request.expected_revision === undefined) throw new Error('Fallback requires text and expected revision');
@@ -56,6 +57,7 @@ export class PostingIntakeService {
           job.preparation_state = 'needs_input'; job.state_reason = 'Select an opening before preparation';
           job.missing_inputs = [{ key: 'select_opening', question: 'Which opening should be prepared?', scope: { kind: 'job', job_id: id }, reason: job.state_reason }];
         }
+        if (request.details) item.job = C.JobSchema.parse({ ...item.job, ...request.details });
         item.snapshot = C.PostingSnapshotSchema.parse({ schema_version: 1, id: uuid(), workspace_id, job_id: id, source_kind: row.mode === 'text' ? 'text' : 'url', original_url: item.job.original_url, final_url, retrieved_at, captured_at: time, text, content_fingerprint: fingerprint(text) });
       } catch { item.valid = false; item.job = null; item.snapshot = null; item.error = { code: 'invalid_input', message: 'Invalid text or fallback target/revision.' }; }
     }

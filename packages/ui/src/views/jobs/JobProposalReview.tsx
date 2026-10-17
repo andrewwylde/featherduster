@@ -1,3 +1,4 @@
+import { JobStartingResumeCorrection } from './JobStartingResumeCorrection.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { applyProposalPatches, compileMarkdownResume, type CorpusScope, type Job, type ProposalPatch, type ProposalReadResponse, type ProposalSaveRequest } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
@@ -7,7 +8,7 @@ import { JobProposalEditor, type GroundingDraft } from './JobProposalEditor.js';
 
 type Available = Extract<ProposalReadResponse, { availability: 'available' }>;
 type Draft = { patches: ProposalPatch[]; groundings: GroundingDraft[]; explanation: string; removedGroundings?: string[] };
-const preparationAction = (job: Job) => job.preparation_state === 'queued' ? 'prepare' : job.preparation_state === 'needs_input' ? 'resume' : job.preparation_state === 'resume_ready' ? 'reprepare' : ['failed', 'interrupted', 'cancelled'].includes(job.preparation_state) ? 'retry' : null;
+const preparationAction = (job: Job) => ['saved', 'queued'].includes(job.preparation_state) ? 'prepare' : job.preparation_state === 'needs_input' ? 'resume' : job.preparation_state === 'resume_ready' ? 'reprepare' : ['failed', 'interrupted', 'cancelled'].includes(job.preparation_state) ? 'retry' : null;
 const empty = (): Draft => ({ patches: [], groundings: [], explanation: '' });
 const candidateFieldLabel = (path: string) => {
   if (path === 'summary') return 'Resume summary';
@@ -51,6 +52,17 @@ function Editor({ job, data, onSaved, refresh, loadError }: { job: Job; data: Av
   const blockers = base.review.validation.issues.filter(issue => issue.details.some(detail => detail.severity === 'block'));
   const proposalBlockers = new Set(blockers.flatMap(issue => issue.subject.kind === 'proposal' ? [issue.subject.proposal_id] : []));
   const candidateBlockers = [...new Set(blockers.flatMap(issue => issue.subject.kind === 'candidate' ? [issue.subject.path] : []))];
+  const [selectedProposal, setSelectedProposal] = useState(() => [...proposalBlockers][0] ?? (candidateBlockers[0] ? `base:${candidateBlockers[0]}` : ''));
+  const passageKey = (p: typeof overlay.proposals[number]) => p.type === 'summary.rewrite' ? 'summary' : p.target.experience_index >= 0 ? `experience:${p.target.experience_index}:bullet:${p.target.bullet_index}` : `skills:${p.target.skill_group_index}`;
+  const passages = [...new Set(overlay.proposals.map(passageKey))].map(id => {
+    const proposals = overlay.proposals.filter(p => passageKey(p) === id);
+    const first = proposals[0];
+    const experience = base.captured.base_resume.experiences[first.target.experience_index];
+    const label = id === 'summary' ? 'Resume summary' : experience ? `${experience.role} at ${experience.company}, bullet ${first.target.bullet_index + 1}` : id.startsWith('skills') ? 'Skills' : `Experience ${first.target.experience_index + 1}, bullet ${first.target.bullet_index + 1}`;
+    return { id, label, proposals, required: proposals.some(p => proposalBlockers.has(p.id)) };
+  });
+  const currentPassage = passages.find(group => group.proposals.some(p => p.id === selectedProposal));
+  const requiredPassages = passages.filter(group => group.required);
   const storageKey = prefix + draftBaseRevision;
   useEffect(() => {
     try { if (dirty) localStorage.setItem(storageKey, JSON.stringify({ draft, savedAt: Date.now() })); else localStorage.removeItem(storageKey); }
@@ -94,35 +106,48 @@ function Editor({ job, data, onSaved, refresh, loadError }: { job: Job; data: Av
     setDraft(current => current === submitted ? empty() : current);
     try { localStorage.removeItem(storageKey); } catch { /* storage failure is already displayed */ }
     setMessage(`Saved revision ${response.result.review.revision}. ${response.result.review.validation.status === 'ready' ? 'Ready to continue separately.' : 'Review remaining issues.'}${response.result.requires_refresh ? ' Explicit input refresh required.' : ''}`);
+    const next = response.result.review.validation.issues.find(i => i.subject.kind === 'proposal' && i.details.some(d => d.severity === 'block'));
+    if (next?.subject.kind === 'proposal') { setSelectedProposal(next.subject.proposal_id); focusRequested.current = true; }
+    else { const nextBase = response.result.review.validation.issues.find(i => i.subject.kind === 'candidate' && i.details.some(d => d.severity === 'block')); setSelectedProposal(nextBase?.subject.kind === 'candidate' ? `base:${nextBase.subject.path}` : ''); focusRequested.current = !!nextBase; }
     onSaved(); await refresh();
   });
   const focusBlocker = () => {
     const first = base.review.validation.issues.find(i => i.subject.kind === 'proposal' && i.details.some(d => d.severity === 'block'));
     if (first?.subject.kind === 'proposal') document.querySelector<HTMLElement>(`[data-proposal-field="${CSS.escape(first.subject.proposal_id)}"]`)?.focus();
+    else document.querySelector<HTMLElement>('#starting-resume details[open] textarea')?.focus();
   };
   useEffect(() => {
-    if (!busy && focusRequested.current) { focusRequested.current = false; focusBlocker(); }
-  }, [busy, base.review]);
+    if (!busy && !stale && focusRequested.current) { focusRequested.current = false; focusBlocker(); }
+  }, [busy, stale, base.review]);
   return <section aria-label="Proposal resolution" className={`${cardClass} p-4 space-y-4 min-w-0 break-words`}>
     {loadError && <p role="alert">{loadError} Showing the last successfully loaded review; it will refresh when the host responds.</p>}
     <header className="space-y-3 border-b border-slate-200 dark:border-slate-800 pb-4">
-      <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-vermilion-600">Pipeline checkpoint</p><h2 className="text-lg font-bold">Proposal review</h2></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${blockers.length ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200' : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200'}`}>{blockers.length ? `${blockers.length} blockers` : 'Ready to continue'}</span></div>
-      {blockers.length ? <p className="text-sm">{proposalBlockers.size ? <>Resolve <strong>{proposalBlockers.size} proposed {proposalBlockers.size === 1 ? 'edit' : 'edits'}</strong> and </> : <>Generated proposals have no blocking findings. </>}{candidateBlockers.length ? <>Update <strong>{candidateBlockers.length} {candidateBlockers.length === 1 ? 'location' : 'locations'} in the starting resume</strong>. </> : null}Continue stays locked until the saved review passes recheck.</p> : <p className="text-sm">The saved review passes validation. Continue preparation when you are ready; PDF approval comes later.</p>}
-      <ol className="grid gap-2 sm:grid-cols-3 text-xs">
-        <li><a className="block h-full rounded-lg border border-slate-200 dark:border-slate-700 p-3 hover:border-vermilion-400" href="#proposal-edits"><strong>1. Review proposed edits</strong><span className="block mt-1 text-slate-600 dark:text-slate-300">{proposalBlockers.size ? `${proposalBlockers.size} need attention` : 'No wording blockers'} · edit, reject, or add cited evidence.</span></a></li>
-        <li><a className="block h-full rounded-lg border border-slate-200 dark:border-slate-700 p-3 hover:border-vermilion-400" href="#starting-resume"><strong>2. Fix starting-resume claims</strong><span className="block mt-1 text-slate-600 dark:text-slate-300">{candidateBlockers.length} locations · correct the source, then refresh this job’s inputs.</span></a></li>
-        <li><a className="block h-full rounded-lg border border-slate-200 dark:border-slate-700 p-3 hover:border-vermilion-400" href="#review-actions"><strong>3. Save, recheck, continue</strong><span className="block mt-1 text-slate-600 dark:text-slate-300">Continue unlocks when validation is ready.</span></a></li>
-      </ol>
+      <div className="flex flex-wrap items-center justify-between gap-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-vermilion-600">Resume correction</p><h2 className="text-lg font-bold">Proposal review</h2></div><span className={`rounded-full px-3 py-1 text-xs font-semibold ${blockers.length ? 'bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200' : 'bg-emerald-100 text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200'}`}>{blockers.length ? `${blockers.length} blockers` : 'Ready to continue'}</span></div>
+      {blockers.length ? <details><summary className="text-sm cursor-pointer">Review overview · {requiredPassages.length + candidateBlockers.length} required passages</summary><p className="text-sm">{proposalBlockers.size ? <>Resolve <strong>{proposalBlockers.size} proposed {proposalBlockers.size === 1 ? 'edit' : 'edits'}</strong> and </> : <>Generated proposals have no blocking findings. </>}{candidateBlockers.length ? <>Update <strong>{candidateBlockers.length} {candidateBlockers.length === 1 ? 'location' : 'locations'} in the starting resume</strong>. </> : null}Save checks your correction. Continue separately when all required passages are resolved.</p></details> : <p className="text-sm">The saved review passes validation. Continue preparation when you are ready; PDF approval comes later.</p>}
+
+      {currentPassage?.required && <p className="text-sm">{blockers.find(issue => issue.subject.kind === 'proposal' && currentPassage.proposals.some(p => issue.subject.kind === 'proposal' && p.id === issue.subject.proposal_id))?.details.find(d => d.severity === 'block')?.message} Edit this passage using supported experience, then choose <strong>Save for this job</strong>.</p>}
     </header>
-    <p className="text-xs">Saved revision {base.review.revision} · {dirty ? 'Unsaved changes are kept in this browser.' : 'No unsaved changes.'} Save and recheck do not run models.</p>
+    <p className="text-xs">Saved revision {base.review.revision} · {dirty ? 'Unsaved changes are kept in this browser.' : 'No unsaved changes.'} Saving checks this job without running models.</p>
     {active && <p role="status">Preparation is active; its selected revision is frozen. Editing is disabled.</p>}
     {data.corpus_revision > (base.captured.knowledge?.revision ?? base.corpus_revision) && <p>Newer corpus knowledge exists. Refresh inputs explicitly to use it.</p>}
     {stale && <div role="alert"><p>The job or review changed. Local text is retained. Compare before reconciling.</p><details><summary>Compare server candidate</summary><pre className="whitespace-pre-wrap break-words">{compileMarkdownResume(data.review.candidate_preview)}</pre></details>
       <button className={secondaryButton} disabled={busy || active || data.input_stale} onClick={() => { setBase(data); setRevision(job.revision); setDraftBaseRevision(data.review.revision); try { localStorage.removeItem(storageKey); } catch { /* retain in memory */ } setMessage('Reconciled revision; review local edits against server content before saving.'); }}>Reconcile revision (keep edits)</button></div>}
-    <div id="proposal-edits" className="space-y-2"><h3 className="font-semibold">Proposed changes <span className="text-xs font-normal text-slate-500">{proposalBlockers.size} need attention · {overlay.proposals.length - proposalBlockers.size} optional to inspect</span></h3>
-      {overlay.proposals.map(p => { const issues = base.review.validation.issues.filter(i => i.subject.kind === 'proposal' && i.subject.proposal_id === p.id); const needsAttention = proposalBlockers.has(p.id); const findingCount = issues.reduce((n, i) => n + i.details.filter(d => d.severity === 'block').length, 0); return <details id={`proposal-${p.id}`} key={p.id} open={!blockers.length || needsAttention} className="rounded-lg border border-slate-200 dark:border-slate-700 p-2"><summary className="cursor-pointer px-2 py-1 text-sm font-medium">{p.id} · {needsAttention ? 'Needs attention' : 'Optional review'}{needsAttention ? ` · ${findingCount} blocking ${findingCount === 1 ? 'finding' : 'findings'}` : ''}</summary><div className="pt-2"><JobProposalEditor proposal={p} evidence={base.captured.evidence} support={base.captured.skillSupport} disabled={busy || active} issues={issues} requirements={base.captured.analysis.requirements.filter(r => p.requirement_ids.includes(r.id)).map(r => r.text)} grounding={draft.groundings.find(g => g.proposal_id === p.id)} onGrounding={g => setDraft(d => ({ ...d, groundings: [...d.groundings.filter(v => v.proposal_id !== p.id), ...(g ? [g] : [])] }))} onPatch={patch} /></div></details>; })}
+    <div id="proposal-edits" className="space-y-3">
+      {currentPassage && <section aria-label="Current passage" className="space-y-3">
+        <p className="text-xs">{currentPassage.required ? `Decision ${requiredPassages.indexOf(currentPassage) + 1} of ${requiredPassages.length + candidateBlockers.length}` : 'Optional wording review'}</p>
+        <h3 className="font-semibold">{currentPassage.label}</h3>
+        {currentPassage.proposals.map(p => <JobProposalEditor key={p.id} proposal={p} evidence={base.captured.evidence} support={base.captured.skillSupport} disabled={busy || active} onSave={p.id === currentPassage.proposals.at(-1)?.id ? () => void save(false) : undefined} saveDisabled={stale} issues={base.review.validation.issues.filter(i => i.subject.kind === 'proposal' && i.subject.proposal_id === p.id)} requirements={base.captured.analysis.requirements.filter(r => p.requirement_ids.includes(r.id)).map(r => r.text)} grounding={draft.groundings.find(g => g.proposal_id === p.id)} onGrounding={g => setDraft(d => ({ ...d, groundings: [...d.groundings.filter(v => v.proposal_id !== p.id), ...(g ? [g] : [])] }))} onPatch={patch} />)}
+      </section>}
+      <details><summary>Required passages ({requiredPassages.length + candidateBlockers.length})</summary><div className="flex flex-wrap gap-2 py-2">{requiredPassages.map(group => <button key={group.id} className={secondaryButton} onClick={() => setSelectedProposal(group.proposals.find(p => proposalBlockers.has(p.id))!.id)}>{group.label}</button>)}{candidateBlockers.map(path => <button key={path} className={secondaryButton} onClick={() => setSelectedProposal(`base:${path}`)}>{candidateFieldLabel(path)} (starting resume)</button>)}</div></details>
+      <details><summary>Optional proposals ({passages.filter(group => !group.required).length})</summary><div className="flex flex-wrap gap-2 py-2">{passages.filter(group => !group.required).map(group => <button key={group.id} className={secondaryButton} onClick={() => setSelectedProposal(group.proposals[0].id)}>{group.label}</button>)}</div></details>
     </div>
-    {candidateBlockers.length > 0 && <section id="starting-resume" className="space-y-3 rounded-lg border border-amber-300 bg-amber-50/70 p-4 dark:border-amber-900 dark:bg-amber-950/20"><div><h3 className="font-semibold">Starting resume · {candidateBlockers.length} {candidateBlockers.length === 1 ? 'location needs' : 'locations need'} correction</h3><p className="mt-1 text-sm">These claims come from the resume snapshot used to start this job. Editing the generated proposals will not change them. Update the source resume in your career workspace, then return here and choose <strong>Refresh inputs</strong>.</p></div>{candidateBlockers.map(path => { const issues = blockers.filter(i => i.subject.kind === 'candidate' && i.subject.path === path); const findingCount = issues.reduce((n, i) => n + i.details.filter(d => d.severity === 'block').length, 0); return <details key={path} className="rounded border border-amber-200 bg-white/70 p-3 dark:border-amber-900 dark:bg-slate-950/50"><summary className="cursor-pointer text-sm font-medium">{candidateFieldLabel(path)} · {findingCount} {findingCount === 1 ? 'finding' : 'findings'}</summary><div className="pt-2"><IssueList issues={issues.flatMap(i => i.details)} /></div></details>; })}<a className="text-sm font-semibold underline" href="#refresh-inputs">Go to input refresh</a></section>}
+    {candidateBlockers.length > 0 && <section id="starting-resume" className="space-y-3"><h3 className="font-semibold">Starting resume · {candidateBlockers.length} locations need correction</h3>{candidateBlockers.map(path => {
+      const issues = blockers.filter(i => i.subject.kind === 'candidate' && i.subject.path === path);
+      return <details key={path} open={selectedProposal === `base:${path}`} className="rounded-lg border border-amber-300 p-3 dark:border-amber-900"><summary className="cursor-pointer" onClick={e => { e.preventDefault(); setSelectedProposal(`base:${path}`); }}>{candidateFieldLabel(path)} · {issues.reduce((n, i) => n + i.details.filter(d => d.severity === 'block').length, 0)} finding</summary>
+        <IssueList issues={issues.flatMap(i => i.details)} />
+        <JobStartingResumeCorrection job={job} inputId={base.review.input_snapshot_id} resume={base.captured.base_resume} path={path} disabled={busy || active || stale || dirty} onSaved={() => { onSaved(); void refresh(); }} />
+      </details>;
+    })}</section>}
     {overlay.groundings.filter(g => !draft.removedGroundings?.includes(g.id)).map(g => <div key={g.id}><p>Saved grounding: {g.term} — {g.explanation} ({g.recorded_by})</p>{g.sources.map(s => <blockquote key={s.evidence_id}>{s.evidence_id}: {s.quote}</blockquote>)}<button className={secondaryButton} disabled={busy || active} onClick={() => setDraft(d => ({ ...d, removedGroundings: [...(d.removedGroundings ?? []), g.id] }))}>Remove saved grounding {g.term}</button></div>)}
     <label className="block">Correction explanation<textarea className={inputClass} disabled={busy || active} value={draft.explanation} onChange={e => setDraft(d => ({ ...d, explanation: e.target.value }))} /></label>
     <details><summary>Remember a reusable relationship</summary>
@@ -134,11 +159,11 @@ function Editor({ job, data, onSaved, refresh, loadError }: { job: Job; data: Av
       <label className="block">Memory scope<select className={inputClass} value={scopeKind} onChange={e => setScopeKind(e.target.value as CorpusScope['kind'])}>{['workspace', 'employer', 'project', 'role', 'job'].map(s => <option key={s}>{s}</option>)}</select></label>
       {scopeKind !== 'workspace' && scopeKind !== 'job' && <label className="block">Exact scope key<input className={inputClass} value={scopeKey} onChange={e => setScopeKey(e.target.value)} /></label>}
       {memoryGrounding && <div aria-label="Memory preview"><h3>Exact memory preview</h3><p>{skill} / {facet}: permit only “{memoryGrounding.term}” ({support}); scope {JSON.stringify(scope)}.</p><blockquote>{memoryGrounding.evidence_id}: {memoryGrounding.quote}</blockquote><p>{memoryGrounding.explanation}</p><p>Bound to the captured source version; live source changes can prevent saving.</p></div>}
+      <button className={secondaryButton} disabled={busy || active || stale || !memoryReady} onClick={() => void save(true)}>Save and remember</button>
     </details>
     <div id="review-actions" className="flex flex-wrap gap-2">
-      <button className={primaryButton} disabled={busy || active || stale} onClick={() => void save(false)}>Save for this job</button>
-      <button className={secondaryButton} disabled={busy || active || stale || !memoryReady} onClick={() => void save(true)}>Save and remember</button>
-      <button className={secondaryButton} disabled={busy || dirty || active || stale} onClick={() => void run(async () => { const result = await apiClient.recheckJobProposals(job.id, base.review.id, binding); setBase(b => ({ ...b, review: result.review })); setMessage(`Rechecked: ${result.review.validation.status}`); if (result.review.validation.status === 'blocked') focusRequested.current = true; })}>Recheck saved revision</button>
+      {!currentPassage && <button className={primaryButton} disabled={busy || active || stale} onClick={() => void save(false)}>Save for this job</button>}
+      <details><summary>Check diagnostics</summary><button className={secondaryButton} disabled={busy || dirty || active || stale} onClick={() => void run(async () => { const result = await apiClient.recheckJobProposals(job.id, base.review.id, binding); setBase(b => ({ ...b, review: result.review })); setMessage(`Rechecked: ${result.review.validation.status}`); if (result.review.validation.status === 'blocked') focusRequested.current = true; })}>Recheck saved revision</button></details>
       <button className={primaryButton} disabled={busy || dirty || active || stale || base.input_stale || base.review.validation.status !== 'ready'} onClick={() => void run(async () => { const body = { ...binding, validation_fingerprint: base.review.validation.fingerprint }; await apiClient.continueJobProposals(job.id, base.review.id, { ...body, idempotency_key: key(body) }); setMessage(`Started preparation with saved revision ${base.review.revision}.`); onSaved(); })}>Continue preparation</button>
     </div>
     <section id="refresh-inputs" className="space-y-2">
@@ -147,7 +172,7 @@ function Editor({ job, data, onSaved, refresh, loadError }: { job: Job; data: Av
       <button className={secondaryButton} disabled={busy || active || dirty} onClick={() => void run(async () => { try { await apiClient.captureJobInputs(job.id, job.revision); setMessage('Inputs refreshed. Prepare the new version separately.'); } finally { onSaved(); await refresh(); } })}>Refresh inputs</button>
       {refreshedInput && action && <button className={primaryButton} disabled={busy || dirty} onClick={() => void run(async () => { const body = { expected_revision: job.revision, input_snapshot_id: refreshedInput }; await apiClient.prepareJob(job.id, action, { ...body, idempotency_key: key({ action, ...body }) }); setMessage('New preparation version requested.'); onSaved(); await refresh(); })}>Prepare refreshed inputs</button>}
     </section>
-    <h3>Saved candidate preview {dirty ? '(does not include unsaved edits)' : ''}</h3><pre className="whitespace-pre-wrap break-words text-xs">{compileMarkdownResume(base.review.candidate_preview)}</pre>
+    <details><summary>Inspect saved candidate</summary><h3>Saved candidate preview {dirty ? '(does not include unsaved edits)' : ''}</h3><pre className="whitespace-pre-wrap break-words text-xs">{compileMarkdownResume(base.review.candidate_preview)}</pre></details>
     <details><summary>Historical reviews and generations</summary>{data.history.map(r => <details key={`${r.id}:${r.revision}`}><summary>Revision {r.revision} · {r.generation_id} · {r.created_at}</summary><pre className="whitespace-pre-wrap break-words text-xs">{compileMarkdownResume(r.candidate_preview)}</pre></details>)}</details>
     <p role="status">{message}</p>
   </section>;

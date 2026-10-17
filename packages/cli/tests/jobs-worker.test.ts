@@ -9,6 +9,7 @@ import { openJobsDatabase } from '../src/jobs/database.js';
 import { JobsRepository } from '../src/jobs/repository.js';
 import { JobArtifactsService } from '../src/jobs/artifacts.js';
 import { JobPreparation } from '../src/jobs/preparation.js';
+import { PostingIntakeService } from '../src/jobs/intake.js';
 import { JobsService } from '../src/jobs/service.js';
 import { fingerprint } from '../src/jobs/files.js';
 import { getLatexTemplate } from '../src/jobs/templates.js';
@@ -27,9 +28,9 @@ function fixture() {
   const deps = { repository: repo, preparation: prep, resolveInput: (j: Job) => j.current_attempt_id ? repo.getAttempt(j.current_attempt_id).input_snapshot_id : inputs.get(j.id)!, onEvent, leaseMs: 3000 };
   const service = new JobsService(deps);
   cleanups.push(async () => { await service.dispose(); db.close(); rmSync(root, { recursive: true, force: true }); });
-  function seed(timeout = 10000) {
+  function seed(timeout = 10000, state: Job['preparation_state'] = 'queued') {
     const now = new Date().toISOString();
-    const job: Job = { schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, revision: 0, kind: 'job', original_url: null, canonical_url: null, employer_id: null, external_job_id: null, company: 'Acme', role: 'Engineer', parent_discovery_id: null, posting_snapshot_id: null, preparation_state: 'queued', application_lifecycle: 'not_started', preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null, current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null, created_at: now, updated_at: now };
+    const job: Job = { schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, revision: 0, kind: 'job', original_url: null, canonical_url: null, employer_id: null, external_job_id: null, company: 'Acme', role: 'Engineer', parent_discovery_id: null, posting_snapshot_id: null, preparation_state: state, application_lifecycle: 'not_started', preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null, current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null, created_at: now, updated_at: now };
     repo.createJob(job, randomUUID());
     const posting = repo.savePostingSnapshot({ schema_version: 1, id: randomUUID(), workspace_id: job.workspace_id, job_id: job.id, source_kind: 'text', original_url: null, final_url: null, retrieved_at: null, captured_at: now, text: 'Build things', content_fingerprint: fingerprint('Build things') });
     const input = artifacts.captureInputs({ job_id: job.id, posting_id: posting.id, base_resume: yaml.dump({ profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' }, experiences: [], education: [], skills: [] }), selected_evidence: [], privacy_rules: {}, template: getLatexTemplate('default'), runner_configuration: { runner: 'fake', model: 'fake' }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: 1, max_model_calls: 4, timeout_ms: timeout, max_repair_attempts: 0, model_retry_count: 0 } });
@@ -149,3 +150,43 @@ it('transitions queued job to needs_input and attaches missing_inputs when setup
   } finally { await service.dispose(); }
 });
 
+
+it.each([false, true])('saving is inert across reconciliation with automatic mode %s', async automatic => {
+  vi.useFakeTimers();
+  const f = fixture();
+  const resolve = vi.spyOn(f.deps, 'resolveInput');
+  f.service.initialize();
+  if (automatic) f.service.startAutomaticPreparation('enable');
+  const control = f.repo.getControl();
+  const intake = new PostingIntakeService(f.repo);
+  const preview = await intake.preview({ mode: 'text', input: 'Build accessible interfaces' });
+  const id = intake.commit(preview, 'save')[0]!.job_id!;
+  intake.commit(preview, 'save');
+  await vi.advanceTimersByTimeAsync(16000);
+  f.service.durableEnqueue();
+  await f.service.worker.whenIdle();
+  expect(new JobsRepository(f.db).getJob(id).preparation_state).toBe('saved');
+  expect(f.repo.listJobs()).toHaveLength(1);
+  expect(f.repo.getJob(id).current_attempt_id).toBeNull();
+  expect(f.repo.getJob(id).artifact_version_ids).toEqual([]);
+  expect(resolve).not.toHaveBeenCalled();
+  expect(f.run).not.toHaveBeenCalled();
+  expect(f.renderer.preflight).not.toHaveBeenCalled();
+  expect(f.repo.getControl()).toEqual(control);
+});
+
+it('explicit preparation admits a saved job but never clears Stop', async () => {
+  const f = fixture();
+  const seeded = f.seed(10000, 'saved');
+  f.service.stopProcessing('stop');
+  const control = f.repo.getControl();
+  expect(() => f.service.prepare(f.request(seeded))).toThrow(/stopped|paused/i);
+  expect(f.repo.getJob(seeded.job.id).preparation_state).toBe('saved');
+  expect(f.repo.getControl()).toEqual(control);
+  f.service.startAutomaticPreparation('start');
+  await f.service.worker.whenIdle();
+  expect(f.run).not.toHaveBeenCalled();
+  f.service.prepare(f.request(seeded));
+  await f.service.worker.whenIdle();
+  expect(f.repo.getJob(seeded.job.id).preparation_state).toBe('resume_ready');
+});

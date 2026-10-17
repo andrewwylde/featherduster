@@ -39,7 +39,7 @@ export class ProposalService {
     return { ...context, analysis: context.analysis, alignment: context.alignment, captured: context.captured, rules };
   }
   private currentInput(jobId: string, inputId: string) {
-    const row = this.jobs.database.db.prepare('SELECT id FROM input_snapshots WHERE job_id=? ORDER BY rowid DESC LIMIT 1').get(jobId) as { id: string } | undefined;
+    const row = this.jobs.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload, '$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(jobId) as { id: string } | undefined;
     if (row?.id !== inputId) throw new RepositoryError('revision_conflict', 'Inputs changed; refresh and explicitly prepare a new version');
   }
   private bound(request: Binding) {
@@ -57,7 +57,7 @@ export class ProposalService {
   private readVerified(jobId: string): C.ProposalReadResponse {
     const job = this.jobs.getJob(jobId);
     const review = this.proposals.getActive(jobId);
-    const latest = this.jobs.database.db.prepare('SELECT id FROM input_snapshots WHERE job_id=? ORDER BY rowid DESC LIMIT 1').get(jobId) as { id: string } | undefined;
+    const latest = this.jobs.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload, '$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(jobId) as { id: string } | undefined;
     const latest_input_snapshot_id = latest?.id ?? null;
     if (!review) {
       const input_snapshot_id = job.current_attempt_id ? this.jobs.getAttempt(job.current_attempt_id).input_snapshot_id : null;

@@ -17,8 +17,11 @@ import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { jobSections, type JobSection } from '../../routing.js';
 import { WorkerControls } from './WorkerControls.js';
+import { JobDetailsEditor } from './JobDetailsEditor.js';
 import { JobIntake } from './JobIntake.js';
 import { JobAnswers } from './JobAnswers.js';
+import { JobMaterialReview } from './JobMaterialReview.js';
+import { JobFitReview } from './JobFitReview.js';
 import { JobResumeReview } from './JobResumeReview.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 
@@ -45,7 +48,7 @@ export function JobDetail({
     setBusy(true);
     setFailure('');
     try {
-      let input = action !== 'prepare' ? data.attempt?.input_snapshot_id : null;
+      let input = (!data.activity || data.activity === 'resume') && action !== 'prepare' && data.job.recovery?.kind !== 'stale_inputs' ? data.attempt?.input_snapshot_id : null;
       if (!input) {
         if (captured.current?.revision !== data.job.revision) {
           captured.current = {
@@ -92,12 +95,13 @@ export function JobDetail({
   const job = data?.job;
   const hasReview = data?.proposal_review?.availability === 'available';
   const canRecover = data?.proposal_review?.availability === 'missing_output' && data.proposal_review.recoverable;
+  const focusedCorrection = section === 'resume' && hasReview && job?.preparation_state === 'needs_input';
   const setup = job?.recovery?.kind === 'setup';
   const recoveryAction = hasReview ? { label: 'Resolve proposals', path: `/jobs/${id}/resume` }
     : setup ? { label: 'Resolve setup', path: '/settings' }
     : canRecover ? { label: 'Recover proposal review', path: `/jobs/${id}/resume` }
     : job?.recovery?.kind === 'render' ? { label: 'Inspect render failure', path: `/jobs/${id}/resume` }
-    : job?.recovery && job.recovery.kind !== 'fact' ? { label: 'Resolve proposals', path: `/jobs/${id}/resume` } : null;
+    : job?.recovery && !['fact', 'stale_inputs'].includes(job.recovery.kind) ? { label: 'Resolve proposals', path: `/jobs/${id}/resume` } : null;
 
   const sectionIcon = (key: string) => {
     switch (key) {
@@ -117,7 +121,7 @@ export function JobDetail({
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto min-w-0">
+    <div className="space-y-4 max-w-6xl mx-auto min-w-0">
       {/* Top Breadcrumb & Return */}
       <div className="flex items-center justify-between">
         <button
@@ -125,15 +129,11 @@ export function JobDetail({
           onClick={() => navigate('/jobs')}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Jobs
+          Back to saved jobs
         </button>
       </div>
 
-      <WorkerControls
-        jobs={job ? [job] : []}
-        onJobMutated={() => void refresh()}
-        navigate={navigate}
-      />
+
 
       {error && (
         <div
@@ -163,16 +163,16 @@ export function JobDetail({
       {data && job && (
         <>
           {/* Job Header Hero Card */}
-          <div className={`${cardClass} p-6 space-y-4`}>
+          <div className={`${cardClass} p-4 space-y-3`}>
             <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
               <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
+                <div className={focusedCorrection ? 'hidden' : 'flex items-center gap-2'}>
                   <span className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Job Details
                   </span>
-                  {job.canonical_url && (
+                  {(job.context_url || job.canonical_url) && (
                     <a
-                      href={job.canonical_url}
+                      href={job.context_url || job.canonical_url || undefined}
                       target="_blank"
                       rel="noreferrer"
                       className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 inline-flex items-center gap-0.5 text-xs"
@@ -183,23 +183,24 @@ export function JobDetail({
                   )}
                 </div>
 
-                <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
+                <h1 className={`${focusedCorrection ? 'text-base sm:text-xl' : 'text-xl sm:text-2xl'} font-bold tracking-tight text-slate-900 dark:text-white`}>
                   {job.company ?? 'Unknown company'} — {job.role ?? 'Untitled role'}
                 </h1>
 
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Preparation: {job.preparation_state} · Application: {job.application_lifecycle}
+                <p className={focusedCorrection ? 'hidden' : 'text-xs text-slate-500 dark:text-slate-400'}>
+                  {job.preparation_state === 'saved' ? 'Saved. Choose an optional activity below.' : job.preparation_state === 'resume_ready' ? 'Resume available for review.' : job.preparation_state === 'needs_input' ? 'Preparation needs your attention.' : data.activity === 'fit' ? 'Fit assessment' : data.activity === 'cover_letter' ? 'Cover-letter preparation' : data.activity === 'interview_brief' ? 'Interview-brief preparation' : 'Resume preparation'}
                 </p>
 
-                <p className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                  {job.preparation_stage} {job.state_reason}
+                <p className={focusedCorrection ? 'hidden' : 'text-xs font-medium text-slate-700 dark:text-slate-300'}>
+                  {job.state_reason}
                 </p>
               </div>
 
+              {section === 'posting' && <button className={primaryButton} onClick={() => navigate(`/jobs/${id}/resume`)}>Tailor resume</button>}
               {/* Action Buttons */}
-              {job.kind === 'job' && (
+              {!focusedCorrection && job.kind === 'job' && (section === 'resume' || section === 'posting') && (
                 <div className="flex flex-wrap items-center gap-2.5">
-                  {job.preparation_state === 'queued' && (
+                  {section === 'resume' && ['saved', 'queued'].includes(job.preparation_state) && (
                     <button
                       className={`${primaryButton} text-xs font-semibold`}
                       disabled={busy}
@@ -210,14 +211,14 @@ export function JobDetail({
                     </button>
                   )}
 
-                  {job.preparation_state === 'needs_input' && (
+                  {job.preparation_state === 'needs_input' && !(section === 'resume' && hasReview) && (
                     <button
                       className={`${primaryButton} text-xs font-semibold`}
                       disabled={busy}
                       onClick={() => recoveryAction ? navigate(recoveryAction.path) : void prepare('resume')}
                     >
                       <RefreshCw className="h-3.5 w-3.5" />
-                      {recoveryAction?.label ?? 'Resume job'}
+                      {recoveryAction?.label ?? (job.recovery?.kind === 'stale_inputs' ? 'Prepare with current context' : 'Resume job')}
                     </button>
                   )}
 
@@ -256,7 +257,7 @@ export function JobDetail({
               )}
             </div>
 
-            {setup && <p role="status">Last attempt setup diagnostic: {job.state_reason}. PDF tools must be repaired in the service environment, not by editing proposals or changing the model timeout. Settings does not automatically restart preparation.</p>}
+            {setup && section !== 'fit' && <p role="status">Last attempt setup diagnostic: {job.state_reason}. PDF tools must be repaired in the service environment, not by editing proposals or changing the model timeout. Settings does not automatically restart preparation.</p>}
             {failure && (
               <div
                 role="alert"
@@ -311,6 +312,7 @@ export function JobDetail({
                 </h2>
               </div>
 
+              <JobDetailsEditor key={job.id} job={job} posting={data.posting} onSaved={() => void refresh()} />
               {data.posting ? (
                 <div className="space-y-3">
                   <div className="rounded-lg bg-slate-50 dark:bg-slate-900/60 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-1 border border-slate-200/60 dark:border-slate-800">
@@ -337,92 +339,9 @@ export function JobDetail({
           )}
 
           {/* Section 2: Fit */}
-          {section === 'fit' && (
-            <section className={`${cardClass} p-6 space-y-6`}>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <Target className="h-5 w-5 text-vermilion-500" />
-                Fit
-              </h2>
+          {section === 'fit' && <JobFitReview key={id} job={job} onSaved={() => void refresh()} navigate={navigate} />}
 
-              {data.analysis ? (
-                <div className="space-y-6">
-                  {/* Mission */}
-                  <div className="rounded-xl border border-slate-200/80 bg-slate-50/70 p-4 dark:border-slate-800 dark:bg-slate-900/50 space-y-1.5">
-                    <h3 className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Role Mission
-                    </h3>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                      {data.analysis.mission}
-                    </p>
-                  </div>
-
-                  {/* Requirements and Quotes */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      Requirements and posting quotes
-                    </h3>
-                    <ul className="space-y-3">
-                      {data.analysis.requirements.map((r) => (
-                        <li
-                          key={r.id}
-                          className="rounded-lg border border-slate-200 dark:border-slate-800 p-4 space-y-2 bg-white dark:bg-slate-950/40"
-                        >
-                          <p className="text-xs font-semibold text-slate-900 dark:text-white">
-                            {r.text}
-                          </p>
-                          <blockquote className="border-l-2 border-vermilion-500 pl-3 text-xs italic text-slate-600 dark:text-slate-400">
-                            {r.quote}
-                          </blockquote>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {/* Evidence Alignment */}
-                  <div className="space-y-3">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-white">
-                      Backed, transferable and gap evidence
-                    </h3>
-                    <ul className="divide-y divide-slate-100 dark:divide-slate-800">
-                      {data.alignment ? (
-                        data.alignment.rows.map((row) => (
-                          <li key={row.requirement_id} className="py-3 text-xs space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono text-slate-500">{row.requirement_id}:</span>
-                              <strong
-                                className={`rounded px-1.5 py-0.5 text-[11px] ${
-                                  row.classification === 'backed'
-                                    ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
-                                    : row.classification === 'transferable'
-                                      ? 'bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-300'
-                                      : 'bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-300'
-                                }`}
-                              >
-                                {row.classification}
-                              </strong>
-                            </div>
-                            <p className="text-slate-700 dark:text-slate-300">{row.rationale}</p>
-                            <p className="text-[11px] text-slate-500">
-                              Citations: {row.citations.join(', ') || 'None'}
-                            </p>
-                            {row.issues?.map((issue, i) => (
-                              <p key={i} className="text-[11px] text-amber-600 dark:text-amber-400 font-medium">
-                                {issue.severity}: {issue.message}
-                              </p>
-                            ))}
-                          </li>
-                        ))
-                      ) : (
-                        <li className="py-2 text-xs text-slate-500">Not assessed</li>
-                      )}
-                    </ul>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-slate-500 dark:text-slate-400">Not assessed</p>
-              )}
-            </section>
-          )}
+          {(section === 'cover_letter' || section === 'interview_brief') && <JobMaterialReview key={`${id}:${section}`} job={job} kind={section} onSaved={() => void refresh()} />}
 
           {/* Section 3: Blocker Answers */}
           {section === 'answers' && (
@@ -440,13 +359,13 @@ export function JobDetail({
             />
           )}
 
-          {/* Section 5: Application History */}
+          {/* Section 5: Retained history */}
           {section === 'history' && (
             <section className={`${cardClass} p-6 space-y-4`}>
               <div>
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
                   <History className="h-5 w-5 text-vermilion-500" />
-                  Application History
+                  Retained history
                 </h2>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                   Resume approval and email sent do not mean application submitted.
@@ -517,6 +436,11 @@ export function JobDetail({
           )}
         </>
       )}
+      <WorkerControls
+        jobs={job ? [job] : []}
+        onJobMutated={() => void refresh()}
+        navigate={navigate}
+      />
     </div>
   );
 }

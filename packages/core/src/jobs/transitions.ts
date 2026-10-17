@@ -2,8 +2,11 @@ import { ApplicationLifecycleSchema, PreparationStateSchema } from './schemas.js
 import type { ApplicationLifecycle, Job, PreparationState } from './schemas.js';
 
 const preparationEdges: Record<string, { from: PreparationState[]; to: PreparationState }> = {
+  prepare: { from: ['saved'], to: 'queued' },
   claim: { from: ['queued'], to: 'preparing' },
   block: { from: ['queued', 'preparing'], to: 'needs_input' },
+  material_complete: { from: ['preparing'], to: 'saved' },
+  fit_complete: { from: ['preparing'], to: 'saved' },
   complete: { from: ['preparing'], to: 'resume_ready' },
   fail: { from: ['preparing'], to: 'failed' },
   interrupt: { from: ['preparing'], to: 'interrupted' },
@@ -14,7 +17,7 @@ const preparationEdges: Record<string, { from: PreparationState[]; to: Preparati
   override: { from: ['skipped'], to: 'queued' },
   reprepare: { from: ['resume_ready'], to: 'queued' },
 };
-export type PreparationAction = 'claim' | 'block' | 'complete' | 'fail' | 'interrupt' | 'skip' | 'cancel' | 'resume' | 'retry' | 'override' | 'reprepare';
+export type PreparationAction = 'prepare' | 'claim' | 'block' | 'complete' | 'fit_complete' | 'material_complete' | 'fail' | 'interrupt' | 'skip' | 'cancel' | 'resume' | 'retry' | 'override' | 'reprepare';
 export type ApplicationTarget = ApplicationLifecycle;
 
 /** Topology only: callers own transactions, readiness gates, attempts and events. */

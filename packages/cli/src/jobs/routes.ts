@@ -1,3 +1,4 @@
+import { JobExportRequestSchema } from './exports.js';
 import { SaveReviewSchema, ReviewBindingSchema, ContinueReviewSchema, RecoverReviewSchema } from './proposal-service.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -11,6 +12,7 @@ import { jobDetail, publicJobsResult, type JobsRuntime } from './runtime.js';
 const uuid = z.string().uuid();
 const revision = z.number().int().nonnegative();
 const key = z.string().trim().min(1);
+const manualDetails = JobSchema.pick({ company: true, role: true, notes: true, context_url: true }).partial().strict();
 export const jobFilters = JobSchema.pick({ preparation_state: true, application_lifecycle: true, kind: true }).partial().strict();
 export const preparationRequest = z.object({ expected_revision: revision, input_snapshot_id: uuid, idempotency_key: key }).strict();
 export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
@@ -26,7 +28,7 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
   const checkFallback = (r: JobsRuntime, id?: string, rev?: number) => { if (id && r.repository.getJob(id).revision !== rev) throw new RepositoryError('revision_conflict', 'Stale fallback revision'); };
   app.get('/api/jobs', handle((c, r) => { const filters = jobFilters.parse(c.req.query()); return { jobs: r.repository.listJobs().filter(job => Object.entries(filters).every(([k, v]) => job[k as keyof typeof job] === v)) }; }));
   app.post('/api/jobs/preview', handle(async (c, r) => {
-    const body = z.object({ mode: z.enum(['urls', 'text']), input: z.string().min(1), fallback_job_id: uuid.optional(), expected_revision: revision.optional() }).strict().refine(v => !v.fallback_job_id || (v.mode === 'text' && v.expected_revision !== undefined)).parse(await c.req.json());
+    const body = z.object({ mode: z.enum(['urls', 'text']), input: z.string().min(1), details: manualDetails.optional(), fallback_job_id: uuid.optional(), expected_revision: revision.optional() }).strict().refine(v => !v.fallback_job_id || (v.mode === 'text' && v.expected_revision !== undefined)).parse(await c.req.json());
     checkFallback(r, body.fallback_job_id, body.expected_revision);
     for (const [id, entry] of previews) if (entry.expires <= Date.now()) previews.delete(id);
     while (previews.size >= 100) previews.delete(previews.keys().next().value!);
@@ -42,7 +44,6 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     const receipt = r.repository.database.db.prepare("SELECT 1 FROM mutation_receipts WHERE operation='intake' AND idempotency_key=?").get(`${body.idempotency_key}:0`);
     if (!receipt) checkFallback(r, entry.fallback, entry.revision);
     const items = r.intake.commit(entry.preview, body.idempotency_key);
-    if (items.some(i => i.disposition !== 'error' && i.disposition !== 'duplicate' && !('replayed' in i && i.replayed))) r.service.durableEnqueue();
     const conflict = items.find(i => i.error && ['revision_conflict', 'idempotency_conflict', 'ineligible', 'invalid_ownership'].includes(i.error.code));
     if (conflict?.error) return c.json(publicJobsResult({ code: conflict.error.code, error: conflict.error.message, items }), 409);
     const failure = items.find(i => i.error && ['corrupt_data', 'commit_failed'].includes(i.error.code));
@@ -66,11 +67,37 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
       return { answer: saved, job: r.repository.updateJob(job, expected_revision) };
     }).immediate();
   }));
+  app.get('/api/jobs/:id/exports', handle((c, r) => ({ releases: r.exports.list(uuid.parse(c.req.param('id'))) })));
+  app.get('/api/jobs/:id/exports/check', handle((c, r) => {
+    const result = r.exports.files(uuid.parse(c.req.param('id')), JobExportRequestSchema.parse(JSON.parse(c.req.query('selection') ?? '{}')));
+    return { binding: result.binding, files: result.files.map(({ bytes, ...file }) => file) };
+  }));
+  app.post('/api/jobs/:id/exports', handle(async (c, r) => {
+    const body = z.object({ selection: JobExportRequestSchema, idempotency_key: key }).strict().parse(await c.req.json());
+    return { release: r.exports.save(uuid.parse(c.req.param('id')), body.selection, body.idempotency_key) };
+  }, 201));
+  const exportResponse = (bytes: string | Uint8Array, type: string, name: string, download: boolean) => new Response(typeof bytes === 'string' ? bytes : new Uint8Array(bytes), { headers: {
+    'Content-Type': `${type}${type.startsWith('text/') ? '; charset=utf-8' : ''}`, 'Cache-Control': 'private, no-store',
+    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
+    ...(download ? { 'Content-Disposition': `attachment; filename="${name}"` } : {}),
+  } });
+  app.get('/api/jobs/:id/exports/current/:name', handle((c, r) => {
+    const selection = JobExportRequestSchema.parse(JSON.parse(c.req.query('selection') ?? '{}'));
+    const result = r.exports.files(uuid.parse(c.req.param('id')), selection);
+    const file = result.files.find(file => file.name === key.parse(c.req.param('name')));
+    if (!file) throw new RepositoryError('not_found', 'Select this material before exporting it');
+    return exportResponse(file.bytes, file.type, file.name, c.req.query('download') === '1');
+  }));
+  app.get('/api/jobs/:id/exports/:releaseId/:name', handle((c, r) => {
+    const file = r.exports.content(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('releaseId')), key.parse(c.req.param('name')));
+    return exportResponse(file.bytes, file.type, file.name, c.req.query('download') === '1');
+  }));
   const binding = z.object({ expected_job_revision: revision, artifact_fingerprint: key, idempotency_key: key }).strict();
   app.get('/api/jobs/:id/artifacts/:versionId/review', handle((c, r) => r.artifacts.review(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')))));
   for (const kind of ['pdf', 'previews/:page']) app.get(`/api/jobs/:id/artifacts/:versionId/${kind}`, handle((c, r) => {
     const page = kind === 'pdf' ? undefined : z.coerce.number().int().positive().parse(c.req.param('page'));
     const bytes = r.artifacts.content(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), page);
+    c.header('X-Frame-Options', 'SAMEORIGIN');
     return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': page === undefined ? 'application/pdf' : 'image/png', 'Cache-Control': 'private, no-store' } });
   }));
   app.post('/api/jobs/:id/artifacts/:versionId/approve', handle(async (c, r) => {
@@ -95,11 +122,41 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
   app.post('/api/jobs/:id/proposals/:reviewId/recheck', handle(async (c, r) => r.proposals.recheck({ ...ReviewBindingSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), review_id: uuid.parse(c.req.param('reviewId')) })));
   app.post('/api/jobs/:id/proposals/:reviewId/continue', handle(async (c, r) => r.proposals.continue({ ...ContinueReviewSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), review_id: uuid.parse(c.req.param('reviewId')) }), 202));
   app.post('/api/jobs/:id/proposals/recover', handle(async (c, r) => r.proposals.recover({ ...RecoverReviewSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')) }), 202));
+  const materialKind = z.enum(['cover_letter', 'interview_brief']);
+  app.get('/api/jobs/:id/materials/:kind/export', handle((c, r) => {
+    const kind = materialKind.parse(c.req.param('kind'));
+    const format = z.enum(['text', 'html']).parse(c.req.query('format'));
+    const jobId = uuid.parse(c.req.param('id')), job = r.repository.getJob(jobId);
+    const artifactId = job.artifact_version_ids.at(-1);
+    if (!artifactId) throw new RepositoryError('ineligible', 'Prepare and check a current resume before publishing a material release. Saved text is retained.');
+    const artifact = r.artifacts.getArtifact(artifactId);
+    const result = r.exports.files(jobId, { artifact_id: artifactId, artifact_fingerprint: artifact.version_fingerprint, dossier: false, [kind]: uuid.parse(c.req.query('revision')) });
+    const content = result.files.find(file => file.name === `${kind}.${format === 'html' ? 'html' : 'txt'}`)!.bytes as string;
+    c.header('Content-Type', format === 'html' ? 'text/html; charset=utf-8' : 'text/plain; charset=utf-8');
+    c.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    c.header('Cache-Control', 'no-store');
+    if (c.req.query('download') === '1') c.header('Content-Disposition', `attachment; filename="${kind}.${format === 'html' ? 'html' : 'md'}"`);
+    return c.body(content);
+  }));
+  app.get('/api/jobs/:id/materials/:kind', handle((c, r) => r.materials.read(uuid.parse(c.req.param('id')), materialKind.parse(c.req.param('kind')))));
+  app.post('/api/jobs/:id/materials/:kind/generate', handle(async (c, r) => r.assessFit(uuid.parse(c.req.param('id')), z.object({ expected_revision: revision, idempotency_key: key, evidence_ids: z.array(key).optional() }).strict().parse(await c.req.json()), materialKind.parse(c.req.param('kind'))), 202));
+  app.put('/api/jobs/:id/materials/:kind', handle(async (c, r) => r.materials.save(uuid.parse(c.req.param('id')), materialKind.parse(c.req.param('kind')), await c.req.json())));
+  app.post('/api/jobs/:id/materials/:kind/review', handle(async (c, r) => r.materials.review(uuid.parse(c.req.param('id')), materialKind.parse(c.req.param('kind')), z.object({ expected_revision_id: uuid, idempotency_key: key }).strict().parse(await c.req.json()))));
+  app.get('/api/jobs/:id/fit', handle((c, r) => r.readFit(uuid.parse(c.req.param('id')))));
+  app.post('/api/jobs/:id/fit', handle(async (c, r) => r.assessFit(uuid.parse(c.req.param('id')), z.object({ expected_revision: revision, idempotency_key: key, evidence_ids: z.array(key).optional(), runner: z.enum(['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake']).optional() }).strict().parse(await c.req.json())), 202));
   app.get('/api/jobs/:id', handle((c, r) => jobDetail(r, uuid.parse(c.req.param('id')))));
+  app.put('/api/jobs/:id/details', handle(async (c, r) => {
+    const body = z.object({ expected_revision: revision, idempotency_key: key, changes: manualDetails, posting_text: z.string().trim().min(1).max(1000000).optional() }).strict().parse(await c.req.json());
+    return r.repository.saveDetails(uuid.parse(c.req.param('id')), body);
+  }));
   app.put('/api/jobs/:id', handle(async (c, r) => {
     const id = uuid.parse(c.req.param('id'));
     const body = z.object({ expected_revision: revision, changes: JobSchema.pick({ company: true, role: true, employer_id: true, base_resume_id: true, template_id: true, runner: true }).partial().strict() }).strict().parse(await c.req.json());
     return { job: r.repository.updateJob({ ...r.repository.getJob(id), ...body.changes }, body.expected_revision) };
+  }));
+  app.put('/api/jobs/:id/starting-resume', handle(async (c, r) => {
+    const body = z.object({ expected_job_revision: revision, input_snapshot_id: uuid, idempotency_key: key, base_resume: ResumeSpecSchema }).strict().parse(await c.req.json());
+    return r.artifacts.correctStartingResume({ ...body, job_id: uuid.parse(c.req.param('id')) });
   }));
   app.post('/api/jobs/:id/inputs', handle(async (c, r) => {
     const body = z.object({ expected_revision: revision, base_resume_id: z.string().min(1).optional(), template_id: z.string().min(1).optional(), runner: z.enum(['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake']).optional(), evidence_ids: z.array(z.string().min(1)).optional() }).strict().parse(await c.req.json());

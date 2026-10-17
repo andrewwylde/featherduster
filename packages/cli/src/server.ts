@@ -1,3 +1,4 @@
+import { buildIdentity } from './build-identity.js';
 import { loadEffectiveCorpus } from './corpus/load.js';
 import { mountCorpusRoutes } from './corpus/routes.js';
 import { applicableSkillSupport, queryCorpus } from '@featherduster/core';
@@ -398,6 +399,37 @@ export function loadResumeSpecs(workspaceDir: string, includeStarter = true): Re
 }
 
 /**
+ * Validates whether the given Host header is permitted.
+ * Allows localhost, 127.0.0.1, Tailscale MagicDNS (*.ts.net), and Tailscale CGNAT IPs (100.64.0.0/10).
+ */
+export function isAllowedHost(host: string): boolean {
+  if (!host) return true;
+  const hostname = host.replace(/:\d+$/, '').toLowerCase();
+  if (hostname === '127.0.0.1' || hostname === 'localhost') return true;
+  if (hostname === 'ts.net' || hostname.endsWith('.ts.net')) return true;
+  if (/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+  return false;
+}
+
+/**
+ * Validates whether the given Origin header is permitted.
+ * Allows localhost, 127.0.0.1, Tailscale MagicDNS (*.ts.net), and Tailscale CGNAT IPs (100.64.0.0/10).
+ */
+export function isAllowedOrigin(origin: string): boolean {
+  if (!origin) return false;
+  try {
+    const originUrl = new URL(origin);
+    const hostname = originUrl.hostname.toLowerCase();
+    if (['127.0.0.1', 'localhost'].includes(hostname)) return true;
+    if (hostname === 'ts.net' || hostname.endsWith('.ts.net')) return true;
+    if (/^100\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Creates and configures the Hono local application instance for a workspace directory.
  */
 export function createApp(workspaceDir: string, options?: CreateAppOptions): Hono & { initializeJobs(): void; disposeJobs(): Promise<void> } {
@@ -470,33 +502,30 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
     }
 
     const host = c.req.header('host');
-    if (host && !/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(host)) {
+    if (host && !isAllowedHost(host)) {
       return c.text('Forbidden: Invalid Host Header', 403);
     }
     const origin = c.req.header('origin');
     if (origin) {
       try {
-        const originUrl = new URL(origin);
-        if (!['127.0.0.1', 'localhost'].includes(originUrl.hostname)) {
-          return c.text('Forbidden: Cross-Origin Request Blocked', 403);
-        }
+        new URL(origin);
       } catch {
         return c.text('Forbidden: Malformed Origin Header', 403);
+      }
+      if (!isAllowedOrigin(origin)) {
+        return c.text('Forbidden: Cross-Origin Request Blocked', 403);
       }
     }
     await next();
   });
 
-  // 1a. CORS support for localhost and 127.0.0.1 origins
+  // 1a. CORS support for localhost, 127.0.0.1, and Tailscale (.ts.net) origins
   app.use('*', cors({
     origin: (origin) => {
       if (!origin) return '*';
-      try {
-        const originUrl = new URL(origin);
-        if (['127.0.0.1', 'localhost'].includes(originUrl.hostname)) {
-          return origin;
-        }
-      } catch {}
+      if (isAllowedOrigin(origin)) {
+        return origin;
+      }
       return null;
     },
     allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -505,6 +534,10 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   }));
 
   mountDraftRoutes(app, draftService, orchestrator);
+
+  // Capture once: subsequent disk edits must not relabel an already running app.
+  const servedBuild = buildIdentity({ cli: __dirname, core: path.resolve(__dirname, '../../core/dist') });
+  app.get('/api/build-identity', (c) => { c.header('Cache-Control', 'no-store'); return c.json(servedBuild); });
 
   // 1b. Health check
   app.get('/api/health', (c) => {

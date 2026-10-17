@@ -14,7 +14,7 @@ vi.mock('node:fs', async importOriginal => {
     return actual.realpathSync(...args);
   }) as typeof actual.realpathSync;
   resolver.native = actual.realpathSync.native;
-  return { ...actual, realpathSync: resolver, readFileSync: (...args: Parameters<typeof actual.readFileSync>) => { latency.reads++; return actual.readFileSync(...args); } }; 
+  return { ...actual, realpathSync: resolver, readFileSync: (...args: Parameters<typeof actual.readFileSync>) => { latency.reads++; return actual.readFileSync(...args); } };
 });
 afterEach(() => { latency.enabled = false; });
 it('keeps PDF completions responsive during repeated immutable reads on slow JS realpath', async () => {

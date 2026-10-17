@@ -6,9 +6,11 @@ import type { ArtifactVersion, Job, ResumeSpec } from '@featherduster/core';
 import { apiClient, ApiError, type JobReview, type JobsControl, type JobsDetail } from '../src/api/client.js';
 import { JobsView, matchesJobFilter, getJobPriority, compareJobs, isNeedsInput, isQueued } from '../src/views/jobs/JobsView.js';
 import { JobDetail } from '../src/views/jobs/JobDetail.js';
+import { JobDetailsEditor } from '../src/views/jobs/JobDetailsEditor.js';
 import { JobIntake } from '../src/views/jobs/JobIntake.js';
 import { JobAnswers } from '../src/views/jobs/JobAnswers.js';
 import { WorkerControls } from '../src/views/jobs/WorkerControls.js';
+import { QueueVisualization } from '../src/views/jobs/QueueVisualization.js';
 import { JobResumeReview } from '../src/views/jobs/JobResumeReview.js';
 import { jobsViewForPath, jobDraftForPath, tabForPath } from '../src/routing.js';
 import { useJobsData } from '../src/hooks/useJobsData.js';
@@ -53,7 +55,8 @@ it('keeps application and preparation filters independent and retains archived r
   render(<JobsView navigate={vi.fn()} />);
   const heading = await screen.findByRole('heading', { level: 2, name: 'Acme — Engineer' });
   expect(within(heading).getByRole('link')).toHaveAttribute('href', `/jobs/${id}`);
-  expect(screen.getByText('Preparation: queued · Application: not_started')).toBeInTheDocument();
+  expect(screen.queryByText(/Application: not_started/)).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText('Filter saved jobs and retained history'));
   fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'Archived' } });
   expect(screen.getByText('Skipped and cancelled jobs; records are retained.')).toBeInTheDocument();
   expect(screen.getByText('No jobs match this filter.')).toBeInTheDocument();
@@ -66,10 +69,11 @@ it('requires preview before committing mixed intake and never starts stopped wor
   const add = vi.spyOn(apiClient, 'addJobs').mockResolvedValue({ items: [{ ...good, disposition: 'created', job_id: id }, { ...invalid, disposition: 'error', job_id: null }] });
   render(<JobIntake onSaved={vi.fn()} />);
   expect(screen.queryByRole('button', { name: 'Add jobs' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'URLs' }));
   fireEvent.change(screen.getByLabelText('Job URLs'), { target: { value: 'https://example.com/job\nbad' } });
   fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
   fireEvent.click(await screen.findByRole('button', { name: 'Add jobs' }));
-  expect(await screen.findByText('Saved; automatic preparation is stopped.')).toBeInTheDocument();
+  expect(await screen.findByText('Saved. Preparation starts only when you request it.')).toBeInTheDocument();
   expect(add).toHaveBeenCalledWith(version, expect.any(String));
   expect(screen.getByText('Invalid URL')).toBeInTheDocument();
   expect(apiClient.controlJobs).not.toHaveBeenCalled(); expect(apiClient.prepareJob).not.toHaveBeenCalled();
@@ -79,8 +83,7 @@ it('retains fallback text on expired preview and sends the expected revision', a
   vi.spyOn(apiClient, 'addJobs').mockRejectedValue(new ApiError('Preview expired', 404));
   render(<JobIntake fallback={{ id, revision: 2 }} onSaved={vi.fn()} />);
   fireEvent.change(screen.getByLabelText('Posting text'), { target: { value: 'Keep this posting' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Preview' }));
-  fireEvent.click(await screen.findByRole('button', { name: 'Add jobs' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save job' }));
   expect(await screen.findByText(/Preview expired/)).toBeInTheDocument();
   expect(screen.getByLabelText('Posting text')).toHaveValue('Keep this posting');
   expect(preview).toHaveBeenCalledWith({ mode: 'text', input: 'Keep this posting', fallback_job_id: id, expected_revision: 2 });
@@ -103,9 +106,11 @@ it('uses distinct worker mutations, keeps stop reachable and reuses keys after f
 });
 it('renders direct detail sections read-only and updates section URLs', async () => {
   const navigate = vi.fn();
+  vi.spyOn(apiClient, 'getJobFit').mockResolvedValue({ current: null, history: [] });
+  vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
   render(<JobDetail id={id} section="fit" navigate={navigate} />);
-  expect(await screen.findByText('Not assessed')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('link', { name: 'Application History' }));
+  expect(await screen.findByText(/Not assessed yet/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('link', { name: 'History' }));
   expect(navigate).toHaveBeenCalledWith(`/jobs/${id}/history`);
   expect(apiClient.prepareJob).not.toHaveBeenCalled();
 });
@@ -237,7 +242,7 @@ it('sorts jobs by needs_input, queued, then others, sub-sorted by created date',
   const headings = screen
     .getAllByRole('heading', { level: 2 })
     .map(h => h.textContent)
-    .filter(t => t !== 'Add jobs');
+    .filter(t => t !== 'Save a job');
   expect(headings[0]).toContain('Epsilon Tech — Engineer 5');
   expect(headings[1]).toContain('Delta Co — Engineer 4');
   expect(headings[2]).toContain('Gamma LLC — Engineer 3');
@@ -248,7 +253,7 @@ it('sorts jobs by needs_input, queued, then others, sub-sorted by created date',
   const toggledHeadings = screen
     .getAllByRole('heading', { level: 2 })
     .map(h => h.textContent)
-    .filter(t => t !== 'Add jobs');
+    .filter(t => t !== 'Save a job');
   expect(toggledHeadings[0]).toContain('Epsilon Tech — Engineer 5');
   expect(toggledHeadings[1]).toContain('Gamma LLC — Engineer 3');
   expect(toggledHeadings[2]).toContain('Delta Co — Engineer 4');
@@ -284,4 +289,176 @@ it.each([false, true])('routes setup to Settings independently of existing revie
     expect(navigate).toHaveBeenLastCalledWith(`/jobs/${id}/resume`);
   }
   expect(apiClient.prepareJob).not.toHaveBeenCalled();
+});
+
+it('offers explicit preparation for a saved job without generating on entry', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue(detail(job({ preparation_state: 'saved' })));
+  render(<JobDetail id={id} section="posting" navigate={vi.fn()} />);
+  expect(await screen.findByRole('button', { name: 'Tailor resume' })).toBeInTheDocument();
+  expect(apiClient.prepareJob).not.toHaveBeenCalled();
+  expect(apiClient.controlJobs).not.toHaveBeenCalled();
+});
+
+
+it('keeps populated details textareas named by their field, not their saved content', () => {
+  localStorage.clear();
+  render(<JobDetailsEditor job={job({ notes: 'Saved note that must not become the field name' })} posting={null} onSaved={vi.fn()} />);
+  expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveValue('Saved note that must not become the field name');
+  expect(screen.getByRole('textbox', { name: 'Notes' })).toHaveAttribute('aria-label', 'Notes');
+  expect(screen.getByRole('textbox', { name: 'Posting and context' })).toHaveAttribute('aria-label', 'Posting and context');
+});
+
+it('retains manual detail drafts across polling, remount and conflicts without generation', async () => {
+  localStorage.clear();
+  const original = job({ preparation_state: 'saved', notes: 'Saved note' });
+  const saved = vi.spyOn(apiClient, 'saveJobDetails').mockResolvedValue({ result: { job: { ...original, revision: 4, notes: 'My note' } }, replayed: false });
+  const onSaved = vi.fn();
+  const view = render(<JobDetailsEditor job={original} posting={null} onSaved={onSaved} />);
+  fireEvent.change(screen.getByLabelText('Notes'), { target: { value: 'My note' } });
+  view.rerender(<JobDetailsEditor job={{ ...original, revision: 3, notes: 'Other tab' }} posting={null} onSaved={onSaved} />);
+  expect(screen.getByLabelText('Notes')).toHaveValue('My note');
+  expect(screen.getByRole('button', { name: 'Save job details' })).toBeDisabled();
+  view.unmount();
+  render(<JobDetailsEditor job={{ ...original, revision: 3 }} posting={null} onSaved={onSaved} />);
+  expect(screen.getByLabelText('Notes')).toHaveValue('My note');
+  fireEvent.click(screen.getByRole('button', { name: 'Keep my draft against current revision' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save job details' }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledOnce());
+  expect(saved).toHaveBeenCalledWith(id, expect.objectContaining({ expected_revision: 3, changes: expect.objectContaining({ notes: 'My note' }) }));
+  expect(apiClient.prepareJob).not.toHaveBeenCalled();
+  expect(localStorage.getItem(`job-details:workspace:${id}`)).toBeNull();
+});
+
+it('leads ready review with the current PDF and discloses earlier corrections', async () => {
+  vi.spyOn(apiClient, 'getJobReview').mockResolvedValue(review);
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  render(<JobResumeReview job={job({ preparation_state: 'resume_ready' })} artifacts={[artifact]} events={[]} onSaved={vi.fn()} navigate={vi.fn()} />);
+  expect(await screen.findByTitle('Resume PDF preview')).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'Current resume' })).toBeVisible();
+  expect(screen.getByText('Earlier corrections').closest('details')).not.toHaveAttribute('open');
+  expect(screen.getByText('Comparison, evidence and preparation history').closest('details')).not.toHaveAttribute('open');
+});
+
+it('labels working edits separately from the validated PDF and returns to the durable linked draft', async () => {
+  const navigate = vi.fn();
+  vi.spyOn(apiClient, 'getJobReview').mockResolvedValue({ ...review, working_draft: { ...review.draft, id: 'working', revision: 1, candidate: { ...spec, summary: 'Pending working wording' } } });
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  render(<JobResumeReview job={job({ preparation_state: 'resume_ready' })} artifacts={[artifact]} events={[]} onSaved={vi.fn()} navigate={navigate} />);
+  expect(await screen.findByRole('heading', { name: 'Current working resume — edits pending checks' })).toBeVisible();
+  expect(screen.getByRole('heading', { name: 'Last validated resume' })).toBeVisible();
+  expect(screen.getByRole('button', { name: 'Approve Resume' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Return to working resume' }));
+  expect(navigate).toHaveBeenCalledWith(`/tailor/canvas/jobs/${id}/working`);
+});
+
+it('visualizes active worker task stages, metrics, and allows cancelling active task', async () => {
+  const cancelSpy = vi.spyOn(apiClient, 'cancelJob').mockResolvedValue({});
+  const activeJob = job({ id: 'active-job-1', company: 'Stripe', role: 'Staff Engineer', revision: 3, preparation_state: 'preparing' });
+  const queuedJob = job({ id: 'queued-job-2', company: 'Linear', role: 'Frontend Engineer', revision: 1, preparation_state: 'queued' });
+  const activeAttempt = {
+    schema_version: 1 as const,
+    id: 'attempt-1',
+    workspace_id: 'workspace',
+    job_id: activeJob.id,
+    attempt_number: 1,
+    status: 'active' as const,
+    current_stage: 'alignment' as const,
+    input_snapshot_id: 'snap-1',
+    runner: 'mock',
+    policy_fingerprint: 'fp-1',
+    lease_expires_at: time,
+    stop_generation: 1,
+    checkpoint_ids: [],
+    started_at: new Date(Date.now() - 65000).toISOString(),
+    finished_at: null,
+    cancelled_at: null,
+    error: null,
+    resource_usage: { model_calls: 4, repair_attempts: 0, elapsed_ms: 65000 },
+  };
+
+  const onRefresh = vi.fn();
+  render(
+    <QueueVisualization
+      activeAttempts={[activeAttempt]}
+      jobs={[activeJob, queuedJob]}
+      onRefresh={onRefresh}
+      navigate={vi.fn()}
+    />
+  );
+
+  // Active worker task card is displayed with stage progress and metrics
+  expect(screen.getByText('Active Worker Task')).toBeInTheDocument();
+  expect(screen.getByText(/Stripe — Staff Engineer/)).toBeInTheDocument();
+  expect(screen.getByText('Alignment:')).toBeInTheDocument();
+  expect(screen.getByText(/Grounding requirements against verified accomplishment ledger entries/)).toBeInTheDocument();
+  expect(screen.getByText('4 calls')).toBeInTheDocument();
+
+  // Upcoming queue is displayed with ranking badge
+  expect(screen.getByText('Upcoming Queue')).toBeInTheDocument();
+  expect(screen.getByText('#1 Next')).toBeInTheDocument();
+  expect(screen.getByText(/Linear — Frontend Engineer/)).toBeInTheDocument();
+
+  // Cancel active task interaction with confirmation
+  fireEvent.click(screen.getByRole('button', { name: /Cancel task/ }));
+  expect(screen.getByText('Cancel active?')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Yes, cancel' }));
+
+  await waitFor(() => {
+    expect(cancelSpy).toHaveBeenCalledWith('active-job-1', {
+      expected_revision: 3,
+      idempotency_key: expect.any(String),
+      reason: 'Cancelled by user from queue',
+    });
+  });
+  expect(onRefresh).toHaveBeenCalled();
+});
+
+it('allows cancelling a queued job from queue visualization and jobs view', async () => {
+  const cancelSpy = vi.spyOn(apiClient, 'cancelJob').mockResolvedValue({});
+  const queuedJob = job({ id: 'queued-job-2', company: 'Notion', role: 'Product Engineer', revision: 2, preparation_state: 'queued' });
+
+  // 1. In QueueVisualization
+  const onRefresh = vi.fn();
+  render(
+    <QueueVisualization
+      activeAttempts={[]}
+      jobs={[queuedJob]}
+      onRefresh={onRefresh}
+    />
+  );
+  expect(screen.queryByText('Queue is empty.')).not.toBeInTheDocument();
+  expect(screen.getByText(/Notion — Product Engineer/)).toBeInTheDocument();
+
+  // Click cancel button on queue item
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+  expect(screen.getByText('Cancel?')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
+
+  await waitFor(() => {
+    expect(cancelSpy).toHaveBeenCalledWith('queued-job-2', {
+      expected_revision: 2,
+      idempotency_key: expect.any(String),
+      reason: 'Cancelled by user from queue',
+    });
+  });
+});
+
+it('supports cancelling jobs from JobsView and JobDetail', async () => {
+  const cancelSpy = vi.spyOn(apiClient, 'cancelJob').mockResolvedValue({});
+  const testJob = job({ id: 'job-cancel-test', company: 'Figma', role: 'Design Tech', revision: 4, preparation_state: 'queued' });
+
+  // In JobDetail
+  vi.spyOn(apiClient, 'getJob').mockResolvedValue(detail(testJob));
+  render(<JobDetail id={testJob.id} section="posting" navigate={vi.fn()} />);
+
+  expect(await screen.findByRole('button', { name: 'Cancel job' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Cancel job' }));
+
+  await waitFor(() => {
+    expect(cancelSpy).toHaveBeenCalledWith('job-cancel-test', {
+      expected_revision: 4,
+      idempotency_key: expect.any(String),
+      reason: 'Cancelled by user from job details',
+    });
+  });
 });

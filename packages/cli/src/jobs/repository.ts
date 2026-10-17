@@ -122,6 +122,30 @@ export class JobsRepository {
       this.jobLinks(next); return this.putJob(next);
     });
   }
+  saveDetails(id: string, request: { expected_revision: number; idempotency_key: string; changes: Partial<Pick<C.Job, 'company' | 'role' | 'notes' | 'context_url'>>; posting_text?: string }) {
+    return this.receipt('job_details', request.idempotency_key, { id, ...request }, () => {
+      const old = this.getJob(id); this.revision(old.revision, request.expected_revision);
+      const previous = old.posting_snapshot_id ? this.getPostingSnapshot(old.posting_snapshot_id) : null;
+      const changedPosting = request.posting_text !== undefined && request.posting_text !== previous?.text;
+      const changedContext = changedPosting || (request.changes.company !== undefined && request.changes.company !== old.company) || (request.changes.role !== undefined && request.changes.role !== old.role);
+      if (changedContext && ['preparing', 'queued'].includes(old.preparation_state)) this.error('ineligible', 'Stop active preparation before changing its context');
+      let next = C.JobSchema.parse({ ...old, ...request.changes });
+      if (changedPosting) {
+        const posting = this.savePostingSnapshot({ schema_version: 1, id: this.uuid(), workspace_id: old.workspace_id, job_id: id, source_kind: 'text', original_url: old.original_url, final_url: null, retrieved_at: null, captured_at: this.now(), text: request.posting_text!, content_fingerprint: fingerprint(request.posting_text!) });
+        next.posting_snapshot_id = posting.id;
+        next.missing_inputs = next.missing_inputs.filter(q => q.key !== 'posting_text');
+        if (!old.current_attempt_id && old.preparation_state === 'needs_input' && !next.missing_inputs.length) {
+          next.preparation_state = 'saved'; next.state_reason = null;
+        }
+      }
+      if (changedContext && old.current_attempt_id) {
+        next.recovery = { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' };
+        next.state_reason = 'Job context changed. Previous materials are retained; capture current inputs before preparing again.';
+        next.preparation_state = 'needs_input';
+      }
+      return { job: this.putJob(next) };
+    });
+  }
   private immutable<T extends { id: string; workspace_id: string; job_id: string }>(table: string, value: T, schema: Schema<T>, extra: Record<string, unknown> = {}): T {
     const item = schema.parse(value); this.workspace(item); this.getJob(item.job_id);
     const row = this.database.db.prepare(`SELECT payload FROM ${table} WHERE id=?`).get(item.id);
@@ -133,6 +157,23 @@ export class JobsRepository {
   saveInputSnapshot(value: C.InputSnapshot): C.InputSnapshot {
     return this.tx(() => { const input = C.InputSnapshotSchema.parse(value); const posting = this.getPostingSnapshot(input.posting.id); this.sameJob(posting, input.job_id); if (posting.content_fingerprint !== input.posting.fingerprint) this.error('invalid_relationship', 'Posting fingerprint mismatch'); return this.immutable('input_snapshots', input, C.InputSnapshotSchema, { fingerprint: input.fingerprint }); });
   }
+  saveFitInputSnapshot(value: C.FitInputSnapshot): C.FitInputSnapshot {
+    return this.tx(() => {
+      const input = C.FitInputSnapshotSchema.parse(value);
+      const posting = this.getPostingSnapshot(input.posting.id); this.sameJob(posting, input.job_id);
+      if (posting.content_fingerprint !== input.posting.fingerprint) this.error('invalid_relationship', 'Posting fingerprint mismatch');
+      return this.immutable('input_snapshots', input, C.FitInputSnapshotSchema, { fingerprint: input.fingerprint });
+    });
+  }
+  saveMaterialInputSnapshot(value: C.MaterialInputSnapshot): C.MaterialInputSnapshot {
+    return this.tx(() => {
+      const input = C.MaterialInputSnapshotSchema.parse(value);
+      const posting = this.getPostingSnapshot(input.posting.id); this.sameJob(posting, input.job_id);
+      if (posting.content_fingerprint !== input.posting.fingerprint) this.error('invalid_relationship', 'Posting fingerprint mismatch');
+      return this.immutable('input_snapshots', input, C.MaterialInputSnapshotSchema, { fingerprint: input.fingerprint });
+    });
+  }
+  getExecutionInput(id: string) { return this.get('input_snapshots', id, C.ExecutionInputSchema); }
   getInputSnapshot(id: string): C.InputSnapshot { return this.get('input_snapshots', id, C.InputSnapshotSchema); }
   getProfile(id: string): C.CandidateProfile { return this.get('profiles', id, C.CandidateProfileSchema); }
   saveProfile(value: C.CandidateProfile, expectedRevision: number | null): C.CandidateProfile {
@@ -222,7 +263,13 @@ export class JobsRepository {
     this.appendEvent({ schema_version: 1, id: this.uuid(), workspace_id: job.workspace_id, job_id: job.id, created_at: this.now(), actor: { kind: 'worker', id: 'repository' }, attempt_id: job.current_attempt_id, idempotency_key: null, payload });
   }
   private preparation(job: C.Job, action: C.PreparationAction, reason: string): C.Job {
-    const next = this.putJob({ ...C.transitionPreparation(job, action), recovery: action === 'complete' ? undefined : job.recovery, state_reason: reason });
+    const executionInput = job.current_attempt_id && ['material_complete', 'fit_complete', 'fail', 'block', 'interrupt', 'cancel'].includes(action)
+      ? this.getExecutionInput(this.getAttempt(job.current_attempt_id).input_snapshot_id) : null;
+    const fitInput = executionInput && executionInput.schema_version !== 1 ? executionInput : null;
+    const restoreFitState = fitInput && (action === 'material_complete' || action === 'fit_complete' || fitInput.return_state === 'resume_ready');
+    const next = this.putJob({ ...C.transitionPreparation(job, action),
+      ...(restoreFitState ? { preparation_state: fitInput.return_state, preparation_stage: null, missing_inputs: fitInput.return_missing_inputs } : {}),
+      recovery: restoreFitState ? fitInput.return_recovery : action === 'complete' ? undefined : job.recovery, state_reason: reason });
     this.event(next, { kind: 'preparation_transition', ...(next.recovery ? { recovery: next.recovery } : {}), from: job.preparation_state, to: next.preparation_state, reason }); return next;
   }
   transitionApplication(jobId: string, target: C.ApplicationLifecycle, expectedRevision: number, key: string) {
@@ -239,7 +286,15 @@ export class JobsRepository {
         if (!fence) this.error('invalid_ownership', 'Ownership required');
         const attempt = this.fenced(fence); this.sameJob(attempt, job.id);
         if (action === 'complete' && !job.artifact_version_ids.some(id => { const a = this.getArtifact(id); return a.attempt_id === attempt.id && a.input_snapshot_id === attempt.input_snapshot_id && a.validation_result === 'passed'; })) this.error('invalid_relationship', 'Completion requires passed artifacts');
-        this.putAttempt({ ...attempt, error: metadata.error ?? attempt.error, resource_usage: { ...attempt.resource_usage, elapsed_ms: Math.max(attempt.resource_usage.elapsed_ms, metadata.elapsed_ms ?? 0) }, status: action === 'complete' ? 'completed' : action === 'fail' || action === 'block' ? 'failed' : action === 'interrupt' ? 'interrupted' : 'cancelled', finished_at: this.now(), cancelled_at: action === 'cancel' ? this.now() : null });
+        if (action === 'material_complete') {
+          const input = this.getExecutionInput(attempt.input_snapshot_id);
+          if (input.schema_version !== 3 || !this.listCheckpoints(attempt.id).some(cp => cp.completed_stage === 'material' && cp.input_fingerprint === input.fingerprint)) this.error('invalid_relationship', 'Material completion requires bound output');
+        }
+        if (action === 'fit_complete') {
+          const input = this.getExecutionInput(attempt.input_snapshot_id);
+          if (input.schema_version !== 2 || !this.listCheckpoints(attempt.id).some(cp => cp.completed_stage === 'fit' && cp.input_fingerprint === input.fingerprint)) this.error('invalid_relationship', 'Fit completion requires a bound assessment');
+        }
+        this.putAttempt({ ...attempt, error: metadata.error ?? attempt.error, resource_usage: { ...attempt.resource_usage, elapsed_ms: Math.max(attempt.resource_usage.elapsed_ms, metadata.elapsed_ms ?? 0) }, status: action === 'complete' || action === 'fit_complete' || action === 'material_complete' ? 'completed' : action === 'fail' || action === 'block' ? 'failed' : action === 'interrupt' ? 'interrupted' : 'cancelled', finished_at: this.now(), cancelled_at: action === 'cancel' ? this.now() : null });
       }
       return this.preparation({ ...job, recovery: metadata.recovery ?? job.recovery, missing_inputs: metadata.missing_inputs ?? job.missing_inputs }, action, metadata.reason ?? `Explicit ${action}`);
     });
@@ -276,7 +331,7 @@ export class JobsRepository {
   isAttemptCurrent(fence: OwnershipFence): boolean { try { this.fenced(fence); return true; } catch (e) { if (e instanceof RepositoryError && (e.code === 'invalid_ownership' || e.code === 'not_found')) return false; throw e; } }
   recordAttemptProgress(fence: OwnershipFence, update: { stage?: C.PreparationStage; model_calls?: number; repair_attempts?: number; elapsed_ms?: number }): C.Attempt {
     return this.tx(() => {
-      const a = this.fenced(fence); const policy = this.getInputSnapshot(a.input_snapshot_id).policy;
+      const a = this.fenced(fence); const policy = this.getExecutionInput(a.input_snapshot_id).policy;
       for (const n of [update.model_calls ?? 0, update.repair_attempts ?? 0, update.elapsed_ms ?? 0]) if (!Number.isSafeInteger(n) || n < 0) this.error('ineligible', 'Invalid usage counter');
       const usage = { model_calls: a.resource_usage.model_calls + (update.model_calls ?? 0), repair_attempts: a.resource_usage.repair_attempts + (update.repair_attempts ?? 0), elapsed_ms: Math.max(a.resource_usage.elapsed_ms, update.elapsed_ms ?? 0) };
       if (usage.model_calls > policy.max_model_calls || usage.repair_attempts > policy.max_repair_attempts) this.error('ineligible', 'Preparation resource budget exhausted');
@@ -307,7 +362,7 @@ export class JobsRepository {
       const control = this.getControl(); if (request.stop_generation !== control.stop_generation) this.error('invalid_ownership', 'Stop generation changed');
       this.expiry(request.lease_ms); this.recoverExpiredAttempts();
       if (control.stopped_at !== null || control.pause_after_current || this.active().length) return null;
-      const job = this.getJob(request.job_id); const input = this.getInputSnapshot(request.input_snapshot_id); this.sameJob(input, job.id);
+      const job = this.getJob(request.job_id); const input = this.getExecutionInput(request.input_snapshot_id); this.sameJob(input, job.id);
       if (job.kind !== 'job' || job.preparation_state !== 'queued' || job.missing_inputs.length || (request.mode === 'automatic' && (!control.automatic_preparation_enabled || control.pause_after_current || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle)))) return null;
       const attempt = C.AttemptSchema.parse({ schema_version: 1, id: this.uuid(), workspace_id: job.workspace_id, job_id: job.id, input_snapshot_id: input.id, status: 'active', owner_token: randomUUID(), lease_expires_at: this.expiry(request.lease_ms), stop_generation: control.stop_generation, current_stage: null, checkpoint_ids: [], started_at: this.now(), finished_at: null, cancelled_at: null, error: null, resource_usage: { model_calls: 0, repair_attempts: 0, elapsed_ms: 0 } });
       this.insert('attempts', attempt, { id: attempt.id, workspace_id: attempt.workspace_id, job_id: job.id, input_snapshot_id: input.id, status: attempt.status, owner_token: attempt.owner_token, lease_expires_at: attempt.lease_expires_at, stop_generation: attempt.stop_generation });
@@ -319,11 +374,17 @@ export class JobsRepository {
     return this.receipt('request_preparation', idempotency_key, data, () => {
       admission?.();
       let job = this.getJob(data.job_id); this.revision(job.revision, data.expected_revision);
-      this.sameJob(this.getInputSnapshot(data.input_snapshot_id), job.id);
+      const input = this.getExecutionInput(data.input_snapshot_id);
+      this.sameJob(input, job.id);
+      if ((job.posting_snapshot_id && input.posting.id !== job.posting_snapshot_id) || (job.recovery?.kind === 'stale_inputs' && job.current_attempt_id && this.getAttempt(job.current_attempt_id).input_snapshot_id === input.id)) this.error('ineligible', 'Capture current inputs before preparing changed job context');
       const previous_attempt_id = job.current_attempt_id;
       const control = this.getControl();
       if (this.active().length) this.error('ineligible', 'Worker busy');
       if (job.missing_inputs.length) job = this.updateJob({ ...job, missing_inputs: [] }, job.revision);
+      if (!data.action && job.preparation_state === 'saved') {
+        if (control.stopped_at || control.pause_after_current) this.error('ineligible', 'Start prevented: processing is stopped or paused');
+        job = this.preparation(job, 'prepare', 'Explicit preparation request');
+      }
       if (data.action) job = this.preparation(job, data.action, 'Explicit preparation request');
       if (job.preparation_state !== 'queued') this.error('ineligible', 'Job is not queued');
       if (control.stopped_at || control.pause_after_current) return { attempt: null, previous_attempt_id };
@@ -344,7 +405,7 @@ export class JobsRepository {
   saveCheckpoint(value: C.Checkpoint, fence: OwnershipFence): C.Checkpoint {
     return this.tx(() => {
       const a = this.fenced(fence); const cp = C.CheckpointSchema.parse(value); this.sameJob(cp, a.job_id);
-      if (cp.attempt_id !== a.id || cp.input_fingerprint !== this.getInputSnapshot(a.input_snapshot_id).fingerprint) this.error('invalid_relationship', 'Checkpoint input mismatch');
+      if (cp.attempt_id !== a.id || cp.input_fingerprint !== this.getExecutionInput(a.input_snapshot_id).fingerprint) this.error('invalid_relationship', 'Checkpoint input mismatch');
       const row = this.database.db.prepare('SELECT payload FROM checkpoints WHERE attempt_id=? AND completed_stage=?').get(a.id, cp.completed_stage);
       if (row) { const old = this.decode(row, C.CheckpointSchema); if (old.input_fingerprint !== cp.input_fingerprint || old.output_fingerprint !== cp.output_fingerprint || stable(old.output_references) !== stable(cp.output_references)) this.error('idempotency_conflict', 'Stage already completed differently'); return old; }
       this.immutable('checkpoints', cp, C.CheckpointSchema, { attempt_id: cp.attempt_id, completed_stage: cp.completed_stage, completed_at: cp.completed_at }); this.putAttempt({ ...a, checkpoint_ids: [...a.checkpoint_ids, cp.id], current_stage: cp.completed_stage }); return cp;

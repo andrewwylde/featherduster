@@ -11,8 +11,9 @@ export function JobIntake({
   onSaved: () => void;
   fallback?: { id: string; revision: number };
 }) {
-  const [mode, setMode] = useState<'urls' | 'text'>(fallback ? 'text' : 'urls');
+  const [mode, setMode] = useState<'urls' | 'text'>('text');
   const [input, setInput] = useState('');
+  const [details, setDetails] = useState({ company: '', role: '', notes: '', context_url: '' });
   const [preview, setPreview] = useState<IntakePreview | null>(null);
   const [result, setResult] = useState<IntakeResult | null>(null);
   const [message, setMessage] = useState('');
@@ -26,22 +27,19 @@ export function JobIntake({
     setBusy(true);
     setMessage('');
     try {
-      if (commit && preview) {
-        setResult(await apiClient.addJobs(preview.preview_id, key(preview.preview_id)));
+      if (commit && (preview || mode === 'text')) {
+        const savedPreview = preview ?? await apiClient.previewJobs({ mode, input, ...(!fallback ? { details: { ...details, company: details.company.trim() || null, role: details.role.trim() || null, context_url: details.context_url.trim() || null } } : { fallback_job_id: fallback.id, expected_revision: fallback.revision }) });
+        setResult(await apiClient.addJobs(savedPreview.preview_id, key(savedPreview.preview_id)));
         setPreview(null);
         onSaved();
-        const status = await apiClient.getJobsControl();
-        setMessage(
-          status.control.stopped_at || !status.control.automatic_preparation_enabled
-            ? 'Saved; automatic preparation is stopped.'
-            : 'Saved.'
-        );
+        setMessage('Saved. Preparation starts only when you request it.');
       } else {
         setResult(null);
         setPreview(
           await apiClient.previewJobs({
             mode,
             input,
+            ...(mode === 'text' && !fallback ? { details: { ...details, company: details.company.trim() || null, role: details.role.trim() || null, context_url: details.context_url.trim() || null } } : {}),
             ...(fallback ? { fallback_job_id: fallback.id, expected_revision: fallback.revision } : {}),
           })
         );
@@ -64,12 +62,12 @@ export function JobIntake({
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white flex items-center gap-2">
             <Plus className="h-4 w-4 text-vermilion-500" />
-            {fallback ? 'Paste posting text' : 'Add jobs'}
+            {fallback ? 'Paste posting text' : 'Save a job'}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             {fallback
               ? 'Attach raw job description prose directly to this role.'
-              : 'Paste job listing URLs or markdown text. Duplicate links are safely canonicalized.'}
+              : 'Keep the position and context here. Preparation is optional.'}
           </p>
         </div>
 
@@ -128,6 +126,12 @@ export function JobIntake({
         )}
       </div>
 
+      {mode === 'text' && !fallback && <div className="space-y-3">
+        {([['company', 'Company'], ['role', 'Position'], ['context_url', 'Optional posting link'], ['notes', 'Notes']] as const).map(([field, label]) => <label key={field} className="block text-xs font-medium">
+          {label}<input className={inputClass} value={details[field]} disabled={busy} onChange={e => { setDetails({ ...details, [field]: e.target.value }); setPreview(null); setResult(null); }} />
+        </label>)}
+        <p className="text-xs text-slate-500">Saving does not start preparation. No runner or resume is needed.</p>
+      </div>}
       <div className="space-y-1.5">
         <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
           {mode === 'text' ? 'Posting text' : 'Job URLs'}
@@ -154,13 +158,13 @@ export function JobIntake({
         <button
           className={`${secondaryButton} text-xs font-medium`}
           disabled={busy || !input.trim()}
-          onClick={() => void run(false)}
+          onClick={() => void run(mode === 'text')}
         >
           <Eye className="h-3.5 w-3.5" />
-          Preview
+          {mode === 'text' ? 'Save job' : 'Preview'}
         </button>
 
-        {preview && (
+        {preview && mode === 'urls' && (
           <button
             className={`${primaryButton} text-xs font-medium`}
             disabled={busy}

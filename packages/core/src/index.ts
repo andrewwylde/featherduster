@@ -38,6 +38,7 @@ export * from './corpus/knowledge.js';
 export * from './jobs/proposal-review.js';
 
 export * from './jobs/proposal-transport.js';
+export * from './jobs/materials.js';
 export * from './tailoring/drafts.js';
 export * from './tailoring/draft-state.js';
 export * from './tailoring/resume-merge.js';

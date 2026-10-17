@@ -41,6 +41,11 @@ CREATE TRIGGER proposal_reviews_no_update BEFORE UPDATE ON proposal_review_revis
 CREATE TRIGGER proposal_reviews_no_delete BEFORE DELETE ON proposal_review_revisions BEGIN SELECT RAISE(ABORT,'immutable review'); END;
 CREATE TRIGGER attempt_reviews_no_update BEFORE UPDATE ON attempt_proposal_reviews BEGIN SELECT RAISE(ABORT,'immutable selection'); END;
 CREATE TRIGGER attempt_reviews_no_delete BEFORE DELETE ON attempt_proposal_reviews BEGIN SELECT RAISE(ABORT,'immutable selection'); END;
+` }, { version: 4, sql: `
+CREATE TABLE material_revisions (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id), kind TEXT NOT NULL, payload TEXT NOT NULL);
+CREATE TABLE material_heads (job_id TEXT NOT NULL REFERENCES jobs(id), kind TEXT NOT NULL, revision_id TEXT NOT NULL REFERENCES material_revisions(id), PRIMARY KEY(job_id,kind));
+CREATE TRIGGER materials_no_update BEFORE UPDATE ON material_revisions BEGIN SELECT RAISE(ABORT,'immutable material'); END;
+CREATE TRIGGER materials_no_delete BEFORE DELETE ON material_revisions BEGIN SELECT RAISE(ABORT,'immutable material'); END;
 ` }];
 
 export function runMigrations(db: Database.Database, steps: Migration[] = migrations): void {

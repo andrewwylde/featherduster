@@ -227,7 +227,7 @@ export function buildAnalysisPrompt(posting: string, jdRubric: string, opts: Con
 export function buildAlignmentPrompt(
   analysis: JobAnalysis,
   evidence: EvidenceRecord[],
-  baseResume: ResumeSpec,
+  baseResume: ResumeSpec | null,
   opts: ContextOptions
 ): string {
   const s = new Sanitizer(opts);
@@ -240,7 +240,7 @@ export function buildAlignmentPrompt(
   const digest = evidence
     .filter((r) => r.entry.confidence !== 'retracted')
     .map((r) => digestEvidence(r, s));
-  const skills = baseResume.skills.flatMap((g) => g.skills.map((sk) => s.clean('base resume', sk)));
+  const skills = (baseResume?.skills ?? []).flatMap((g) => g.skills.map((sk) => s.clean('base resume', sk)));
   const prompt = [
     section('Target Role', { role: s.clean('analysis', analysis.role), seniority: analysis.seniority }),
     section('Requirements', requirements),

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Briefcase, Clock, ChevronRight, FileCheck, HelpCircle, Sparkles, AlertCircle, RefreshCw, ArrowUpDown, XCircle } from 'lucide-react';
+import { Briefcase, ChevronRight, FileCheck, AlertCircle, RefreshCw, ArrowUpDown, XCircle } from 'lucide-react';
 import type { Job } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
@@ -7,92 +7,23 @@ import { WorkerControls } from './WorkerControls.js';
 import { JobIntake } from './JobIntake.js';
 import { cardClass, primaryButton } from '../tailoring/ui.js';
 
-const filters = ['All', 'Queued', 'Preparing', 'Needs input', 'Resume ready', 'Applied', 'Archived'] as const;
+import {
+  jobFilters as filters,
+  isNeedsInput,
+  isQueued,
+  getJobPriority,
+  compareJobs,
+  matchesJobFilter,
+} from './job-utils.js';
 
-export function isNeedsInput(job: Job): boolean {
-  return (
-    job.preparation_state === 'needs_input' ||
-    job.application_lifecycle === 'needs_input' ||
-    (Array.isArray(job.missing_inputs) && job.missing_inputs.length > 0)
-  );
-}
-
-export function isQueued(job: Job): boolean {
-  return job.preparation_state === 'queued' && !isNeedsInput(job);
-}
-
-export function getJobPriority(job: Job): number {
-  if (isNeedsInput(job)) return 0;
-  if (isQueued(job)) return 1;
-  return 2;
-}
-
-export function compareJobs(a: Job, b: Job, order: 'desc' | 'asc' = 'desc'): number {
-  const priorityDiff = getJobPriority(a) - getJobPriority(b);
-  if (priorityDiff !== 0) return priorityDiff;
-
-  const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-  const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-  const validTimeA = Number.isNaN(timeA) ? 0 : timeA;
-  const validTimeB = Number.isNaN(timeB) ? 0 : timeB;
-
-  const dateDiff = order === 'desc' ? validTimeB - validTimeA : validTimeA - validTimeB;
-  if (dateDiff !== 0) return dateDiff;
-
-  return a.id.localeCompare(b.id);
-}
-
-export function matchesJobFilter(job: Job, filter: typeof filters[number]) {
-  switch (filter) {
-    case 'Queued':
-      return isQueued(job);
-    case 'Preparing':
-      return job.preparation_state === 'preparing';
-    case 'Needs input':
-      return isNeedsInput(job);
-    case 'Resume ready':
-      return job.preparation_state === 'resume_ready';
-    case 'Applied':
-      return job.application_lifecycle === 'submitted';
-    case 'Archived':
-      return job.preparation_state === 'skipped' || job.preparation_state === 'cancelled';
-    default:
-      return true;
-  }
-}
-
-function prepBadgeStyle(state: Job['preparation_state']) {
-  switch (state) {
-    case 'resume_ready':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-    case 'preparing':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800 animate-pulse';
-    case 'needs_input':
-      return 'bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border-purple-200 dark:border-purple-800';
-    case 'queued':
-      return 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 border-sky-200 dark:border-sky-800';
-    case 'skipped':
-    case 'cancelled':
-      return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700';
-    case 'failed':
-      return 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 border-rose-200 dark:border-rose-800';
-    default:
-      return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700';
-  }
-}
-
-function lifecycleBadgeStyle(lifecycle: Job['application_lifecycle']) {
-  switch (lifecycle) {
-    case 'submitted':
-      return 'bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border-blue-200 dark:border-blue-800';
-    case 'outcome_recorded':
-      return 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
-    case 'needs_input':
-      return 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300 border-amber-200 dark:border-amber-800';
-    default:
-      return 'bg-slate-50 text-slate-600 dark:bg-slate-900/40 dark:text-slate-400 border-slate-200 dark:border-slate-800';
-  }
-}
+export {
+  filters,
+  isNeedsInput,
+  isQueued,
+  getJobPriority,
+  compareJobs,
+  matchesJobFilter,
+};
 
 export function JobsView({ navigate }: { navigate: (path: string) => void }) {
   const load = useCallback(() => apiClient.getJobs(), []);
@@ -142,7 +73,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
               <Briefcase className="h-6 w-6 text-vermilion-500" />
-              Jobs
+              Saved jobs
             </h1>
             {data && (
               <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
@@ -151,23 +82,16 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
             )}
           </div>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            Durable intake, evidence-backed fit analysis, and version-bound resume review.
+            Save a position, then choose the preparation you need. Saving never starts model work.
           </p>
         </div>
       </div>
 
-      {/* Background Worker Controls */}
-      <WorkerControls
-        jobs={allJobs}
-        onJobMutated={() => void refresh()}
-        navigate={navigate}
-      />
-
-      {/* Intake Drawer / Form */}
       <JobIntake onSaved={() => void refresh()} />
+      <WorkerControls jobs={allJobs} onJobMutated={() => void refresh()} navigate={navigate} />
 
       {/* Filter Tabs Bar */}
-      <div className="space-y-2">
+      <details><summary>Filter saved jobs and retained history</summary><div className="space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           {/* Visual Pills for Human Users */}
           <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
@@ -237,6 +161,8 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
         )}
       </div>
 
+      </details>
+
       {/* Status Messages */}
       {error && (
         <div
@@ -272,10 +198,10 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
             <Briefcase className="h-6 w-6" />
           </div>
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            No jobs yet. Preview a posting to get started.
+            No saved jobs yet. Save a position to get started.
           </h3>
           <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-            Paste a link from Lever, Greenhouse, or any employer career page above to initiate intake.
+            Add a company, position and posting/context above. No resume or runner is required.
           </p>
         </div>
       )}
@@ -327,58 +253,11 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
                     {/* Preserves test assertion text while styled cleanly */}
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      Preparation: {job.preparation_state} · Application: {job.application_lifecycle}
+                      {job.preparation_state === 'saved' ? 'Saved · preparation is optional' : job.preparation_state === 'resume_ready' ? 'Resume ready to review' : job.preparation_state === 'needs_input' ? 'Preparation needs your attention' : job.preparation_state === 'preparing' ? 'Preparing resume' : 'Open to review preparation'}
                     </p>
                   </div>
                 </div>
 
-                {/* Right: Status Pills */}
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium ${prepBadgeStyle(
-                      job.preparation_state
-                    )}`}
-                  >
-                    {job.preparation_state === 'resume_ready' && <FileCheck className="h-3 w-3" />}
-                    {job.preparation_state === 'preparing' && <Sparkles className="h-3 w-3" />}
-                    {job.preparation_state === 'needs_input' && <HelpCircle className="h-3 w-3" />}
-                    {job.preparation_state}
-                  </span>
-
-                  <span
-                    className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium ${lifecycleBadgeStyle(
-                      job.application_lifecycle
-                    )}`}
-                  >
-                    {job.application_lifecycle}
-                  </span>
-                </div>
-              </div>
-
-              {/* Sub-status & reason note */}
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800/80 pt-2.5">
-                <p>
-                  <span className="font-medium text-slate-700 dark:text-slate-300">Stage: </span>
-                  {job.preparation_stage ?? 'Not assessed'}
-                  {job.state_reason ? ` — ${job.state_reason}` : ''}
-                </p>
-
-                <p>
-                  {job.kind === 'discovery' ? 'Discovery — select an opening' : 'Fit: Not assessed'}
-                </p>
-
-                <div className="ml-auto flex items-center gap-1 text-[11px] text-slate-400">
-                  <Clock className="h-3 w-3" />
-                  <time dateTime={job.created_at} title={`Imported/Created: ${new Date(job.created_at).toLocaleString()}`}>
-                    Imported{' '}
-                    {new Date(job.created_at).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}
-                  </time>
-                </div>
               </div>
 
               {/* Action row */}

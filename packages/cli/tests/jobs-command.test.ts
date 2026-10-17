@@ -46,6 +46,10 @@ it('supports text/inbox/URL intake, preview, list, get and invalid actions', asy
 });
 it('process limit remains bounded with automatic enable and honors persistent stop', async () => {
   const f = fixture(); await f.add(); await f.add(); await f.add();
+  // Retain coverage for previously admitted (legacy queued) work.
+  const runtime = f.runtime();
+  for (const job of runtime.repository.listJobs()) runtime.repository.transitionPreparation(job.id, 'prepare', job.revision, `admit:${job.id}`);
+  await runtime.dispose();
   expect((await f.command('start')).exitCode).toBe(0); expect(f.run).not.toHaveBeenCalled();
   expect((await f.command('process', undefined, { limit: 1 })).exitCode).toBe(0);
   expect(f.run).toHaveBeenCalledTimes(4);
@@ -99,4 +103,14 @@ it('closes runtime after errors as well as reads', async () => {
   f.dependencies.runtimeFactory = (w, d) => { const runtime = createJobsRuntime(w, d); disposals.push(vi.spyOn(runtime, 'dispose')); return runtime; };
   await f.command('list'); await f.command('get', 'bad');
   expect(disposals).toHaveLength(2); for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
+});
+
+it('process never prepares newly saved jobs even with automatic work enabled', async () => {
+  const f = fixture(); await f.add();
+  expect((await f.command('start')).exitCode).toBe(0);
+  expect((await f.command('process')).exitCode).toBe(0);
+  expect(f.run).not.toHaveBeenCalled();
+  const list = (await f.command('list')).result as any;
+  expect(list.jobs[0].preparation_state).toBe('saved');
+  expect(list.jobs[0].current_attempt_id).toBeNull();
 });

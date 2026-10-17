@@ -12,7 +12,7 @@ import {
 import type { Attempt, Job } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { useIntentKey } from '../../hooks/useJobsData.js';
-import { isNeedsInput } from './JobsView.js';
+import { isNeedsInput } from './job-utils.js';
 import { secondaryButton } from '../tailoring/ui.js';
 
 export const PIPELINE_STAGES = [

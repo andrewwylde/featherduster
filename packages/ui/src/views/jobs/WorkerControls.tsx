@@ -5,7 +5,7 @@ import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 import { QueueVisualization } from './QueueVisualization.js';
-import { isNeedsInput } from './JobsView.js';
+import { isNeedsInput } from './job-utils.js';
 
 export interface WorkerControlsProps {
   jobs?: Job[];
@@ -22,7 +22,7 @@ export function WorkerControls({
   const { data, error, refresh } = useJobsData(load);
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState<string[]>([]);
-  const [showQueue, setShowQueue] = useState(true);
+  const [showQueue, setShowQueue] = useState(false);
   const inflight = useRef(new Set<string>());
   const key = useIntentKey();
 
@@ -125,6 +125,7 @@ export function WorkerControls({
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          <details><summary className="cursor-pointer text-xs underline">Automatic work controls</summary><div className="flex flex-wrap gap-2">
           {/* Start Button */}
           <button
             className={`${isStopped ? primaryButton : secondaryButton} text-xs font-medium min-h-[44px] sm:min-h-0 sm:py-1.5`}
@@ -145,6 +146,7 @@ export function WorkerControls({
             Pause after current
           </button>
 
+          </div></details>
           {/* Stop Button */}
           <button
             className="inline-flex items-center justify-center gap-1.5 rounded-desk border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 px-3 py-1.5 min-h-[44px] sm:min-h-0 text-xs font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"

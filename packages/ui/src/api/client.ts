@@ -17,7 +17,16 @@ import type {
   ConfidentialityLeak,
 } from '@featherduster/core';
 
+export interface JobFitResult {
+  current: JobFitEntry | null; history: JobFitEntry[];
+}
+export interface JobFitEntry {
+  input_snapshot_id: string; stale: boolean; analysis: JobAnalysis;
+  assessment: import('@featherduster/core').FitAssessment;
+  evidence: { id: string; title: string; summary: string; narrative: string }[];
+}
 export interface JobsDetail {
+  activity?: 'fit' | 'resume' | 'cover_letter' | 'interview_brief';
   proposal_review?: ProposalReviewSummary | null;
   job: Job; posting: PostingSnapshot | null; attempt: Omit<Attempt, 'owner_token'> | null;
   artifacts: ArtifactVersion[]; events: JobEvent[]; answers: ScopedAnswer[];
@@ -25,6 +34,7 @@ export interface JobsDetail {
 }
 export interface JobsControl { queued_count?: number; needs_review_count?: number; control: WorkerControl; active: Omit<Attempt, 'owner_token'>[] }
 export interface JobReview {
+  working_draft?: JobDraft | null;
   artifact: ArtifactVersion; draft: JobDraft; base_resume: ResumeSpec;
   analysis: JobAnalysis | null; alignment: AlignmentMatrix | null; brief_markdown: string | null;
   validation_report: unknown; preview_count: number;
@@ -334,11 +344,21 @@ export class ApiClient {
   rememberCorpusChange(body: CorpusWriteRequest) { return this.fetchJson<MutationReceipt<CorpusUpdate>>('/api/corpus/updates', this.jsonRequest('POST', body)); }
   withdrawCorpusChange(id: string, body: CorpusWriteRequest) { return this.fetchJson<MutationReceipt<CorpusUpdate>>(`/api/corpus/updates/${id}/withdraw`, this.jsonRequest('POST', body)); }
   getJobs() { return this.fetchJson<{ jobs: Job[] }>('/api/jobs'); }
+  getJobMaterial(id: string, kind: import('@featherduster/core').MaterialContent['kind']) {
+    return this.fetchJson<{ current: import('@featherduster/core').MaterialRevision | null; history: import('@featherduster/core').MaterialRevision[]; stale_reasons: string[] }>(`/api/jobs/${id}/materials/${kind}`);
+  }
+  generateJobMaterial(id: string, kind: string, body: { expected_revision: number; idempotency_key: string; evidence_ids: string[] }) { return this.fetchJson(`/api/jobs/${id}/materials/${kind}/generate`, this.jsonRequest('POST', body)); }
+  saveJobMaterial(id: string, kind: string, body: import('@featherduster/core').MaterialSaveRequest) { return this.fetchJson<{ result: import('@featherduster/core').MaterialRevision }>(`/api/jobs/${id}/materials/${kind}`, this.jsonRequest('PUT', body)); }
+  reviewJobMaterial(id: string, kind: string, body: { expected_revision_id: string; idempotency_key: string }) { return this.fetchJson(`/api/jobs/${id}/materials/${kind}/review`, this.jsonRequest('POST', body)); }
+  getJobFit(id: string) { return this.fetchJson<JobFitResult>(`/api/jobs/${id}/fit`); }
+  assessJobFit(id: string, body: { expected_revision: number; idempotency_key: string; evidence_ids: string[] }) { return this.fetchJson(`/api/jobs/${id}/fit`, this.jsonRequest('POST', body)); }
   getJob(id: string) { return this.fetchJson<JobsDetail>(`/api/jobs/${id}`); }
   getJobsControl() { return this.fetchJson<JobsControl>('/api/jobs/control'); }
   controlJobs(action: 'start' | 'pause' | 'stop', idempotency_key: string) { return this.fetchJson<unknown>(`/api/jobs/control/${action}`, this.jsonRequest('POST', { idempotency_key })); }
-  previewJobs(body: { mode: 'urls' | 'text'; input: string; fallback_job_id?: string; expected_revision?: number }) { return this.fetchJson<IntakePreview>('/api/jobs/preview', this.jsonRequest('POST', body)); }
+  previewJobs(body: { mode: 'urls' | 'text'; input: string; details?: Partial<Pick<Job, 'company' | 'role' | 'notes' | 'context_url'>>; fallback_job_id?: string; expected_revision?: number }) { return this.fetchJson<IntakePreview>('/api/jobs/preview', this.jsonRequest('POST', body)); }
   addJobs(preview_id: string, idempotency_key: string) { return this.fetchJson<IntakeResult>('/api/jobs', this.jsonRequest('POST', { preview_id, idempotency_key })); }
+  saveJobDetails(id: string, body: { expected_revision: number; idempotency_key: string; changes: Partial<Pick<Job, 'company' | 'role' | 'notes' | 'context_url'>>; posting_text?: string }) { return this.fetchJson<{ result: { job: Job }; replayed: boolean }>(`/api/jobs/${id}/details`, this.jsonRequest('PUT', body)); }
+  correctJobStartingResume(id: string, body: { expected_job_revision: number; input_snapshot_id: string; idempotency_key: string; base_resume: ResumeSpec }) { return this.fetchJson<{ result: { input_snapshot: InputSnapshot; job: Job }; replayed: boolean }>(`/api/jobs/${id}/starting-resume`, this.jsonRequest('PUT', body)); }
   captureJobInputs(id: string, expected_revision: number, selection: { base_resume_id?: string; template_id?: string; runner?: RunnerId; evidence_ids?: string[] } = {}) { return this.fetchJson<{ input_snapshot: InputSnapshot }>(`/api/jobs/${id}/inputs`, this.jsonRequest('POST', { expected_revision, ...selection })); }
   prepareJob(id: string, action: 'prepare' | 'resume' | 'retry' | 'reprepare', body: { expected_revision: number; input_snapshot_id: string; idempotency_key: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/${action}`, this.jsonRequest('POST', body)); }
   cancelJob(id: string, body: { expected_revision: number; idempotency_key: string; reason?: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/cancel`, this.jsonRequest('POST', body)); }

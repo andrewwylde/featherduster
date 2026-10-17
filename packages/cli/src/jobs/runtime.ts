@@ -1,3 +1,7 @@
+import { JobExports } from './exports.js';
+import { JobMaterials } from './materials.js';
+import { JobFit } from './fit.js';
+import { selectJobSkillset } from './skillset.js';
 import { ProposalRepository } from './proposal-repository.js';
 import { ProposalService } from './proposal-service.js';
 import { CorpusRepository } from '../corpus/repository.js';
@@ -84,19 +88,45 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
     const runner = (deps.runnerFactory ?? defaultRunnerFactory)(id as RunnerId, config);
     if (!runner || !JobRunnerConfigurationSchema.safeParse({ runner: runner.id, model: runner.model }).success) return invalid('Configure a runner and model first');
     const view = corpus.read({ job_id: job.id, employer: job.employer_id ?? undefined, role: job.role ?? undefined });
-    const all = view.evidence.getAll();
-    const evidence = selection.evidence_ids ? selection.evidence_ids.map(id => all.find(e => e.id === id) ?? invalid(`Unknown evidence: ${id}`)) : all;
-    const selected = new Set(evidence.map(e => e.id));
-    const knowledge: C.CorpusSnapshot = { ...view.snapshot, materialized: {
-      support: view.support.filter(s => s.sources.every(b => selected.has(b.evidence_id))),
-      sources: view.records.filter(r => selected.has(r.source.id)).map(r => ({ entry: r.source.entry, narrative: r.source.narrative })),
-    } };
+    const { evidence, knowledge } = selectJobSkillset(view, selection.evidence_ids);
     return artifacts.captureInputs({ corpus_knowledge: knowledge, job_id: job.id, posting_id: job.posting_snapshot_id, base_resume: yaml.dump(base.spec), selected_evidence: evidence.map(e => ({ source_id: e.id, bytes: C.serializeEvidenceMarkdown(e, e.narrative) })), privacy_rules: deps.loadPrivacyRules(), template, runner_configuration: { runner: runner.id, model: runner.model }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: template.page_budget, max_model_calls: 4, max_repair_attempts: 0, model_retry_count: 0, timeout_ms: config.step_timeout_seconds * 4000 } });
   }).immediate();
+  const fit = new JobFit(repository);
+  const materials = new JobMaterials(repository, artifacts, (id, ids) => selectFit(id, ids), deps.loadPrivacyRules);
   const preparation = new JobPreparation({ repository, artifacts, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer: deps.renderer ?? new LatexRenderer() });
-  const service = new JobsService({ repository, preparation, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
+  const service = new JobsService({ repository, preparation: { run: (attempt, signal, previous) => repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : preparation.run(attempt, signal, previous) }, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
   const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service);
-  return { repository, artifacts, intake, service, corpus, proposals, captureInputs, flushEvents,
+  const selectFit = (id: string, ids?: string[]) => {
+    const job = repository.getJob(id);
+    return selectJobSkillset(corpus.read({ job_id: id, employer: job.employer_id ?? undefined, role: job.role ?? undefined }), ids);
+  };
+  const readFit = (id: string) => fit.read(id, ids => selectFit(id, ids), deps.loadPrivacyRules());
+  const assessFit = (id: string, request: { expected_revision: number; idempotency_key: string; evidence_ids?: string[]; runner?: RunnerId }, materialKind?: C.MaterialContent['kind']) => {
+    // Capture and admission are atomic; a replay never captures or invokes again.
+    const events = new Set(repository.listEvents(id).map(event => event.id));
+    const receipt = repository.withReceipt(materialKind ? 'generate_material' : 'assess_fit', request.idempotency_key, { id, materialKind, ...request }, () => {
+      const job = repository.getJob(id);
+      if (job.revision !== request.expected_revision) throw new RepositoryError('revision_conflict', 'Reload the changed job before assessing fit');
+      const control = repository.getControl();
+      if (control.stopped_at || control.pause_after_current) throw new RepositoryError('ineligible', 'Processing is stopped or paused; explicitly Start first');
+      if (service.worker.busy || repository.active().length) throw new RepositoryError('ineligible', 'Worker busy');
+      const config = loadTailoringConfig(workspace).runner;
+      const runner = (deps.runnerFactory ?? defaultRunnerFactory)(request.runner ?? config.default, config);
+      if (!runner || !JobRunnerConfigurationSchema.safeParse({ runner: runner.id, model: runner.model }).success) throw new RepositoryError('invalid_relationship', 'Configure a runner and model in Settings');
+      const input = materialKind ? materials.capture(id, materialKind, selectFit(id, request.evidence_ids), { runner: runner.id, model: runner.model }, config.step_timeout_seconds * 1000) : fit.capture(id, selectFit(id, request.evidence_ids), deps.loadPrivacyRules(), { runner: runner.id, model: runner.model }, config.step_timeout_seconds * 2000);
+      const args = { job_id: id, expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: `fit:${request.idempotency_key}` };
+      const action = job.preparation_state === 'resume_ready' ? 'reprepare' : job.preparation_state === 'needs_input' ? 'resume' : ['failed', 'cancelled', 'interrupted'].includes(job.preparation_state) ? 'retry' : undefined;
+      return repository.requestPreparation({ ...args, action, lease_ms: 30000 }).result;
+    });
+    // Launch only after the outer receipt and capture transaction commits.
+    if (!receipt.replayed && receipt.result.attempt) {
+      service.worker.notify(id, events);
+      service.worker.launch(receipt.result.attempt);
+    }
+    return receipt;
+  };
+  const exports = new JobExports(repository, artifacts, materials, selectFit, deps.loadPrivacyRules);
+  return { repository, artifacts, intake, service, corpus, proposals, captureInputs, assessFit, readFit, materials, exports, flushEvents,
     subscribeCorpus(listener: (event: { revision: number; update_ids: string[] }) => void) { monitor(); corpusListeners.add(listener); return () => { corpusListeners.delete(listener); }; },
     subscribe(listener: (event: C.JobEvent) => void) { monitor(); listeners.add(listener); return () => { listeners.delete(listener); }; },
     initialize() { monitor(); service.initialize(); },
@@ -110,5 +140,6 @@ export function jobDetail(runtime: JobsRuntime, id: string) {
   const r = runtime.repository; const job = r.getJob(id);
   const review = runtime.proposals.read(id);
   const proposal_review = review.availability === 'available' ? { availability: review.availability, review_id: review.review.id, revision: review.review.revision, status: review.review.validation.status, blocking_count: review.review.validation.issues.filter(i => i.details.some(d => d.severity === 'block')).length, input_stale: review.input_stale } : { availability: review.availability, recoverable: review.recoverable };
-  return publicJobsResult({ job, proposal_review, answers: [...r.listAnswers({ kind: 'candidate' }), ...(job.employer_id ? r.listAnswers({ kind: 'employer', employer_id: job.employer_id }) : []), ...r.listAnswers({ kind: 'job', job_id: id })], ...runtime.artifacts.preparationContext(job.current_attempt_id), posting: job.posting_snapshot_id ? r.getPostingSnapshot(job.posting_snapshot_id) : null, attempt: job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : null, artifacts: job.artifact_version_ids.map(id => runtime.artifacts.getArtifact(id)), events: r.listEvents(id) });
+  const activeInput = job.current_attempt_id ? r.getExecutionInput(r.getAttempt(job.current_attempt_id).input_snapshot_id) : null;
+  return publicJobsResult({ job, activity: activeInput && activeInput.schema_version !== 1 ? activeInput.activity : 'resume', proposal_review, answers: [...r.listAnswers({ kind: 'candidate' }), ...(job.employer_id ? r.listAnswers({ kind: 'employer', employer_id: job.employer_id }) : []), ...r.listAnswers({ kind: 'job', job_id: id })], ...runtime.artifacts.preparationContext(job.current_attempt_id), posting: job.posting_snapshot_id ? r.getPostingSnapshot(job.posting_snapshot_id) : null, attempt: job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : null, artifacts: job.artifact_version_ids.map(id => runtime.artifacts.getArtifact(id)), events: r.listEvents(id) });
 }

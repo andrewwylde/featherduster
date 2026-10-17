@@ -97,7 +97,7 @@ export class JobWorker {
     if (!r.isAttemptCurrent(fence)) return;
     if (this.disposed) { r.transitionPreparation(attempt.job_id, 'interrupt', r.getJob(attempt.job_id).revision, randomUUID(), fence); return; }
     const controller = new AbortController(); this.controller = controller;
-    const started = Date.now(); const policy = r.getInputSnapshot(attempt.input_snapshot_id).policy;
+    const started = Date.now(); const policy = r.getExecutionInput(attempt.input_snapshot_id).policy;
     let timedOut = false;
     const deadline = setTimeout(() => { timedOut = true; controller.abort(new Error('Preparation deadline exceeded')); }, policy.timeout_ms);
     const heartbeat = setInterval(() => {
@@ -107,7 +107,7 @@ export class JobWorker {
     try {
       await abortable(this.deps.preparation.run(attempt, controller.signal, previousAttemptId), controller.signal);
       controller.signal.throwIfAborted();
-      if (r.isAttemptCurrent(fence)) r.transitionPreparation(attempt.job_id, 'complete', r.getJob(attempt.job_id).revision, randomUUID(), fence, { reason: 'Validated candidate ready', elapsed_ms: Date.now() - started });
+      if (r.isAttemptCurrent(fence)) r.transitionPreparation(attempt.job_id, r.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? 'material_complete' : r.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? 'fit_complete' : 'complete', r.getJob(attempt.job_id).revision, randomUUID(), fence, { reason: r.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? 'Material draft saved; inspect checks before review' : r.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? 'Fit assessment saved; tailoring remains optional' : 'Validated candidate ready', elapsed_ms: Date.now() - started });
     } catch (error) {
       if (r.isAttemptCurrent(fence)) {
         const blocked = error instanceof PreparationBlocked;

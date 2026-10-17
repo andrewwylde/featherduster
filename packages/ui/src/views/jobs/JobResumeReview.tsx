@@ -1,3 +1,4 @@
+import { JobExports } from './JobExports.js';
 import { JobProposalReview } from './JobProposalReview.js';
 import { useEffect, useRef, useState } from 'react';
 import {
@@ -41,7 +42,16 @@ export function JobResumeReview({
   const [reload, setReload] = useState(0);
   const pending = useRef(false);
   const intentKey = useIntentKey();
+  const latestArtifact = artifacts.at(-1)?.id ?? '';
+  const previousLatest = useRef(latestArtifact);
+  useEffect(() => {
+    if (selected === previousLatest.current) setSelected(latestArtifact);
+    previousLatest.current = latestArtifact;
+  }, [latestArtifact, selected]);
   const displayedReview = review?.artifact.id === selected ? review : null;
+
+  const workingDraft = displayedReview?.working_draft;
+  const pendingEdits = !!workingDraft && JSON.stringify(workingDraft.candidate) !== JSON.stringify(displayedReview?.draft.candidate);
 
   useEffect(() => {
     if (!selected && artifacts.length) setSelected(artifacts.at(-1)!.id);
@@ -65,7 +75,7 @@ export function JobResumeReview({
     return () => {
       live = false;
     };
-  }, [job.id, selected, reload]);
+  }, [job.id, job.revision, selected, reload]);
 
   const act = async (editing: boolean) => {
     if (!displayedReview || pending.current) return;
@@ -120,22 +130,29 @@ export function JobResumeReview({
 
   return (
     <section className="space-y-6 min-w-0">
-      <JobProposalReview job={job} onSaved={onSaved} />
+      {job.preparation_state !== 'resume_ready' ? <JobProposalReview job={job} onSaved={onSaved} /> : <details><summary>Earlier corrections</summary><JobProposalReview job={job} onSaved={onSaved} /></details>}
+      {pendingEdits && workingDraft && <section className={`${cardClass} p-5 space-y-3`}>
+        <h2 className="font-semibold">Current working resume — edits pending checks</h2>
+        <p>The PDF below is the last validated version, not these edits. Editing does not approve or publish them.</p>
+        <button className={primaryButton} onClick={() => navigate(`/tailor/canvas/jobs/${job.id}/${workingDraft.id}`)}>Return to working resume</button>
+        <pre className="whitespace-pre-wrap break-words text-sm">{compileMarkdownResume(workingDraft.candidate)}</pre>
+      </section>}
+      {job.recovery?.kind === 'stale_inputs' && <p role="status">Starting inputs changed. This PDF belongs to the previous inputs; it is not a newly checked correction.</p>}
       {/* Top Review Controls Card */}
       <div className={`${cardClass} p-5 space-y-4`}>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="space-y-1">
             <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <FileCheck className="h-5 w-5 text-vermilion-500" />
-              Resume Review & Verification
+              {pendingEdits || job.recovery?.kind === 'stale_inputs' ? 'Last validated resume' : selected !== latestArtifact ? 'Historical resume' : 'Current resume'}
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Inspect candidate PDF, validation gates, and word-level diff before approval.
+              Review the saved PDF. Validation, human approval and submitting an application are separate actions.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
+            <details><summary>Historical versions</summary><label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
               Artifact version{' '}
               <select
                 className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-vermilion-500"
@@ -156,7 +173,7 @@ export function JobResumeReview({
                   </option>
                 ))}
               </select>
-            </label>
+            </label></details>
 
             <button
               className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline p-1 min-h-[44px] sm:min-h-0"
@@ -218,6 +235,8 @@ export function JobResumeReview({
               )}
             </div>
 
+            <JobExports job={job} artifact={displayedReview.artifact} blocked={pendingEdits || selected !== latestArtifact || job.recovery?.kind === 'stale_inputs'} />
+
             {/* Main Action Buttons */}
             <div className="flex flex-wrap items-center gap-3 pt-2">
               <button
@@ -225,6 +244,9 @@ export function JobResumeReview({
                 disabled={
                   busy ||
                   conflict ||
+                  pendingEdits ||
+                  job.recovery?.kind === 'stale_inputs' ||
+                  selected !== latestArtifact ||
                   job.revision !== revision ||
                   displayedReview.artifact.validation_result !== 'passed' ||
                   !displayedReview.artifact.pdf
@@ -238,7 +260,7 @@ export function JobResumeReview({
               <button
                 className={`${secondaryButton} text-xs font-semibold`}
                 disabled={busy || conflict || job.revision !== revision}
-                onClick={() => void act(true)}
+                onClick={() => workingDraft ? navigate(`/tailor/canvas/jobs/${job.id}/${workingDraft.id}`) : void act(true)}
               >
                 <Edit3 className="h-3.5 w-3.5" />
                 Continue Editing
@@ -320,6 +342,7 @@ export function JobResumeReview({
             </pre>
           </details>
 
+          <details><summary>Comparison, evidence and preparation history</summary>
           {/* Base to Candidate Diff */}
           <div className={`${cardClass} p-5 space-y-3`}>
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
@@ -401,6 +424,7 @@ export function JobResumeReview({
               <p className="text-xs text-slate-500">No brief available.</p>
             )}
           </div>
+          </details>
         </div>
       )}
     </section>

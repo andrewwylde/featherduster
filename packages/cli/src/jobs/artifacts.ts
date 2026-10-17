@@ -27,6 +27,7 @@ const inputManifest = z.object({
   schema_version: z.literal(1), snapshot: C.InputSnapshotSchema.omit({ fingerprint: true }),
   posting_file: C.ImmutableReferenceSchema, policy_file: C.ImmutableReferenceSchema,
   evidence_sources: z.array(z.string().min(1)),
+  job_scope: z.object({ company: z.string().nullable(), role: z.string().nullable(), employer_id: z.string().nullable() }).optional(),
 }).strict();
 const artifactManifest = z.object({
   schema_version: z.literal(1), artifact: C.ArtifactVersionSchema.innerType().omit({ version_fingerprint: true }),
@@ -73,11 +74,35 @@ export class JobArtifactsService {
         privacy_rules: add('privacy-rules.json', canonical(request.privacy_rules)), template: add('template.json', canonical(C.LatexTemplateProfileSchema.parse(request.template))),
         runner_configuration: add('runner-configuration.json', canonical(runner)), policy, policy_fingerprint: fingerprint(canonical(policy)),
       };
-      const manifest = inputManifest.parse({ schema_version: 1, snapshot, posting_file: add('posting.txt', posting.text), policy_file: add('policy.json', canonical(policy)), evidence_sources: request.selected_evidence.map(e => e.source_id) });
+      const manifest = inputManifest.parse({ schema_version: 1, snapshot, job_scope: { company: job.company, role: job.role, employer_id: job.employer_id }, posting_file: add('posting.txt', posting.text), policy_file: add('policy.json', canonical(policy)), evidence_sources: request.selected_evidence.map(e => e.source_id) });
       const bytes = canonical(manifest); bundle['manifest.json'] = bytes;
       const input = C.InputSnapshotSchema.parse({ ...snapshot, fingerprint: fingerprint(bytes) });
       files.writeBundle('snapshots', job.id, id, bundle);
       return r.saveInputSnapshot(input);
+    });
+  }
+  correctStartingResume(request: { job_id: string; input_snapshot_id: string; expected_job_revision: number; idempotency_key: string; base_resume: C.ResumeSpec }) {
+    const r = this.repository;
+    return r.withReceipt('correct_starting_resume', request.idempotency_key, request, () => {
+      const job = r.getJob(request.job_id);
+      if (job.revision !== request.expected_job_revision) throw new RepositoryError('revision_conflict', 'Job changed; retain your draft and compare current inputs');
+      if (['queued', 'preparing'].includes(job.preparation_state) || r.active().some(a => a.job_id === job.id)) throw new RepositoryError('ineligible', 'Stop preparation before correcting its starting resume');
+      const latest = r.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload, '$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(job.id) as { id: string } | undefined;
+      if (latest?.id !== request.input_snapshot_id) throw new RepositoryError('revision_conflict', 'Starting inputs changed; retain your draft and inspect the current version');
+      const input = this.getInputSnapshot(request.input_snapshot_id);
+      if (input.job_id !== job.id || (job.posting_snapshot_id && job.posting_snapshot_id !== input.posting.id)) throw new RepositoryError('invalid_relationship', 'Captured posting is no longer current');
+      const files = r.database.files;
+      const read = (ref: C.ImmutableReference) => files.readSnapshot(ref, job.id, input.id).toString();
+      const manifest = inputManifest.parse(JSON.parse(read({ id: `${files.bundlePath('snapshots', job.id, input.id)}/manifest.json`, fingerprint: input.fingerprint })));
+      const next = this.captureInputs({ job_id: job.id, posting_id: input.posting.id,
+        base_resume: yaml.dump(C.ResumeSpecSchema.parse(request.base_resume)),
+        selected_evidence: input.selected_evidence.map((ref, i) => ({ source_id: manifest.evidence_sources[i], bytes: read(ref) })),
+        privacy_rules: JSON.parse(read(input.privacy_rules)), template: JSON.parse(read(input.template)),
+        runner_configuration: JSON.parse(read(input.runner_configuration)), policy: input.policy,
+        corpus_knowledge: input.corpus_knowledge ? JSON.parse(read(input.corpus_knowledge)) : undefined,
+      });
+      const updated = r.updateJob({ ...job, recovery: { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' }, state_reason: 'Job-local starting resume saved. Previous checks and materials are unchanged; explicitly prepare the new inputs.' }, job.revision);
+      return { input_snapshot: next, job: updated };
     });
   }
   getInputSnapshot(id: string): C.InputSnapshot {
@@ -111,7 +136,8 @@ export class JobArtifactsService {
         return record && sourceFingerprint(record) === binding.evidence_fingerprint && record.confidence !== 'retracted' && [record.title, record.summary, record.impact, record.narrative].some(t => t.includes(binding.quote))
           && (!binding.source_status || (binding.source_status.confidence === record.confidence && binding.source_status.in_flight === record.in_flight));
       }));
-      return { input, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport };
+      const manifest = inputManifest.parse(JSON.parse(read({ id: `${this.repository.database.files.bundlePath('snapshots', input.job_id, input.id)}/manifest.json`, fingerprint: input.fingerprint })));
+      return { input, job_scope: manifest.job_scope, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport };
     });
   }
   publishCandidate(request: { draft_id: string; expected_draft_revision: number; fence: OwnershipFence; source: Bytes; pdf?: Bytes; previews?: Bytes[]; validation_report?: Bytes; validation_result: C.ArtifactVersion['validation_result'] }): C.ArtifactVersion {
@@ -151,6 +177,7 @@ export class JobArtifactsService {
     return this.corrupt(() => {
       if (!attemptId) return { analysis: null, alignment: null, brief_markdown: null };
       const r = this.repository; const attempt = r.getAttempt(attemptId);
+      if (r.getExecutionInput(attempt.input_snapshot_id).schema_version !== 1) return { analysis: null, alignment: null, brief_markdown: null };
       const input = this.getInputSnapshot(attempt.input_snapshot_id);
       const read = <T>(stage: C.PreparationStage, schema: z.ZodType<T, z.ZodTypeDef, unknown>): T | null => {
         const cp = r.listCheckpoints(attemptId).find(c => c.completed_stage === stage);
@@ -174,7 +201,8 @@ export class JobArtifactsService {
       const input = this.getInputSnapshot(artifact.input_snapshot_id);
       files.readArtifact(artifact.source, jobId, id);
       if (artifact.pdf) files.readArtifact(artifact.pdf, jobId, id);
-      return { artifact, draft: r.getDraftRevision(manifest.draft_id, manifest.draft_revision),
+      const working = r.database.db.prepare('SELECT id FROM draft_revisions WHERE job_id=? AND parent_artifact_version_id=? ORDER BY rowid DESC LIMIT 1').get(jobId, id) as { id: string } | undefined;
+      return { artifact, working_draft: working ? r.getLatestDraft(working.id) : null, draft: r.getDraftRevision(manifest.draft_id, manifest.draft_revision),
         base_resume: C.ResumeSpecSchema.parse(yaml.load(files.readSnapshot(input.base_resume, jobId, input.id).toString())),
         ...this.preparationContext(artifact.attempt_id),
         validation_report: artifact.validation_report ? JSON.parse(files.readArtifact(artifact.validation_report, jobId, id).toString()) : null,
