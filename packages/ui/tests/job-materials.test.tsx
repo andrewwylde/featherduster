@@ -58,3 +58,24 @@ it('history is read-only, stale content cannot be reviewed, and active work has 
   fireEvent.click(screen.getByRole('button', { name: 'Cancel active work' }));
   await waitFor(() => expect(cancel).toHaveBeenCalledWith('job', expect.objectContaining({ expected_revision: 2 })));
 });
+
+it('previews the letter as exported and lists gap notes outside it', async () => {
+  const letter = { ...content, paragraphs: [{ ...content.paragraphs[0], references: [] }], gap_notes: [{ requirement_quote: 'Kubernetes production operations', transferable_evidence: [] }] };
+  mock({ ...revision(), content: letter });
+  render(<JobMaterialReview job={job} kind="cover_letter" onSaved={() => {}} />);
+  const preview = await screen.findByRole('region', { name: /Letter (preview|as exported)/ });
+  expect(preview).toHaveTextContent('Maintained APIs.');
+  expect(preview).not.toHaveTextContent('Kubernetes');
+  expect(screen.getByRole('region', { name: 'Not established by your selected evidence' })).toHaveTextContent('Kubernetes production operations');
+});
+
+it('labels the letter preview by draft and review state', async () => {
+  mock({ ...revision(), review: { reviewer_id: 'local-human' } });
+  render(<JobMaterialReview job={job} kind="cover_letter" onSaved={() => {}} />);
+  const preview = await screen.findByRole('region', { name: /Letter (preview|as exported)/ });
+  expect(preview).toHaveTextContent('Letter as exported');
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Edited draft.' } });
+  const edited = screen.getByRole('region', { name: /Letter (preview|as exported)/ });
+  expect(edited).toHaveTextContent('Letter preview (unsaved edits, not exported)');
+  expect(edited).toHaveTextContent('Edited draft.');
+});

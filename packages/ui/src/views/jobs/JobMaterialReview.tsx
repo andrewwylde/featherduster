@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { MaterialContentSchema, type Job, type MaterialContent, type MaterialRevision } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
@@ -22,7 +22,7 @@ function fields(content: MaterialContent): Field[] {
     if (Array.isArray(node)) { node.forEach((value, i) => bindings(value, [...path, i])); return; }
     for (const [key, value] of Object.entries(node)) {
       const next = [...path, key];
-      if (typeof value === 'string' && (path.includes('claims') || path.includes('resume_claim') || path.includes('transferable_evidence'))) {
+      if (typeof value === 'string' && (path.includes('claims') || path.includes('resume_claim') || path.includes('transferable_evidence') || path.includes('references') || path.includes('gap_notes'))) {
         add(`Evidence binding: ${next.join(' / ')}`, next, value);
       } else bindings(value, next);
     }
@@ -32,6 +32,7 @@ function fields(content: MaterialContent): Field[] {
 }
 
 export function JobMaterialReview({ job, kind, onSaved }: { job: Job; kind: MaterialContent['kind']; onSaved(): void }) {
+  const uid = useId();
   const key = `job-material:${job.workspace_id}:${job.id}:${kind}`;
   const [draft, setDraft] = useState<Draft | null>(() => {
     try { const raw = JSON.parse(localStorage.getItem(key) ?? 'null'); return raw && typeof raw.revision === 'string' ? { revision: raw.revision, content: MaterialContentSchema.parse(raw.content) } : null; } catch { return null; }
@@ -88,6 +89,8 @@ export function JobMaterialReview({ job, kind, onSaved }: { job: Job; kind: Mate
       <label className="block text-sm">Passage<select aria-label="Passage" className="block w-full mt-2 bg-transparent border rounded p-2" value={Math.min(index, entries.length - 1)} onChange={event => setIndex(Number(event.target.value))}>{entries.map((f, i) => <option key={i} value={i}>{f.label}</option>)}</select></label>
       <label className="block text-sm font-medium">{field.label}<textarea className="block w-full min-h-48 mt-2 p-3 rounded border bg-transparent text-base leading-relaxed" value={field.text} readOnly={!!historical} disabled={busy} onChange={event => edit(event.target.value)} /></label>
       <details><summary className="cursor-pointer text-sm">Inspect claim bindings and exact source quotes</summary><div className="space-y-3 mt-3">{entries.filter(entry => entry.path.at(-1) === 'quote').map((entry, i) => <blockquote key={i} className="border-l-2 pl-3 text-sm whitespace-pre-wrap">{entry.text}</blockquote>)}</div><p className="text-sm">Checks conservatively require source wording. Paraphrases and unsupported statements remain blocked; generation cannot establish new facts.</p></details>
+      {content.kind === 'cover_letter' && <section aria-labelledby={`${uid}-preview`} className="space-y-3 border-t pt-4"><h3 id={`${uid}-preview`} className="text-sm font-semibold">{historical ? 'Letter preview (historical version)' : draft ? 'Letter preview (unsaved edits, not exported)' : current?.review && !data?.stale_reasons.length ? 'Letter as exported' : 'Letter preview (not yet reviewed)'}</h3>{content.paragraphs.map(p => <p key={p.id} className="whitespace-pre-wrap leading-relaxed">{p.text}</p>)}</section>}
+      {content.kind === 'cover_letter' && !!content.gap_notes?.length && <section aria-labelledby={`${uid}-gaps`} className="text-sm space-y-2"><h3 id={`${uid}-gaps`} className="font-semibold">Not established by your selected evidence</h3><p>These posting requirements are not stated in the letter or its exports. Prepare to discuss them honestly.</p><ul className="list-disc pl-5">{content.gap_notes.map((g, i) => <li key={i}>{g.requirement_quote}</li>)}</ul></section>}
       {!historical && current && <>
         {!!current.validation.issues.length && <section aria-label="Material checks" className="text-sm space-y-2"><h3 className="font-semibold">Resolve before review</h3>{current.validation.issues.map((issue, i) => <p key={i}>{issue.message}</p>)}</section>}
         <div className="flex flex-wrap gap-3"><button className={primaryButton} disabled={busy || !draft || !!conflict} onClick={() => draft && void action(async () => {

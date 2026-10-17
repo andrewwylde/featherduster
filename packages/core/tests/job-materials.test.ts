@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MaterialContentSchema, MaterialRevisionSchema, MaterialSaveRequestSchema, materialStaleReasons } from '../src/jobs/materials.js';
+import { MaterialContentSchema, MaterialRevisionSchema, MaterialSaveRequestSchema, materialJsonSchema, materialStaleReasons, CLAIM_MARK, POSTING_AS_EXPERIENCE, POSTING_JOINED_TO_CLAIM, POSTING_REFERENCE_MARK, unboundMaterialWords } from '../src/jobs/materials.js';
 
 const uuid = '11111111-1111-4111-8111-111111111111';
 const other = '22222222-2222-4222-8222-222222222222';
@@ -60,5 +60,61 @@ describe('material revision contract', () => {
     expect(JSON.stringify(material)).toBe(before);
     expect(() => materialStaleReasons(material, { ...binding, job_id: other })).toThrow(/different job/);
     expect(() => materialStaleReasons(material, { ...binding, workspace_id: 'other' })).toThrow(/different job/);
+  });
+});
+
+describe('letter structure and connective prose', () => {
+  it('keeps saved letters byte-identical and accepts posting references and gap notes', () => {
+    expect(JSON.stringify(MaterialContentSchema.parse(letter))).toBe(JSON.stringify(letter));
+    const structured = { kind: 'cover_letter', paragraphs: [{ ...paragraph, references: [{ text: 'Platform Engineer' }] }], gap_notes: [{ requirement_quote: 'Kubernetes production operations', transferable_evidence: [] }] };
+    expect(MaterialContentSchema.safeParse(structured).success).toBe(true);
+    // Gap notes carry no free text, so neither ability nor inability can be asserted.
+    expect(MaterialContentSchema.safeParse({ ...structured, gap_notes: [{ requirement_quote: 'Kubernetes', framing: 'I lack Kubernetes.', transferable_evidence: [] }] }).success).toBe(false);
+  });
+  it('allows only connective words between bound claims and posting references', () => {
+    const P = POSTING_REFERENCE_MARK, C = CLAIM_MARK;
+    expect(unboundMaterialWords(`Dear hiring team, I would like to apply for the ${P} role at ${P}.`)).toEqual([]);
+    expect(unboundMaterialWords(`Your posting asks for ${P}. I ${C}.`)).toEqual([]);
+    expect(unboundMaterialWords(`Your posting asks for ${P}. ${C}.`)).toEqual([]);
+    expect(unboundMaterialWords(`${C}. "Your posting asks for ${P}."`)).toEqual([]);
+    expect(unboundMaterialWords(`${C}. (Your posting asks for ${P}.)`)).toEqual([]);
+    expect(unboundMaterialWords(`Your posting asks for ${P}. " ${C}."`)).toEqual([]);
+    expect(unboundMaterialWords(`Dear ${P} hiring team,`)).toEqual([]);
+    expect(unboundMaterialWords('Thank you for considering my application. Sincerely,')).toEqual([]);
+    expect(unboundMaterialWords('')).toEqual([]);
+    expect(unboundMaterialWords('I led a team of 12.')).toEqual(['led', '12']);
+    expect(unboundMaterialWords('I am an expert.')).toEqual(['am', 'expert']);
+    expect(unboundMaterialWords('I’m applying.')).toEqual(["i'm"]);
+    expect(unboundMaterialWords('The supplied sources do not establish this.')).toEqual(['supplied', 'sources', 'do', 'not', 'establish']);
+  });
+  it('fails closed on any script and on full-width or compatibility forms', () => {
+    expect(unboundMaterialWords('我领导了一个团队')).not.toEqual([]);
+    expect(unboundMaterialWords('Я руководил командой из 12 человек.')).toEqual(expect.arrayContaining(['руководил', '12']));
+    expect(unboundMaterialWords('ｌｅｄ ａ ｔｅａｍ of １２')).toEqual(['led', '12']);
+  });
+  it('only lets posting wording describe the job, never the candidate or a claim', () => {
+    const P = POSTING_REFERENCE_MARK, C = CLAIM_MARK;
+    for (const text of [`My ${P}.`, `I also ${P}.`, `As a ${P}, I would like to apply.`, `I apply with ${P}.`, `I, ${P}, would like to apply.`, `As the ${P}, I would like to apply.`, `With the ${P}, I would like to apply.`, `As your ${P}, I would like to apply.`, `With your ${P}, I would like to apply.`, `${P}.`, `I would like to apply for the role. ${P}.`, `${C} for Example Inc. At ${P}.`, `At ${P}.`]) {
+      expect(unboundMaterialWords(text)).toContain(POSTING_AS_EXPERIENCE);
+    }
+    expect(unboundMaterialWords(`My role at ${P}.`)).toContain('my');
+    expect(unboundMaterialWords(`${C} the ${P}.`)).toContain(POSTING_JOINED_TO_CLAIM);
+    expect(unboundMaterialWords(`${P} I ${C}.`)).toContain(POSTING_JOINED_TO_CLAIM);
+    for (const text of [`${C}, at ${P}.`, `${C}: the ${P}.`, `${C} (the ${P}).`, `${C} — for the ${P}.`, `${C} "the ${P}"`, `Your posting asks for ${P}, and I ${C}.`, `${C} in the U.S. at ${P}.`, `${C} for Example Inc. at ${P}.`]) {
+      expect(unboundMaterialWords(text)).toContain(POSTING_JOINED_TO_CLAIM);
+    }
+    expect(unboundMaterialWords('me\u200ban')).toEqual(['mean']);
+  });
+  it('requires posting references and gap notes in structured output', () => {
+    const schema = materialJsonSchema('cover_letter') as { required: string[]; properties: { paragraphs: { items: { required: string[] } }; gap_notes: { items: { required: string[] } } } };
+    expect(schema.required).toEqual(['kind', 'paragraphs', 'gap_notes']);
+    expect(schema.properties.paragraphs.items.required).toEqual(['id', 'text', 'claims', 'references']);
+    expect(schema.properties.gap_notes.items.required).toEqual(['requirement_quote', 'transferable_evidence']);
+  });
+});
+
+describe('unboundMaterialWords symbols', () => {
+  it('reports symbols and emoji instead of dropping them as separators', () => {
+    expect(unboundMaterialWords('I would like to apply + $ 🚀.')).toEqual(['+', '$', '🚀']);
   });
 });
