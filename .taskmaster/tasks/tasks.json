@@ -652,6 +652,128 @@
           "promoted-from-proposals"
         ],
         "updatedAt": "2026-10-02T04:07:13.380Z"
+      },
+      {
+        "id": 18,
+        "title": "PRD 4: Previewable Prototype Import Without Enabling Work",
+        "description": "Implement idempotent preview and commit of prototype SQLite or JSON job history.",
+        "details": "Target files:\n- packages/cli/src/jobs/importer.ts\n- packages/cli/tests/jobs-import.test.ts\n\nRequirements:\n- Read-only previewPrototypeImport and commitPrototypeImport for prototype SQLite or JSON exports.\n- Map prototype columns (id, url, canonical_url, company, role, status, resume/tex paths, notes, events).\n- Namespace original IDs, map canonical URLs to avoid duplicate jobs.\n- Imported jobs are marked as history; automatic preparation remains disabled.\n- Rerunning import is idempotent and produces no duplicates.",
+        "testStrategy": "npx vitest run packages/cli/tests/jobs-import.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": [],
+        "tags": [
+          "prd",
+          "cli",
+          "import"
+        ],
+        "updatedAt": "2026-10-12T02:02:40.287735+00:00"
+      },
+      {
+        "id": 19,
+        "title": "PRD 5: Candidate Validation and Explicit Preparation Primitives",
+        "description": "Implement candidate preparation mode, validation rules, de-slop integration, and proposal application.",
+        "details": "Target files:\n- packages/core/src/jobs/preparation.ts\n- packages/core/tests/job-preparation.test.ts\n\nRequirements:\n- Candidate preparation mode where machine-generated steps are not human-approved.\n- applyCandidateProposals creates a working candidate copy without modifying human proposals or base resume.\n- Candidate validation disallows fabricated metrics, unsupported citations, or upgraded transferable experience.\n- De-slop execution cleans prose while preserving technical tokens, numbers, and citations.\n- Input snapshot fingerprinting ensuring stale inputs invalidate dependent outputs.",
+        "testStrategy": "npx vitest run packages/core/tests/job-preparation.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "prd",
+          "core",
+          "preparation"
+        ],
+        "updatedAt": "2026-10-12T04:22:23.465630+00:00"
+      },
+      {
+        "id": 20,
+        "title": "PRD 6: Template-Aware LaTeX Rendering and Independent PDF Gate",
+        "description": "Implement LaTeX template profile compilation in isolated temp directory and independent PDF verification.",
+        "details": "Target files:\n- packages/core/src/jobs/template.ts\n- packages/cli/src/jobs/templates.ts\n- packages/cli/src/render/latex-renderer.ts\n- packages/cli/src/render/pdf-verifier.ts\n- packages/cli/tests/latex-render.test.ts\n\nRequirements:\n- LaTeX template profiles with trusted preambles and escaped placeholders.\n- Isolated temp directory compilation with bounded time/output and shell escape disabled.\n- PdfVerifier checks written PDF: page count matches template budget (default 1 page), text coverage matches expected content, and renders preview images.\n- Missing tools block before expensive generation with actionable diagnostics. No silent format switching.",
+        "testStrategy": "npx vitest run packages/cli/tests/latex-render.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "prd",
+          "cli",
+          "latex",
+          "pdf"
+        ],
+        "updatedAt": "2026-10-12T06:55:47.248928+00:00"
+      },
+      {
+        "id": 21,
+        "title": "PRD 7: Snapshots, Revisioned Job Drafts, and Immutable Review",
+        "description": "Implement immutable artifact storage, revisioned job drafts, and approval binding.",
+        "details": "Target files:\n- packages/cli/src/jobs/artifacts.ts\n- packages/cli/src/tailoring/drafts/repository.ts\n- packages/cli/tests/job-artifacts.test.ts\n\nRequirements:\n- Immutable input snapshots under tailoring/jobs/<job-id>/snapshots/.\n- JobDraftRepository managing linked drafts with expected revision CAS.\n- Draft-before-artifact publication order with atomic directory rename and fsync.\n- approveResume binds human approval to exact input and artifact hashes.\n- continueEditing forks a linked draft without overwriting approved versions.",
+        "testStrategy": "npx vitest run packages/cli/tests/job-artifacts.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "prd",
+          "cli",
+          "drafts",
+          "artifacts"
+        ],
+        "updatedAt": "2026-10-12T07:28:15.582407+00:00"
+      },
+      {
+        "id": 22,
+        "title": "PRD 8: Bounded Event-Driven Job Worker and Lifecycle Control",
+        "description": "Implement the single-job worker with atomic claims, stage checkpoints, persistent stop, and crash recovery.",
+        "details": "Target files:\n- packages/cli/src/jobs/preparation.ts\n- packages/cli/src/jobs/worker.ts\n- packages/cli/src/jobs/service.ts\n- packages/cli/tests/jobs-worker.test.ts\n\nRequirements:\n- Worker claims one job at a time per workspace and drains eligible queue then idles.\n- Idle queue produces zero model calls or notifications.\n- Persistent stop halts active execution and prevents subsequent claims.\n- Pause-after-current finishes active job before stopping.\n- Checkpointed stages allow resuming from valid checkpoints after failure or interruption.\n- Model calls bounded with zero default retries per stage.",
+        "testStrategy": "npx vitest run packages/cli/tests/jobs-worker.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "prd",
+          "cli",
+          "worker"
+        ],
+        "updatedAt": "2026-10-12T09:53:46.706674+00:00"
+      },
+      {
+        "id": 23,
+        "title": "PRD 9: Existing-Server API Routes, SSE Stream, and CLI Commands",
+        "description": "Expose REST endpoints on Hono server, jobs events on existing SSE stream, and CLI commands.",
+        "details": "Target files:\n- packages/cli/src/jobs/routes.ts\n- packages/cli/src/commands/jobs.ts\n- packages/cli/src/server.ts\n- packages/cli/src/bin.ts\n- packages/cli/tests/jobs-routes.test.ts\n- packages/cli/tests/jobs-command.test.ts\n\nRequirements:\n- Mount /api/jobs routes on existing Hono app with validation and revision checks.\n- Broadcast jobs events over existing /api/events SSE connection.\n- CLI commands: featherduster jobs add/list/get/prepare/resume/retry/stop/start/import/process.\n- No secondary local web server or socket required.",
+        "testStrategy": "npx vitest run packages/cli/tests/jobs-routes.test.ts",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "prd",
+          "cli",
+          "api",
+          "commands"
+        ],
+        "updatedAt": "2026-10-12T13:10:29.785858+00:00"
+      },
+      {
+        "id": 24,
+        "title": "PRD 10: Jobs UI Views, Detail Canvas, Worker Controls, and Review",
+        "description": "Implement React views for Jobs list, Job detail, worker controls, scoped answers, and resume review.",
+        "details": "Target files:\n- packages/ui/src/views/jobs/JobsView.tsx\n- packages/ui/src/views/jobs/JobDetail.tsx\n- packages/ui/src/views/jobs/WorkerControls.tsx\n- packages/ui/src/views/jobs/JobResumeReview.tsx\n- packages/ui/src/views/jobs/JobAnswers.tsx\n- packages/ui/src/views/jobs/JobIntake.tsx\n- packages/ui/src/App.tsx\n- packages/ui/src/routing.ts\n- packages/ui/tests/jobs-ui.test.tsx\n\nRequirements:\n- Jobs tab in top navigation alongside Tailor and Settings.\n- Jobs list with filters: queued, preparing, needs input, resume ready, applied, archived.\n- Job detail with Posting, Fit, Resume, Answers, Application History tabs.\n- Worker controls: Start automatic preparation, Pause after current, Stop processing.\n- PDF preview, diff, brief, and Approve Resume / Continue Editing actions.",
+        "testStrategy": "npx vitest run packages/ui/tests/jobs-ui.test.tsx",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "tags": [
+          "prd",
+          "ui",
+          "react"
+        ],
+        "updatedAt": "2026-10-10T16:02:10.458303+00:00"
       }
     ],
     "metadata": {

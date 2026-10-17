@@ -25,7 +25,11 @@ packages/
 2. Identify the exact files to create or edit.
 3. Describe concisely what each change should do (function stubs, test cases,
    import changes). Do not write the actual code — that is the builder's job.
-4. Specify the exact `npm test` command or scoped Vitest invocation the builder
-   must run to confirm the work is done.
+4. Specify the exact engineering checks and map each retained delivery criterion
+   to its evidence. Passing commands alone do not establish the user outcome.
 5. Keep the plan tight: smallest change that satisfies the task.
 6. Do not plan refactors outside the task scope.
+7. Read the named existing product references; identify their relevant interaction
+   conventions. Plan for the declared data volume, blocked/ready states, and live
+   load. Preserve the complete contract and explicitly remaining scope; an
+   unavailable live environment cannot be replaced with a fixture success.

@@ -1,5 +1,5 @@
 # sssf.config.yaml — Featherduster ADW agent roster & tier presets.
-# Phases: planner -> builder -> npm test -> fix loop -> git commit -> TM done
+# Phases: planner -> builder -> build/tests -> repairs -> outcome capture/review/gate -> commit -> TM done
 defaults:
   coding_agent: pi
   model: openai-codex/gpt-6-astra
@@ -16,13 +16,14 @@ defaults:
   protected_files:
     - adws/adw_featherduster_config/
     - adws/adw_*.py
+    - adws/adw_modules/
+    - adws/contracts/
+    - adws/tests/
   data_dir: adws/adw_data
   ephemeral_paths:
     - adws/adw_data/
   git_excludes:
     - adws/adw_data/
-    - .taskmaster/
-    - node_modules/
 
 observability:
   db: adws/adw_data/sssf.db
@@ -107,15 +108,53 @@ presets:
         model: openrouter/anthropic/claude-sonnet-5
         thinking: medium
 
+  # Native Antigravity engineering tier. Keep the independent delivery reviewer
+  # on Pi/Astra because Antigravity runs with permission checks skipped.
+  # Native Claude model used by the shared SSSF roster; keep the independent
+  # delivery reviewer on Pi/Astra for a separate provider family.
+  claude:
+    defaults:
+      coding_agent: pi
+      model: anthropic/claude-opus-5-5
+      thinking: medium
+    agents:
+      - name: planner
+        model: anthropic/claude-opus-5-5
+        thinking: high
+      - name: builder
+        model: anthropic/claude-opus-5-5
+        thinking: medium
+      - name: delivery_reviewer
+        model: openai-codex/gpt-6-astra
+        thinking: high
+  agy:
+    defaults:
+      coding_agent: antigravity
+      model: gemini-4-argon-medium
+      thinking: medium
+    agents:
+      - name: planner
+        coding_agent: antigravity
+        model: gemini-4-argon-high
+        thinking: high
+      - name: builder
+        coding_agent: antigravity
+        model: gemini-4-argon-medium
+        thinking: medium
+      - name: delivery_reviewer
+        coding_agent: pi
+        model: openai-codex/gpt-6-astra
+        thinking: high
 agents:
   - name: planner
+    model: openai-codex/gpt-6.1-sol
     thinking: high
     color: "#a78bfa"
     purpose: >
       Read a TaskMaster task (title, description, details, subtasks, testStrategy)
       and produce a concrete implementation plan: which files to touch, what each
-      change does, and a falsifiable acceptance criterion (the exact test command
-      that must go green).
+      change does, and how each retained delivery outcome will be demonstrated.
+      Test commands are engineering evidence, not the whole acceptance criterion.
     capability_profile: read_only
     prompt_engineering:
       system: adws/adw_featherduster_config/prompt_engineering/planner/system.md
@@ -130,11 +169,14 @@ agents:
       - write
 
   - name: builder
+    model: openai-codex/gpt-6.1-sol
+    thinking: medium
     color: "#22d3ee"
     purpose: >
       Implement the plan in the Featherduster TypeScript monorepo (packages/core,
-      packages/cli, packages/ui). Write or edit TypeScript/Vitest files only.
-      Run `npm test` to verify before reporting. Report every changed file.
+      packages/cli, packages/ui) and documentation explicitly required by the plan.
+      Complete every task in the requested checkpoint, build before executable
+      tests, and report every changed file and unmet acceptance criterion.
     capability_profile: code_builder
     prompt_engineering:
       system: adws/adw_featherduster_config/prompt_engineering/builder/system.md
@@ -146,4 +188,22 @@ agents:
       - ls
       - bash
       - edit
+      - write
+
+  - name: delivery_reviewer
+    color: "#f59e0b"
+    purpose: >
+      Independently judge the retained user checkpoint against current code-run
+      evidence and actual rendered browser captures. Report missing, unsupported,
+      or failed criteria; do not implement changes or accept the builder's summary.
+    capability_profile: read_only
+    writes: []
+    prompt_engineering:
+      system: adws/adw_featherduster_config/prompt_engineering/delivery_reviewer/system.md
+      user: adws/adw_featherduster_config/prompt_engineering/delivery_reviewer/user.md
+    tools:
+      - read
+      - grep
+      - find
+      - ls
       - write

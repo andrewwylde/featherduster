@@ -1,0 +1,45 @@
+{
+  "id": "factory-outcome-acceptance",
+  "revision": 1,
+  "scope": "engineering",
+  "interactive": false,
+  "delivery_extent": "checkpoint",
+  "user_checkpoint": "Factory commit, task completion, and run acceptance require current independent outcome evidence as well as passing engineering checks.",
+  "explicitly_remaining_scope": "This factory engineering checkpoint does not complete the proposal UI cleanup or certify recovery of a live career job.",
+  "product_references": [],
+  "scenarios": [
+    {
+      "id": "acceptance-boundaries",
+      "environment": "source",
+      "state": "Green engineering checks with passing, missing, failed, stale, or unsupported outcome review",
+      "data_volume": "Independent criterion/evidence records, actual evidence subprocesses, isolated git repositories, and changed source/served identities",
+      "load": "Serial deterministic regression suite; no live job writes"
+    }
+  ],
+  "evidence_commands": [
+    {
+      "id": "factory-regressions",
+      "kind": "check",
+      "argv": ["{python}", "-m", "unittest", "discover", "-s", "adws/tests", "-v"],
+      "timeout_seconds": 180,
+      "scenario_ids": ["acceptance-boundaries"]
+    }
+  ],
+  "required_criteria": [
+    {
+      "id": "completion-gate",
+      "outcome": "With engineering checks green, the actual ADW refuses commit, TaskMaster completion, and run acceptance when independent outcome review fails or evidence is unavailable; complete current evidence permits acceptance.",
+      "command_ids": ["factory-regressions"]
+    },
+    {
+      "id": "current-evidence",
+      "outcome": "Changed source, evidence, contract, or served identity invalidates prior approval; missing/duplicate criteria, not-run outcomes, open findings, and screenshots without supported review cannot pass.",
+      "command_ids": ["factory-regressions"]
+    },
+    {
+      "id": "retained-scope",
+      "outcome": "Full delivery requirements and repair reports remain available through bounded repairs, and fixture-only engineering scope cannot be declared a live incident without required live/browser evidence.",
+      "command_ids": ["factory-regressions"]
+    }
+  ]
+}

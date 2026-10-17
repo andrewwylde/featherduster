@@ -17,7 +17,16 @@
 ## Task
 
 Implement the work described in `prompt`, following the plan in
-`previous_envelope`. Then run the test command to confirm success.
+`previous_envelope`. Retain the full delivery contract and original plan during
+repairs. Run the engineering checks and demonstrate every required outcome;
+passing tests alone does not confirm delivery. Report any unverified criterion.
+
+The final JSON reports implementation readiness; the workflow independently
+captures and reviews delivery afterward. Finish the assigned implementation and
+engineering verification, and preserve unverified delivery criteria in notes.
+Do not wait for a reviewer tool inside the builder or return a report-only result
+while ordinary implementation remains possible. Final delivery acceptance stays
+with the existing independent outcome gate.
 
 ## Report
 
