@@ -36,24 +36,43 @@ export function compileTemplateResume(template: LatexTemplateProfile, spec: Resu
     if (text) expectedText.push(text);
     return escapeLatex(text);
   };
-  const line = (values: (string | undefined)[]) => values.map(leaf).filter(Boolean).join(' \\textbar{} ');
+  const join = (values: (string | undefined)[], sep: string) => values.map(leaf).filter(Boolean).join(sep);
   const section = (title: string, body: string) => body ? `\\section*{${title}}\n${body}` : '';
+  const list = (items: string[]) => items.length ? `\\begin{itemize}[leftmargin=0.18in,noitemsep,topsep=2pt]\n${items.map(b => `  \\item ${b}`).join('\n')}\n\\end{itemize}` : '';
+  const head = (left: string, right: string) => `\\noindent ${left}${right ? ` \\hfill {\\small ${right}}` : ''}\\par`;
+  const bold = (s: string) => s ? `\\textbf{${s}}` : '';
+  const ital = (s: string) => s ? `\\textit{${s}}` : '';
   const parts: Record<typeof slots[number], string> = {
-    profile: line([spec.profile.name, spec.profile.title, spec.profile.email, spec.profile.phone, spec.profile.location, ...Object.values(spec.profile.links ?? {})]),
+    profile: (() => {
+      const name = leaf(spec.profile.name);
+      const title = leaf(spec.profile.title);
+      const contact = join([spec.profile.email, spec.profile.phone, spec.profile.location, ...Object.values(spec.profile.links ?? {})], ' $|$ ');
+      return `\\begin{center}\n  {\\Huge \\textbf{${name}}}\\\\[2pt]\n  {\\large ${title}}\\\\[2pt]\n  {\\small ${contact}}\n\\end{center}`;
+    })(),
     summary: section('Summary', leaf(spec.summary)),
     experiences: section('Experience', spec.experiences.map(e => {
-      const header = line([e.role, e.company, e.location, e.startDate, e.endDate]);
+      const left = [bold(leaf(e.role)), ital(leaf(e.company))].filter(Boolean).join(' $|$ ');
+      const dates = [leaf(e.startDate), leaf(e.endDate)].filter(Boolean).join(' -- ');
+      const right = [dates, leaf(e.location)].filter(Boolean).join(' $|$ ');
       const bullets = e.bullets.map(b => leaf(b.text)).filter(Boolean);
-      return header + (bullets.length ? `\n\\begin{itemize}\n${bullets.map(b => `\\item ${b}`).join('\n')}\n\\end{itemize}` : '\\par');
-    }).join('\n')),
-    education: section('Education', spec.education.map(e => line([e.degree, e.institution, String(e.year), e.details])).filter(Boolean).join('\\par\n')),
-    skills: section('Skills', spec.skills.map(g => line([g.category, ...g.skills])).filter(Boolean).join('\\par\n')),
+      return head(left, right) + '\n' + list(bullets.map(b => `{\\small ${b}}`));
+    }).join('\n\\vspace{4pt}\n')),
+    education: section('Education', spec.education.map(e => {
+      const left = [bold(leaf(e.degree)), ital(leaf(e.institution))].filter(Boolean).join(' $|$ ');
+      const details = leaf(e.details);
+      return head(left, leaf(String(e.year))) + (details ? `\n{\\small \\textit{${details}}}\\par` : '');
+    }).join('\n\\vspace{3pt}\n')),
+    skills: section('Technical Skills', list(spec.skills.map(g => {
+      const cat = leaf(g.category);
+      const skills = join(g.skills, ', ');
+      return [cat ? `\\textbf{${cat}:}` : '', skills].filter(Boolean).join(' ');
+    }).filter(Boolean))),
   };
   if (!expectedText.length) throw new Error('Resume has no public text');
   return {
     // Preserve extractable ligatures and avoid discretionary word splits. The PDF
     // verifier still requires every expected fragment, with no fuzzy matching.
-    source: `${profile.preamble}\n\\usepackage{lmodern}\n\\input{glyphtounicode}\n\\pdfgentounicode=1\n\\hyphenpenalty=10000\n\\exhyphenpenalty=10000\n\\emergencystretch=\\linewidth\n\\begin{document}\n${profile.body.replace(/\{\{([^{}]*)\}\}/g, (_, key: typeof slots[number]) => parts[key])}\n\\end{document}\n`,
+    source: `${profile.preamble}\n\\usepackage{lmodern}\n\\usepackage{enumitem}\n\\usepackage{titlesec}\n\\titleformat{\\section}{\\vspace{-4pt}\\scshape\\raggedright\\large}{}{0em}{}[\\titlerule\\vspace{-4pt}]\n\\input{glyphtounicode}\n\\pdfgentounicode=1\n\\hyphenpenalty=10000\n\\exhyphenpenalty=10000\n\\emergencystretch=\\linewidth\n\\begin{document}\n${profile.body.replace(/\{\{([^{}]*)\}\}/g, (_, key: typeof slots[number]) => parts[key])}\n\\end{document}\n`,
     expectedText,
   };
 }
