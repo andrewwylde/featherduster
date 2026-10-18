@@ -76,10 +76,13 @@ def _artifact(path: Path, directory: Path) -> dict:
     return {"path": str(resolved), "sha256": file_digest(resolved)}
 
 
-def probe_identity(run, command) -> CurrentIdentity:
+def probe_identity(run, command, directory: Path | None = None) -> CurrentIdentity:
     """Recheck both the served build and authoritative live outcome, independently."""
     argv = [arg.replace("{repo_root}", str(run.repo_root))
             .replace("{python}", __import__("sys").executable) for arg in command.identity_argv]
+    if directory is not None:
+        argv = [arg.replace("{evidence_dir}", str(directory))
+                .replace("{manifest}", str(directory / f"{command.id}.json")) for arg in argv]
     argv[0] = shutil.which(argv[0]) or argv[0]
     result = quality.run_check(run, QualityCheckSpec(name=f"delivery_identity_{command.id}",
         area="backend", operation="test", argv=argv, timeout_seconds=command.timeout_seconds))
@@ -114,7 +117,7 @@ def capture_evidence(run, contract: DeliveryContract) -> dict:
             result = quality.run_check(run, QualityCheckSpec(name=f"delivery_{command.id}",
                 area="backend", operation="test", argv=argv, timeout_seconds=command.timeout_seconds))
             record = {"id": command.id, "kind": command.kind, "passed": result.passed,
-                      "files": [], "capture": None, "errors": []}
+                      "files": [], "capture": None, "errors": [], "evidence_dir": str(directory)}
             try:
                 # Copy logs into this capture's own directory so later checks cannot overwrite them.
                 log = directory / f"{command.id}.log"
@@ -122,7 +125,7 @@ def capture_evidence(run, contract: DeliveryContract) -> dict:
                 record["files"].append(_artifact(log, directory))
                 if command.kind != "check":
                     capture = CaptureManifest.model_validate_json(manifest_path.read_text(encoding="utf-8"))
-                    current = probe_identity(run, command)
+                    current = probe_identity(run, command, directory)
                     if (capture.served_build_identity != current.served_build_identity
                             or capture.outcome_identity != current.outcome_identity):
                         raise ValueError("captured served build/outcome does not match the independent current-state probe")
@@ -213,7 +216,9 @@ def validate_delivery(run, contract: DeliveryContract, bundle: dict, review) -> 
         for command in contract.evidence_commands:
             if command.kind != "check":
                 try:
-                    current = probe_identity(run, command)
+                    record = records.get(command.id, {})
+                    directory = Path(record["evidence_dir"]) if record.get("evidence_dir") else None
+                    current = probe_identity(run, command, directory)
                     captured = records.get(command.id, {}).get("capture") or {}
                     identity_checks.append((command.id,
                         current.served_build_identity == captured.get("served_build_identity")

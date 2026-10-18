@@ -321,6 +321,25 @@ class BrowserEvidenceTests(Fixture):
         self.assertFalse(delivery.acceptance_report(self.contract, bundle, None, bundle["source_sha256"]).passed)
         self.assertFalse(delivery.acceptance_report(self.contract, bundle, verdict(bundle), bundle["source_sha256"]).passed)
 
+    def test_identity_expands_capture_directory_at_capture_and_acceptance(self):
+        self.browser_contract()
+        command = self.contract.evidence_commands[0]
+        command.identity_argv[2] = (
+            "import pathlib,sys,json; "
+            "assert pathlib.Path(sys.argv[3]).is_dir(); "
+            "assert pathlib.Path(sys.argv[4]).parent == pathlib.Path(sys.argv[3]); "
+            "assert pathlib.Path(sys.argv[4]).is_file(); "
+            "print(json.dumps({'served_build_identity':pathlib.Path(sys.argv[1]).read_text(),"
+            "'outcome_identity':pathlib.Path(sys.argv[2]).read_text()}))")
+        command.identity_argv.extend(["{evidence_dir}", "{manifest}"])
+        bundle = self.capture()
+        self.assertTrue(bundle["records"][0]["passed"], bundle)
+        review = verdict(bundle).model_copy(update={"entry_assessment": "Inspect the rendered task and action"})
+        report = delivery.validate_delivery(self.run, self.contract, bundle, review)
+        self.assertTrue(report.passed, report.violations)
+        self.outcome.write_text("regressed", encoding="utf-8")
+        self.assertFalse(delivery.validate_delivery(self.run, self.contract, bundle, review).passed)
+
     def test_served_build_change_after_review_invalidates_acceptance(self):
         self.browser_contract()
         bundle = self.capture()
