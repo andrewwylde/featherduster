@@ -163,6 +163,7 @@ export function describeJobEvent(payload: JobEvent['payload']): string {
     case 'preparation_transition': return preparationEvents[payload.to] ?? 'Preparation status changed';
     case 'application_transition': return `Application marked as ${applicationStates[payload.to] ?? 'changed'}`;
     case 'proposal_review': return `Proposal review saved (revision ${payload.revision})`;
+    case 'resume_finalized': return 'Edited resume finalized';
     case 'resume_review': return 'Resume approved (not an application submission)';
     case 'channel_action': return channelActions[payload.action] ?? 'Application activity recorded';
     case 'import_history': return `Imported from earlier history${payload.original_status ? ` · status ${payload.original_status}` : ''}`;

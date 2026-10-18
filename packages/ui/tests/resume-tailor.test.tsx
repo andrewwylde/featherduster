@@ -49,7 +49,7 @@ it('hydrates full manual content without selecting the first or preferred source
   const changed = vi.fn();
   render(<ResumeTailor initialPayload={payload} preferredResumeId="first" onPayloadChange={changed} />);
   const posting = await screen.findByDisplayValue('Recovered target posting');
-  expect(screen.getByLabelText('Select resume variant')).toHaveValue('second');
+  expect(screen.getByLabelText('Select resume variant')).toHaveValue('second (saved source)');
   fireEvent.change(posting, { target: { value: 'Edited posting' } });
   expect(changed).toHaveBeenLastCalledWith(expect.objectContaining({ selectedResumeId: 'second', profile: expect.objectContaining({ name: 'Recovered editor' }), jobDescription: 'Edited posting' }), undefined);
   cleanup();
@@ -635,13 +635,14 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     const draft = { schema_version: 1 as const, id, workspace_id: 'w', job_id: id, revision: 3, input_snapshot_id: id, parent_artifact_version_id: id, candidate: sampleResumeRecord.spec, proposals: { proposals: [] }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
     vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft });
     const save = vi.spyOn(apiClient, 'saveJobDraft').mockRejectedValue(new ApiError('Draft revision changed', 409));
-    render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} />);
-    await screen.findByRole('button', { name: 'Save job draft' });
+    render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} onBackToRuns={() => {}} />);
+    await screen.findByRole('button', { name: 'Save draft' });
     expect(screen.queryByLabelText('Select resume variant')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Tailoring runs' })).not.toBeInTheDocument();
     expect(screen.queryByText('Deliverables & Exports')).not.toBeInTheDocument();
     const summary = screen.getByDisplayValue(sampleResumeRecord.spec.experiences[0].bullets[0].text);
     fireEvent.change(summary, { target: { value: 'My retained linked edits' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save job draft' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     await screen.findAllByText('Draft revision changed');
     expect(summary).toHaveValue('My retained linked edits');
     expect(save).toHaveBeenCalledWith(id, id, 3, expect.objectContaining({ experiences: expect.arrayContaining([expect.objectContaining({ bullets: expect.arrayContaining([expect.objectContaining({ text: 'My retained linked edits' })]) })]) }));
@@ -664,8 +665,8 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft });
     vi.spyOn(apiClient, 'getJob').mockResolvedValue({ job: { company: 'Synthetic Example', role: 'Platform Engineer' }, posting: null } as unknown as Awaited<ReturnType<typeof apiClient.getJob>>);
     render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} />);
-    expect(await screen.findByText(/Linked to the resume prepared for Synthetic Example — Platform Engineer\./)).toBeInTheDocument();
-    expect(screen.queryByText(/Parent artifact: e5d17ad4/)?.closest('details')).toBeTruthy();
+    expect(await screen.findByText(/Editing the resume for Synthetic Example — Platform Engineer\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Parent artifact:/)).not.toBeInTheDocument();
   });
   it('still opens a linked job draft when the posting cannot be loaded', async () => {
     const id = '11111111-1111-4111-8111-111111111111';
@@ -673,7 +674,7 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft });
     vi.spyOn(apiClient, 'getJob').mockRejectedValue(new Error('Offline'));
     render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} />);
-    expect(await screen.findByRole('button', { name: 'Save job draft' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Save draft' })).toBeInTheDocument();
   });
 
 });

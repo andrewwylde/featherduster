@@ -1,8 +1,9 @@
+import { DraftResumeSpecSchema, CheckJobDraftRequestSchema, FinalizeJobDraftRequestSchema } from '@featherduster/core';
 import { JobExportRequestSchema } from './exports.js';
 import { SaveReviewSchema, ReviewBindingSchema, ContinueReviewSchema, RecoverReviewSchema, CorrectBaseSchema } from './proposal-service.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { JobSchema, ScopedAnswerSchema, ResumeSpecSchema } from '@featherduster/core';
+import { JobSchema, ScopedAnswerSchema } from '@featherduster/core';
 import type { Context, Hono } from 'hono';
 import { JobDraftRepository } from '../tailoring/drafts/repository.js';
 import type { IntakePreview } from './intake.js';
@@ -98,7 +99,11 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     const page = kind === 'pdf' ? undefined : z.coerce.number().int().positive().parse(c.req.param('page'));
     const bytes = r.artifacts.content(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), page);
     c.header('X-Frame-Options', 'SAMEORIGIN');
-    return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': page === undefined ? 'application/pdf' : 'image/png', 'Cache-Control': 'private, no-store' } });
+if (page === undefined && c.req.query('download') === '1') {
+  c.header('Content-Disposition', `attachment; filename="resume-${uuid.parse(c.req.param('versionId'))}.pdf"`);
+}
+
+    return c.body(new Uint8Array(bytes), 200, { 'Content-Type': page === undefined ? 'application/pdf' : 'image/png', 'Cache-Control': 'private, no-store' });
   }));
   app.post('/api/jobs/:id/artifacts/:versionId/approve', handle(async (c, r) => {
     const body = binding.extend({ input_snapshot_id: uuid, input_fingerprint: key }).parse(await c.req.json());
@@ -112,9 +117,19 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     if (draft.job_id !== uuid.parse(c.req.param('id'))) throw new RepositoryError('invalid_relationship', 'Draft belongs to another job');
     return draft;
   };
+app.post('/api/jobs/:id/drafts/:draftId/check', handle(async (c, r) => {
+  const draft = getDraft(c, r), body = CheckJobDraftRequestSchema.parse(await c.req.json());
+  return r.drafts.check(draft.job_id, draft.id, body.candidate);
+}));
+app.post('/api/jobs/:id/drafts/:draftId/finalize', handle(async (c, r) => {
+  const jobId = uuid.parse(c.req.param('id')), draftId = uuid.parse(c.req.param('draftId'));
+  const result = await r.drafts.finalize(jobId, draftId, FinalizeJobDraftRequestSchema.parse(await c.req.json()));
+  r.flushEvents(); return result;
+}, 201));
+
   app.get('/api/jobs/:id/drafts/:draftId', handle((c, r) => ({ draft: getDraft(c, r) })));
   app.put('/api/jobs/:id/drafts/:draftId', handle(async (c, r) => {
-    const body = z.object({ expected_revision: revision, candidate: ResumeSpecSchema }).strict().parse(await c.req.json());
+    const body = z.object({ expected_revision: revision, candidate: DraftResumeSpecSchema }).strict().parse(await c.req.json());
     return { draft: new JobDraftRepository(r.repository).save({ ...getDraft(c, r), candidate: body.candidate }, body.expected_revision) };
   }));
   app.get('/api/jobs/:id/proposals', handle((c, r) => r.proposals.read(uuid.parse(c.req.param('id')))));

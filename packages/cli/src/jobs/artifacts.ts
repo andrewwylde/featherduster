@@ -150,7 +150,32 @@ export class JobArtifactsService {
     });
   }
   /** The review an attempt continued from, or the initial review it generated; its corrections define the effective base. */
-  private attemptReview(attemptId: string | null) {
+publishManualCandidate(request: Parameters<JobsRepository['assertManualPublication']>[0] & {
+  source: Bytes; pdf: Bytes; previews: Bytes[]; validation_report: Bytes; idempotency_key: string;
+}): C.ArtifactVersion {
+  return this.tx(() => {
+    const r = this.repository, { draft, parent } = r.assertManualPublication(request);
+    const input = this.getInputSnapshot(draft.input_snapshot_id);
+    const id = this.uuid(), files = r.database.files, root = files.bundlePath('artifacts', draft.job_id, id);
+    const bundle: Record<string, Bytes> = {};
+    const add = (name: string, bytes: Bytes): C.ImmutableReference => {
+      bundle[name] = bytes; return { id: `${root}/${name}`, fingerprint: fingerprint(bytes) };
+    };
+    const previews = request.previews.map((p, i) => add(`preview-${i}.png`, p));
+    const artifact = { schema_version: 1 as const, id, workspace_id: draft.workspace_id, job_id: draft.job_id,
+      origin: 'manual' as const, attempt_id: parent.attempt_id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint,
+      parent_version_id: parent.id, created_at: this.now(), source: add('source.tex', request.source),
+      pdf: add('resume.pdf', request.pdf), preview: previews[0] ?? null,
+      validation_report: add('validation.json', request.validation_report), validation_result: 'passed' as const };
+    const bytes = canonical(artifactManifest.parse({ schema_version: 1, artifact, draft_id: draft.id, draft_revision: draft.revision, previews }));
+    bundle['manifest.json'] = bytes;
+    const result = C.ArtifactVersionSchema.parse({ ...artifact, version_fingerprint: fingerprint(bytes) });
+    files.writeBundle('artifacts', draft.job_id, id, bundle);
+    return r.publishManualArtifact(result, request, request.idempotency_key);
+  });
+}
+
+  attemptReview(attemptId: string | null) {
     const db = this.repository.database.db;
     const row = attemptId ? (db.prepare('SELECT r.payload FROM attempt_proposal_reviews a JOIN proposal_review_revisions r ON r.id=a.review_id AND r.revision=a.revision WHERE a.attempt_id=?').get(attemptId)
       ?? db.prepare('SELECT r.payload FROM proposal_generations g JOIN proposal_review_revisions r ON r.generation_id=g.id AND r.revision=0 WHERE g.attempt_id=?').get(attemptId)) as { payload: string } | undefined : undefined;

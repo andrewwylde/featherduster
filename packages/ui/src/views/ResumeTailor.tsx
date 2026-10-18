@@ -1,3 +1,7 @@
+import { ResumeVariantPicker } from '../components/ResumeVariantPicker.js';
+import { useJobDraftChecks } from './jobs/useJobDraftChecks.js';
+import { JobDraftActions, type JobLeaveGuard } from './jobs/JobDraftActions.js';
+import type { DraftIssue } from '@featherduster/core';
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Sparkles,
@@ -55,6 +59,7 @@ interface ModularExperience {
 }
 
 interface ResumeTailorProps {
+  onLeaveGuard?: (guard: JobLeaveGuard | null) => void;
   linkedJobDraft?: { jobId: string; draftId: string };
   /** Complete hydrated document; changes explicitly replace the current payload. */
   initialPayload?: ManualDraftPayload;
@@ -72,11 +77,10 @@ interface ResumeTailorProps {
   onBackToRuns?: () => void;
 }
 
-export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete, linkedJobDraft }) => {
+export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete, linkedJobDraft, onLeaveGuard }) => {
   const [jobDraft, setJobDraft] = useState<JobDraft | null>(null);
   const [linkedJobLabel, setLinkedJobLabel] = useState<string | null>(null);
-  const [savingJobDraft, setSavingJobDraft] = useState(false);
-  const savingDraftRef = useRef(false);
+  const [finalizingJobDraft, setFinalizingJobDraft] = useState(false);
   // Remote data state
   const [resumes, setResumes] = useState<ResumeRecord[]>([]);
   const [evidenceList, setEvidenceList] = useState<EvidenceRecord[]>([]);
@@ -95,6 +99,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
   const sourceRef = useRef<ResumeRecord>();
   const initialized = useRef(!!initialPayload);
   const changeField = <K extends keyof ManualDraftPayload>(key: K, value: React.SetStateAction<ManualDraftPayload[K]>) => {
+    if (finalizingJobDraft) return;
     const next = { ...payloadRef.current, [key]: typeof value === 'function' ? (value as (previous: ManualDraftPayload[K]) => ManualDraftPayload[K])(payloadRef.current[key]) : value };
     payloadRef.current = next;
     setPayload(next);
@@ -147,6 +152,28 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
 
   const currentSpec = useMemo(() => manualToSpec(payload), [payload]);
 
+  const jobChecks = useJobDraftChecks(loading ? undefined : linkedJobDraft?.jobId, loading ? undefined : linkedJobDraft?.draftId, currentSpec, finalizingJobDraft);
+const focusJobIssue = (issue: DraftIssue) => {
+  if (issue.path.startsWith('profile.')) setShowProfileEditor(true);
+  if (issue.path.startsWith('education.')) setShowEduEditor(true);
+  if (issue.path.startsWith('skills.')) setShowSkillsEditor(true);
+  if (issue.path.startsWith('experiences.')) setMobilePane('bullets');
+  else setMobilePane('matcher');
+  requestAnimationFrame(() => {
+    const field = Array.from(document.querySelectorAll<HTMLElement>('[data-resume-path]'))
+      .find(element => element.dataset.resumePath === issue.path);
+    field?.focus(); field?.scrollIntoView({ block: 'center' });
+  });
+};
+
+const fieldIssues = (path: string) => jobChecks.issues.filter(i => i.path === path);
+const inlineIssues = (path: string) => fieldIssues(path).length ? <span id={`issue-${path}`} className="block text-sm text-amber-700 dark:text-amber-300">
+  {fieldIssues(path).map((i, n) => <span key={n} className="block">{i.message}</span>)}
+</span> : null;
+
+  const issueProps = (path: string) => ({ 'data-resume-path': path, 'aria-label': ({ name: 'Name', title: 'Professional title', email: 'Email', summary: 'Professional summary', role: 'Role', company: 'Company', startDate: 'Start date', endDate: 'End date', text: 'Resume bullet', category: 'Skill category', skills: 'Skills', degree: 'Degree', institution: 'Institution', year: 'Graduation year', phone: 'Phone', location: 'Location', github: 'GitHub', linkedin: 'LinkedIn' } as Record<string, string>)[path.split('.').at(-1)!] ?? path,
+    'aria-invalid': fieldIssues(path).some(i => i.severity === 'block') || undefined,
+    'aria-describedby': fieldIssues(path).length ? `issue-${path}` : undefined });
   // Deliverables & Exports Drawer State
   const [isExportDrawerOpen, setIsExportDrawerOpen] = useState(false);
 
@@ -226,8 +253,8 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
       setCompiledOutput(res.output);
 
       // Also trigger quick background preflight check
-      setPreflightLoading(true);
-      apiClient
+      if (!linkedJobDraft) setPreflightLoading(true);
+      if (!linkedJobDraft) apiClient
         .runPreflight({ spec: currentSpec })
         .then((pf) => setPreflightStatus(pf))
         .catch(() => setPreflightStatus(null))
@@ -235,7 +262,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
     } catch (err: any) {
       setCompiledOutput(`// Compilation Error:\n${err.message || err}`);
     }
-  }, [currentSpec, profile.name, experiences.length]);
+  }, [currentSpec, profile.name, experiences.length, linkedJobDraft]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -498,7 +525,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
       {/* View Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          {onBackToRuns && (
+          {!linkedJobDraft && onBackToRuns && (
             <button
               type="button"
               onClick={onBackToRuns}
@@ -549,7 +576,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
               {pageBudget.totalLines}/{pageBudget.maxBudget} ({pageBudget.percentage}%)
             </span>
             <button
-              onClick={() => setSqueezeMode((prev) => !prev)}
+              disabled={finalizingJobDraft} onClick={() => setSqueezeMode((prev) => !prev)}
               className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono border transition-all ${
                 squeezeMode
                   ? 'bg-purple-950 text-purple-300 border-purple-500/50'
@@ -564,7 +591,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
           {/* De-Slop Button */}
           <button
             onClick={handleDeSlop}
-            disabled={deslopping}
+            disabled={deslopping || finalizingJobDraft}
             className="px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/30 transition-all inline-flex items-center gap-1.5 shadow-sm disabled:opacity-50"
             title="Run De-Slop cleaner on resume bullets"
           >
@@ -573,7 +600,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
           </button>
 
           {/* Pre-Flight Button */}
-          <button
+          {!linkedJobDraft && <button
             onClick={() => setIsPreflightModalOpen(true)}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all inline-flex items-center gap-1.5 shadow-sm ${
               preflightStatus?.isClean
@@ -598,7 +625,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                 <span>Pre-Flight: Needs Review</span>
               </>
             )}
-          </button>
+          </button>}
 
           {/* Deliverables & Exports Trigger */}
           {!linkedJobDraft && <button
@@ -615,21 +642,16 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
         </div>
       </div>
 
-      {linkedJobDraft && <section className="border rounded p-4 space-y-2">
-        <p>{linkedJobLabel ? `Linked to the resume prepared for ${linkedJobLabel}.` : 'Linked to a prepared job resume.'} Saving is not approval or a newly validated PDF.</p>
-        <details className="text-xs"><summary className="cursor-pointer">Details</summary><p className="break-all">Parent artifact: {jobDraft?.parent_artifact_version_id}</p></details>
-        <button className="min-h-[44px] border rounded px-3" disabled={!jobDraft || savingJobDraft} onClick={async () => {
-          if (!jobDraft || savingDraftRef.current) return;
-          savingDraftRef.current = true; setSavingJobDraft(true);
-          try {
-            const result = await apiClient.saveJobDraft(linkedJobDraft.jobId, linkedJobDraft.draftId, jobDraft.revision, currentSpec);
-            setJobDraft(result.draft); setSaveSuccessMessage('Job draft saved. Return to review; the parent artifact is unchanged.');
-          } catch (e) { setSaveSuccessMessage(e instanceof Error ? e.message : 'Save failed; editor contents retained'); }
-          finally { savingDraftRef.current = false; setSavingJobDraft(false); }
-        }}>Save job draft</button>
-        <button className="min-h-[44px] underline px-3" onClick={onBackToRuns}>Return to job review</button>
-        {saveSuccessMessage && <p role="status">{saveSuccessMessage}</p>}
-      </section>}
+{linkedJobDraft && <p>{linkedJobLabel ? `Editing the resume for ${linkedJobLabel}.` : "Editing this job's resume."} Finalizing does not approve or submit it.</p>}
+{linkedJobDraft && jobDraft && <JobDraftActions
+  draft={jobDraft} candidate={currentSpec} checks={jobChecks} onSaved={setJobDraft}
+  onBack={() => onBackToRuns?.()} onBusy={setFinalizingJobDraft} onFocusIssue={focusJobIssue}
+  onLeaveGuard={onLeaveGuard} onDiscard={candidate => {
+    const next = manualFromSpec(candidate, payloadRef.current.selectedResumeId);
+    payloadRef.current = next; setPayload(next);
+  }} />}
+
+<fieldset disabled={finalizingJobDraft} className="min-w-0 border-0 p-0 m-0 space-y-4">
       {/* Mobile pane selector tablist (< xl) */}
       <div
         role="tablist"
@@ -664,6 +686,12 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
         </button>
       </div>
 
+<label className="block text-sm">Professional summary
+  <textarea {...issueProps("summary")} value={summary} onChange={e => setSummary(e.target.value)}
+    className="mt-2 w-full rounded border border-slate-700 bg-slate-950 p-3 text-white" />
+</label>
+
+{inlineIssues("summary")}
       {/* 2-Column Split-Screen Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
         {/* ========================================================================= */}
@@ -684,19 +712,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                 <Save className="w-3 h-3" /> Save Variant
               </button>
             </div>
-            <select
-              value={selectedResumeId}
-              onChange={(e) => handleSelectResume(e.target.value)}
-              aria-label="Select resume variant"
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-purple-500 font-medium"
-            >
-              {selectedResumeId && !resumes.some(resume => resume.id === selectedResumeId) && <option value={selectedResumeId}>{selectedResumeId} (saved source)</option>}
-              {resumes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.name} ({r.type})
-                </option>
-              ))}
-            </select>
+<ResumeVariantPicker options={resumes} value={selectedResumeId} onSelect={handleSelectResume} />
           </div>}
 
           {/* Target Job Description & Requirement Matcher */}
@@ -806,57 +822,57 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
               <div className="space-y-2.5 pt-2 border-t border-slate-800 animate-fadeIn text-xs">
                 <div>
                   <label className="text-[11px] text-slate-400 font-medium">Full Name</label>
-                  <input
+                  <><input
                     type="text"
-                    value={profile.name}
+                    {...issueProps("profile.name")} value={profile.name}
                     onChange={(e) => setProfile({ ...profile, name: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs mt-0.5"
-                  />
+                  />{inlineIssues("profile.name")}</>
                 </div>
                 <div>
                   <label className="text-[11px] text-slate-400 font-medium">Target Title</label>
-                  <input
+                  <><input
                     type="text"
-                    value={profile.title}
+                    {...issueProps("profile.title")} value={profile.title}
                     onChange={(e) => setProfile({ ...profile, title: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs mt-0.5"
-                  />
+                  />{inlineIssues("profile.title")}</>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[11px] text-slate-400 font-medium">Email</label>
-                    <input
+                    <><input
                       type="text"
-                      value={profile.email}
+                      {...issueProps("profile.email")} value={profile.email}
                       onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs mt-0.5"
-                    />
+                    />{inlineIssues("profile.email")}</>
                   </div>
                   <div>
                     <label className="text-[11px] text-slate-400 font-medium">Phone</label>
-                    <input
+                    <><input
                       type="text"
-                      value={profile.phone || ''}
+                      {...issueProps("profile.phone")} value={profile.phone || ''}
                       onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs mt-0.5"
-                    />
+                    />{inlineIssues("profile.phone")}</>
                   </div>
                 </div>
                 <div>
                   <label className="text-[11px] text-slate-400 font-medium">Location</label>
-                  <input
+                  <><input
                     type="text"
-                    value={profile.location || ''}
+                    {...issueProps("profile.location")} value={profile.location || ''}
                     onChange={(e) => setProfile({ ...profile, location: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs mt-0.5"
-                  />
+                  />{inlineIssues("profile.location")}</>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[11px] text-slate-400 font-medium">GitHub</label>
-                    <input
+                    <><input
                       type="text"
-                      value={profile.links?.github || ''}
+                      {...issueProps("profile.links.github")} value={profile.links?.github || ''}
                       onChange={(e) =>
                         setProfile({
                           ...profile,
@@ -864,13 +880,13 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                         })
                       }
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs mt-0.5"
-                    />
+                    />{inlineIssues("profile.links.github")}</>
                   </div>
                   <div>
                     <label className="text-[11px] text-slate-400 font-medium">LinkedIn</label>
-                    <input
+                    <><input
                       type="text"
-                      value={profile.links?.linkedin || ''}
+                      {...issueProps("profile.links.linkedin")} value={profile.links?.linkedin || ''}
                       onChange={(e) =>
                         setProfile({
                           ...profile,
@@ -878,7 +894,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                         })
                       }
                       className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs mt-0.5"
-                    />
+                    />{inlineIssues("profile.links.linkedin")}</>
                   </div>
                 </div>
               </div>
@@ -906,7 +922,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
 
           {/* Experiences List */}
           <div className="space-y-4">
-            {experiences.map((exp) => (
+            {experiences.map((exp, expIndex) => (
               <div
                 key={exp.id}
                 className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3 shadow-md"
@@ -914,9 +930,9 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                 {/* Experience Header */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <input
+                    <><input
                       type="text"
-                      value={exp.role}
+                      {...issueProps(`experiences.${expIndex}.role`)} value={exp.role}
                       onChange={(e) =>
                         setExperiences((prev) =>
                           prev.map((item) =>
@@ -926,10 +942,10 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                       }
                       placeholder="Role"
                       className="col-span-2 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-bold text-white focus:outline-none focus:border-purple-500"
-                    />
-                    <input
+                    />{inlineIssues(`experiences.${expIndex}.role`)}</>
+                    <><input
                       type="text"
-                      value={exp.company}
+                      {...issueProps(`experiences.${expIndex}.company`)} value={exp.company}
                       onChange={(e) =>
                         setExperiences((prev) =>
                           prev.map((item) =>
@@ -939,10 +955,10 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                       }
                       placeholder="Company"
                       className="col-span-2 px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs font-semibold text-purple-300 focus:outline-none focus:border-purple-500"
-                    />
-                    <input
+                    />{inlineIssues(`experiences.${expIndex}.company`)}</>
+                    <><input
                       type="text"
-                      value={exp.startDate}
+                      {...issueProps(`experiences.${expIndex}.startDate`)} value={exp.startDate}
                       onChange={(e) =>
                         setExperiences((prev) =>
                           prev.map((item) =>
@@ -952,10 +968,10 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                       }
                       placeholder="Start Date"
                       className="px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-300 focus:outline-none focus:border-purple-500"
-                    />
-                    <input
+                    />{inlineIssues(`experiences.${expIndex}.startDate`)}</>
+                    <><input
                       type="text"
-                      value={exp.endDate}
+                      {...issueProps(`experiences.${expIndex}.endDate`)} value={exp.endDate}
                       onChange={(e) =>
                         setExperiences((prev) =>
                           prev.map((item) =>
@@ -965,10 +981,10 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                       }
                       placeholder="End Date"
                       className="px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-300 focus:outline-none focus:border-purple-500"
-                    />
-                    <input
+                    />{inlineIssues(`experiences.${expIndex}.endDate`)}</>
+                    <><input
                       type="text"
-                      value={exp.location || ''}
+                      {...issueProps(`experiences.${expIndex}.location`)} value={exp.location || ''}
                       onChange={(e) =>
                         setExperiences((prev) =>
                           prev.map((item) =>
@@ -978,7 +994,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                       }
                       placeholder="Location"
                       className="col-span-2 px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-slate-300 focus:outline-none focus:border-purple-500"
-                    />
+                    />{inlineIssues(`experiences.${expIndex}.location`)}</>
                   </div>
 
                   <button
@@ -1020,14 +1036,14 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                           />
 
                           <div className="flex-1 space-y-1.5">
-                            <textarea
+                            <><textarea
                               rows={2}
-                              value={bullet.text}
+                              {...issueProps(`experiences.${expIndex}.bullets.${exp.bullets.filter(b => b.included).findIndex(b => b.id === bullet.id)}.text`)} value={bullet.text}
                               onChange={(e) =>
                                 handleUpdateBulletText(exp.id, bullet.id, e.target.value)
                               }
                               className="w-full p-2 bg-transparent text-xs text-slate-200 focus:bg-slate-950 focus:border-purple-500 border border-transparent rounded-lg leading-relaxed focus:outline-none resize-none"
-                            />
+                            />{inlineIssues(`experiences.${expIndex}.bullets.${exp.bullets.filter(b => b.included).findIndex(b => b.id === bullet.id)}.text`)}</>
 
                             {/* Bullet Badges & Citations */}
                             <div className="flex items-center gap-1.5 flex-wrap">
@@ -1115,9 +1131,9 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                   {skills.map((group, gIdx) => (
                     <div key={gIdx} className="space-y-1 text-xs">
                       <div className="flex items-center justify-between">
-                        <input
+                        <><input
                           type="text"
-                          value={group.category}
+                          {...issueProps(`skills.${gIdx}.category`)} value={group.category}
                           onChange={(e) => {
                             const val = e.target.value;
                             setSkills((prev) =>
@@ -1127,7 +1143,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                             );
                           }}
                           className="font-semibold text-slate-200 bg-transparent border-b border-slate-700 px-1 py-0.5"
-                        />
+                        />{inlineIssues(`skills.${gIdx}.category`)}</>
                         <button
                           onClick={() =>
                             setSkills((prev) => prev.filter((_, idx) => idx !== gIdx))
@@ -1137,9 +1153,9 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                      <input
+                      <><input
                         type="text"
-                        value={group.skills.join(', ')}
+                        {...issueProps(`skills.${gIdx}.skills`)} value={group.skills.join(', ')}
                         onChange={(e) => {
                           const list = e.target.value
                             .split(',')
@@ -1152,7 +1168,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                           );
                         }}
                         className="w-full px-2.5 py-1 bg-slate-950 border border-slate-800 rounded-lg text-slate-300 text-xs"
-                      />
+                      />{inlineIssues(`skills.${gIdx}.skills`)}</>
                     </div>
                   ))}
                   <button
@@ -1195,9 +1211,9 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                       className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2 text-xs"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <input
+                        <><input
                           type="text"
-                          value={edu.degree}
+                          {...issueProps(`education.${eIdx}.degree`)} value={edu.degree}
                           onChange={(e) => {
                             const val = e.target.value;
                             setEducation((prev) =>
@@ -1208,7 +1224,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                           }}
                           placeholder="Degree"
                           className="w-full px-2 py-1 bg-slate-900 border border-slate-800 rounded text-slate-200 font-medium"
-                        />
+                        />{inlineIssues(`education.${eIdx}.degree`)}</>
                         <button
                           onClick={() =>
                             setEducation((prev) => prev.filter((_, idx) => idx !== eIdx))
@@ -1219,9 +1235,9 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                         </button>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
-                        <input
+                        <><input
                           type="text"
-                          value={edu.institution}
+                          {...issueProps(`education.${eIdx}.institution`)} value={edu.institution}
                           onChange={(e) => {
                             const val = e.target.value;
                             setEducation((prev) =>
@@ -1232,10 +1248,10 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                           }}
                           placeholder="Institution"
                           className="col-span-2 px-2 py-1 bg-slate-900 border border-slate-800 rounded text-slate-300"
-                        />
-                        <input
+                        />{inlineIssues(`education.${eIdx}.institution`)}</>
+                        <><input
                           type="text"
-                          value={edu.year}
+                          {...issueProps(`education.${eIdx}.year`)} value={edu.year}
                           onChange={(e) => {
                             const val = e.target.value;
                             setEducation((prev) =>
@@ -1246,7 +1262,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
                           }}
                           placeholder="Year"
                           className="px-2 py-1 bg-slate-900 border border-slate-800 rounded text-slate-300"
-                        />
+                        />{inlineIssues(`education.${eIdx}.year`)}</>
                       </div>
                     </div>
                   ))}
@@ -1273,6 +1289,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
       </div>
 
       {/* Slide-Over Deliverables & Exports Drawer */}
+      </fieldset>
       <ExportDrawer
         isOpen={!linkedJobDraft && isExportDrawerOpen}
         onClose={() => setIsExportDrawerOpen(false)}

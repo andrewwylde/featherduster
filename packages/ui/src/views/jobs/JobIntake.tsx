@@ -11,7 +11,7 @@ export function JobIntake({
   onSaved: () => void;
   fallback?: { id: string; revision: number };
 }) {
-  const [mode, setMode] = useState<'urls' | 'text'>('text');
+  const [mode, setMode] = useState<'urls' | 'text'>(() => fallback ? 'text' : 'urls');
   const [input, setInput] = useState('');
   const [details, setDetails] = useState({ company: '', role: '', notes: '', context_url: '' });
   const [preview, setPreview] = useState<IntakePreview | null>(null);
@@ -75,6 +75,7 @@ export function JobIntake({
           <div className="flex items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-slate-800/80">
             <button
               type="button"
+              aria-pressed={mode === 'urls'}
               className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                 mode === 'urls'
                   ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'
@@ -91,6 +92,7 @@ export function JobIntake({
             </button>
             <button
               type="button"
+              aria-pressed={mode === 'text'}
               className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                 mode === 'text'
                   ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-900 dark:text-white'

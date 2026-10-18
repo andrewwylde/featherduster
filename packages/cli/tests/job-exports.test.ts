@@ -1,3 +1,5 @@
+import { openJobsDatabase } from '../src/jobs/database.js';
+import { JobsRepository } from '../src/jobs/repository.js';
 import { afterEach, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -148,4 +150,131 @@ it('one damaged release cannot hide a separate intact release', async () => {
   fs.writeFileSync(path.join(f.root, first.files[0].reference.id), 'damaged');
   expect(f.runtime.exports.list(f.job.id).find(r => r.id === first.id)?.unavailable_reason).toMatch(/missing or changed/);
   expect(f.runtime.exports.content(f.job.id, second.id, 'resume.pdf').bytes.toString()).toBe('synthetic test PDF');
+});
+async function editFixture() {
+  const f = await fixture();
+  const draft = f.runtime.artifacts.continueEditing({ job_id: f.job.id,
+    expected_job_revision: f.runtime.repository.getJob(f.job.id).revision,
+    artifact_version_id: f.artifact.id, artifact_fingerprint: f.artifact.version_fingerprint, idempotency_key: 'edit-job' });
+  f.run.mockClear(); f.deps.renderer.renderPdf.mockClear();
+  return { ...f, draft };
+}
+it('saves empty required text, checks reactively, then finalizes only the corrected version', async () => {
+  const f = await editFixture();
+  const candidate = structuredClone(f.draft.candidate); candidate.profile.name = '';
+  const saved = await f.app.request(`/api/jobs/${f.job.id}/drafts/${f.draft.id}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expected_revision: f.draft.revision, candidate }),
+  });
+  expect(saved.status).toBe(200);
+  expect(f.deps.renderer.renderPdf).not.toHaveBeenCalled();
+  const blocked = await f.runtime.drafts.check(f.job.id, f.draft.id, candidate);
+  expect(blocked.status).toBe('blocked');
+  candidate.profile.name = 'Edited Name';
+  const checked = await f.runtime.drafts.check(f.job.id, f.draft.id, candidate);
+  expect(checked.status).toBe('ready');
+  const latest = f.runtime.repository.getLatestDraft(f.draft.id);
+  const next = f.runtime.repository.saveDraft({ ...latest, candidate }, latest.revision);
+  const request = { expected_job_revision: checked.job_revision, expected_draft_revision: next.revision,
+    binding: checked.binding, idempotency_key: 'finish-edits' };
+  const first = await f.runtime.drafts.finalize(f.job.id, next.id, request);
+  const replay = await f.runtime.drafts.finalize(f.job.id, next.id, request);
+  expect(first.artifact.id).toBe(replay.artifact.id);
+  const review = f.runtime.artifacts.review(f.job.id, first.artifact.id);
+  expect(review.draft.candidate.profile.name).toBe('Edited Name');
+  expect(review.working_draft).toBeNull();
+  expect(f.runtime.exports.files(f.job.id, { artifact_id: first.artifact.id,
+    artifact_fingerprint: first.artifact.version_fingerprint, dossier: false }).files[0].name).toBe('resume.pdf');
+  expect(f.run).not.toHaveBeenCalled();
+  expect(f.runtime.repository.listEvents(f.job.id).some(e => e.payload.kind === 'resume_review')).toBe(false);
+});
+it('invalidates a passing check when privacy changes and retains the prior PDF', async () => {
+  const f = await editFixture(), checked = await f.runtime.drafts.check(f.job.id, f.draft.id, f.draft.candidate);
+  f.privacy({ banned_keywords: ['Synthetic'], strip_patterns: [], replacements: [] });
+  await expect(f.runtime.drafts.finalize(f.job.id, f.draft.id, {
+    expected_job_revision: checked.job_revision, expected_draft_revision: f.draft.revision,
+    binding: checked.binding, idempotency_key: 'changed-privacy',
+  })).rejects.toThrow();
+  expect(f.runtime.repository.getJob(f.job.id).artifact_version_ids).toEqual([f.artifact.id]);
+});
+
+async function checkedFixture() {
+  const f = await editFixture();
+  const checked = await f.runtime.drafts.check(f.job.id, f.draft.id, f.draft.candidate);
+  const request = { expected_job_revision: checked.job_revision, expected_draft_revision: f.draft.revision,
+    binding: checked.binding, idempotency_key: 'finalize-once' };
+  return { ...f, checked, request };
+}
+it('concurrent identical finalizations publish once and changed intent is rejected', async () => {
+  const f = await checkedFixture();
+  const [a, b] = await Promise.all([
+    f.runtime.drafts.finalize(f.job.id, f.draft.id, f.request),
+    f.runtime.drafts.finalize(f.job.id, f.draft.id, f.request),
+  ]);
+  expect(a.artifact.id).toBe(b.artifact.id);
+  expect(f.runtime.repository.getJob(f.job.id).artifact_version_ids).toHaveLength(2);
+  await expect(f.runtime.drafts.finalize(f.job.id, f.draft.id, { ...f.request,
+    binding: { ...f.request.binding, candidate_fingerprint: 'different' },
+  })).rejects.toMatchObject({ code: 'idempotency_conflict' });
+});
+it('a save from another database connection fences the checked revision', async () => {
+  const f = await checkedFixture(), db = openJobsDatabase(f.root);
+  try {
+    const other = new JobsRepository(db);
+    other.saveDraft({ ...f.draft, candidate: { ...f.draft.candidate, summary: 'New draft' } }, f.draft.revision);
+    await expect(f.runtime.drafts.finalize(f.job.id, f.draft.id, f.request)).rejects.toMatchObject({ code: 'revision_conflict' });
+    expect(f.runtime.repository.getJob(f.job.id).artifact_version_ids).toEqual([f.artifact.id]);
+  } finally { db.close(); }
+});
+it('render outages preserve drafts and are retryable', async () => {
+  const f = await editFixture();
+  f.deps.renderer.renderPdf.mockRejectedValueOnce(Error('compiler failed'));
+  const result = await f.runtime.drafts.check(f.job.id, f.draft.id, f.draft.candidate);
+  expect(result.status).toBe('unavailable');
+  expect(f.runtime.repository.getLatestDraft(f.draft.id)).toEqual(f.draft);
+  expect((await f.runtime.drafts.check(f.job.id, f.draft.id, f.draft.candidate)).status).toBe('ready');
+});
+it('a failed publication preserves the prior artifact and a retry can complete', async () => {
+  const f = await checkedFixture();
+  const write = vi.spyOn(f.runtime.repository.database.files, 'writeBundle').mockImplementationOnce(() => { throw Error('disk full'); });
+  await expect(f.runtime.drafts.finalize(f.job.id, f.draft.id, f.request)).rejects.toThrow('disk full');
+  expect(f.runtime.repository.getJob(f.job.id).artifact_version_ids).toEqual([f.artifact.id]);
+  expect(f.runtime.repository.getLatestDraft(f.draft.id)).toEqual(f.draft);
+  write.mockRestore();
+  const result = await f.runtime.drafts.finalize(f.job.id, f.draft.id, f.request);
+  expect(result.artifact.parent_version_id).toBe(f.artifact.id);
+});
+
+it('downloads the previous PDF despite pending edits without creating a release', async () => {
+  const f = await editFixture();
+  f.runtime.repository.saveDraft({ ...f.draft, candidate: { ...f.draft.candidate, summary: 'Pending edit' } }, f.draft.revision);
+  const response = await f.app.request(`/api/jobs/${f.job.id}/artifacts/${f.artifact.id}/pdf?download=1`);
+  expect(response.status).toBe(200);
+  expect(response.headers.get('Content-Disposition')).toContain(`resume-${f.artifact.id}.pdf`);
+  expect(await response.text()).toBe('synthetic test PDF');
+  expect(f.runtime.exports.list(f.job.id)).toEqual([]);
+});
+it.each(['privacy', 'evidence'] as const)('rejects a check when %s changes during rendering', async kind => {
+  const f = await editFixture();
+  const rendered = await f.deps.renderer.renderPdf();
+  let release!: (value: typeof rendered) => void;
+  f.deps.renderer.renderPdf.mockImplementationOnce(() => new Promise(resolve => { release = resolve; }));
+  const checking = f.runtime.drafts.check(f.job.id, f.draft.id, f.draft.candidate);
+  const rejected = expect(checking).rejects.toMatchObject({ code: 'ineligible' });
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+  if (kind === 'privacy') f.privacy({ banned_keywords: ['Private'], strip_patterns: [], replacements: [] });
+  else f.evidence.add({ ...f.evidence.getAll()[0].entry, summary: 'A newly corrected source' });
+  release(rendered); await rejected;
+  expect(f.runtime.repository.getLatestDraft(f.draft.id)).toEqual(f.draft);
+  expect(f.runtime.repository.getJob(f.job.id).artifact_version_ids).toEqual([f.artifact.id]);
+});
+it('uses the durable finalization receipt after reopening the runtime', async () => {
+  const f = await checkedFixture();
+  const first = await f.runtime.drafts.finalize(f.job.id, f.draft.id, f.request);
+  await f.runtime.dispose();
+  const reopened = createJobsRuntime(f.root, f.deps);
+  try {
+    expect((await reopened.drafts.finalize(f.job.id, f.draft.id, f.request)).artifact.id).toBe(first.artifact.id);
+    expect(reopened.repository.getJob(f.job.id).artifact_version_ids).toHaveLength(2);
+  } finally { await reopened.dispose(); }
 });

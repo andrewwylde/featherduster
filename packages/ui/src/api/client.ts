@@ -1,3 +1,4 @@
+import type { JobDraftCheck, FinalizeJobDraftRequest } from '@featherduster/core';
 import type { CorpusView, CorpusWriteRequest, CorpusPreviewResponse, CorpusUpdate, MutationReceipt, ProposalBinding, ProposalSaveRequest, ProposalContinueRequest, ProposalRecoverRequest, ProposalReadResponse, ProposalSaveResponse, ProposalAdmissionResponse, ProposalReviewRevision, ProposalReviewSummary, ProposalBaseCorrectionRequest, ProposalBaseCorrectionResponse, BaseCorrection } from '@featherduster/core';
 import type { Job, PostingSnapshot, Attempt, ArtifactVersion, JobEvent, ScopedAnswer, WorkerControl, JobDraft, InputSnapshot, ResumeReview } from '@featherduster/core';
 import type {
@@ -379,6 +380,13 @@ export class ApiClient {
   approveJobResume(id: string, version: string, body: ReviewBinding & { input_snapshot_id: string; input_fingerprint: string }) { return this.fetchJson<{ review: ResumeReview }>(`/api/jobs/${id}/artifacts/${version}/approve`, this.jsonRequest('POST', body)); }
   editJobResume(id: string, version: string, body: ReviewBinding) { return this.fetchJson<{ draft: JobDraft }>(`/api/jobs/${id}/artifacts/${version}/continue-editing`, this.jsonRequest('POST', body)); }
   getJobDraft(id: string, draft: string) { return this.fetchJson<{ draft: JobDraft }>(`/api/jobs/${id}/drafts/${draft}`); }
+checkJobDraft(id: string, draft: string, candidate: ResumeSpec) {
+  return this.fetchJson<JobDraftCheck>(`/api/jobs/${id}/drafts/${draft}/check`, this.jsonRequest('POST', { candidate }), 75000);
+}
+finalizeJobDraft(id: string, draft: string, body: FinalizeJobDraftRequest) {
+  return this.fetchJson<{ artifact: ArtifactVersion }>(`/api/jobs/${id}/drafts/${draft}/finalize`, this.jsonRequest('POST', body), 135000);
+}
+
   saveJobDraft(id: string, draft: string, expected_revision: number, candidate: ResumeSpec) { return this.fetchJson<{ draft: JobDraft }>(`/api/jobs/${id}/drafts/${draft}`, this.jsonRequest('PUT', { expected_revision, candidate })); }
   listTailoringDrafts(): Promise<DraftListResponse> { return this.fetchJson('/api/tailoring-drafts'); }
   getTailoringDraft(id: string): Promise<DraftEnvelope> { return this.fetchJson(`/api/tailoring-drafts/${encodeURIComponent(id)}`); }
@@ -400,12 +408,12 @@ export class ApiClient {
     this.baseUrl = baseUrl;
   }
 
-  private async fetchJson<T>(endpoint: string, init?: RequestInit): Promise<T> {
+  private async fetchJson<T>(endpoint: string, init?: RequestInit, timeoutMs = 15000): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
       controller.abort(new RequestTimeoutError(endpoint));
-    }, 15000);
+    }, timeoutMs);
     if (init?.signal) {
       init.signal.addEventListener('abort', () => controller.abort(init.signal?.reason));
     }

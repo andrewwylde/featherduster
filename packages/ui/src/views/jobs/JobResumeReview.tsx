@@ -1,14 +1,11 @@
+import { JobResumeDetails } from './JobResumeDetails.js';
+import { describeJobEvent } from './job-utils.js';
 import { JobExports } from './JobExports.js';
 import { JobProposalReview } from './JobProposalReview.js';
 import { useEffect, useRef, useState } from 'react';
 import {
-  FileCheck,
-  CheckCircle2,
-  Edit3,
   FileText,
-  AlertTriangle,
   Download,
-  RefreshCw,
   GitCompare,
   ShieldCheck,
   Sparkles,
@@ -18,7 +15,7 @@ import { apiClient, ApiError, type JobReview } from '../../api/client.js';
 import { useIntentKey } from '../../hooks/useJobsData.js';
 import { BriefMarkdown } from '../tailoring/steps/BriefStep.js';
 import { wordDiff } from '../tailoring/wordDiff.js';
-import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
+import { cardClass, inputClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 
 export function JobResumeReview({
   job,
@@ -126,177 +123,22 @@ export function JobResumeReview({
   const isApproved = Boolean(approved) || (!!displayedReview && approvedHere === displayedReview.artifact.id);
   useEffect(() => { if (approvedHere) approvalStatus.current?.focus(); }, [approvedHere]);
 
-  if (!artifacts.length) {
-    return (
-      <><JobProposalReview job={job} onSaved={onSaved} /><div className={`${cardClass} p-8 text-center text-xs text-slate-500 dark:text-slate-400 space-y-2`}>
-        <FileText className="h-8 w-8 mx-auto text-slate-400" />
-        <p>No resume artifact yet. Resolve proposals or inspect Posting setup first.</p>
-      </div></>
-    );
-  }
+const downloadCurrent = async () => {
+  if (!displayedReview || pending.current) return;
+  pending.current = true; setBusy(true); setError('');
+  try {
+    const selection = { artifact_id: displayedReview.artifact.id,
+      artifact_fingerprint: displayedReview.artifact.version_fingerprint, dossier: false };
+    const response = await fetch(`/api/jobs/${job.id}/exports/current/resume.pdf?selection=${encodeURIComponent(JSON.stringify(selection))}&download=1`);
+    if (!response.ok) { const body = await response.json(); throw Error(body.error ?? 'Download failed. Retry.'); }
+    const blob = await response.blob(), href = URL.createObjectURL(blob), link = document.createElement('a');
+    link.href = href; link.download = 'resume.pdf'; link.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  } catch (e) { setError(e instanceof Error ? e.message : 'Download failed. Retry.'); }
+  finally { pending.current = false; setBusy(false); }
+};
 
-  return (
-    <section className="space-y-6 min-w-0">
-      {job.preparation_state !== 'resume_ready' ? <JobProposalReview job={job} onSaved={onSaved} /> : <details><summary>Earlier corrections</summary><JobProposalReview job={job} onSaved={onSaved} /></details>}
-      {pendingEdits && workingDraft && <section className={`${cardClass} p-5 space-y-3`}>
-        <h2 className="font-semibold">Current working resume — edits pending checks</h2>
-        <p>The PDF below is the last validated version, not these edits. Editing does not approve or publish them.</p>
-        <button className={primaryButton} onClick={() => navigate(`/tailor/canvas/jobs/${job.id}/${workingDraft.id}`)}>Return to working resume</button>
-        <pre className="whitespace-pre-wrap break-words text-sm">{compileMarkdownResume(workingDraft.candidate)}</pre>
-      </section>}
-      {job.recovery?.kind === 'stale_inputs' && <p role="status">Starting inputs changed. This PDF belongs to the previous inputs; it is not a newly checked correction.</p>}
-      {/* Top Review Controls Card */}
-      <div className={`${cardClass} p-5 space-y-4`}>
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="space-y-1">
-            <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-              <FileCheck className="h-5 w-5 text-vermilion-500" />
-              {pendingEdits || job.recovery?.kind === 'stale_inputs' ? 'Last validated resume' : selected !== latestArtifact ? 'Historical resume' : 'Current resume'}
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Review the saved PDF. Validation, human approval and submitting an application are separate actions.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <details><summary>Historical versions</summary><label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2">
-              Artifact version{' '}
-              <select
-                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-vermilion-500"
-                value={selected}
-                disabled={busy}
-                aria-label="Artifact version"
-                onChange={(e) => setSelected(e.target.value)}
-              >
-                {artifacts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {new Date(a.created_at).toLocaleString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}{' '}
-                    ({a.id.slice(0, 8)})
-                  </option>
-                ))}
-              </select>
-            </label></details>
-
-            <button
-              className="text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 underline p-1 min-h-[44px] sm:min-h-0"
-              disabled={busy}
-              onClick={() => {
-                onSaved();
-                setReload((n) => n + 1);
-              }}
-            >
-              Reload review
-            </button>
-          </div>
-        </div>
-
-        {error && (
-          <div
-            role="alert"
-            className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300"
-          >
-            {error}
-          </div>
-        )}
-
-        {!displayedReview && !error && (
-          <div className="flex items-center gap-2 text-xs text-slate-500 py-4">
-            <RefreshCw className="h-4 w-4 animate-spin text-vermilion-500" />
-            <span>Loading verified review…</span>
-          </div>
-        )}
-
-        {displayedReview && (
-          <>
-            <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800/80 text-xs">
-              <p className="text-slate-700 dark:text-slate-300">
-                Validation: {displayedReview.artifact.validation_result}. Human approval:{' '}
-                {approved ? `Approved ${approved.created_at}` : 'Not approved for this version'}.
-              </p>
-
-              <span
-                className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
-                  displayedReview.artifact.validation_result === 'passed'
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                    : 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                }`}
-              >
-                {displayedReview.artifact.validation_result === 'passed' ? (
-                  <CheckCircle2 className="h-3 w-3" />
-                ) : (
-                  <AlertTriangle className="h-3 w-3" />
-                )}
-                {displayedReview.artifact.validation_result}
-              </span>
-
-              {approved && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
-                  <ShieldCheck className="h-3 w-3" />
-                  Approved
-                </span>
-              )}
-            </div>
-
-            <JobExports job={job} artifact={displayedReview.artifact} blocked={job.recovery?.kind === 'stale_inputs' ? 'The job details changed after this resume was prepared. Prepare it again with the current details; saved releases remain below.' : pendingEdits || selected !== latestArtifact} />
-
-            {/* Main Action Buttons */}
-            <div className="flex flex-wrap items-center gap-3 pt-2">
-              {/* Persistent live region: filled after approval and focused so focus never drops to the body. */}
-              <span ref={approvalStatus} role="status" aria-label="Approval" tabIndex={-1} className="rounded-desk focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
-                {isApproved && (
-                  <span className="inline-flex items-center gap-1.5 rounded-desk border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    Approved for this version
-                  </span>
-                )}
-              </span>
-              {!isApproved && (
-                <button
-                  className={`${primaryButton} text-xs font-semibold`}
-                  disabled={
-                    busy ||
-                    conflict ||
-                    pendingEdits ||
-                    job.recovery?.kind === 'stale_inputs' ||
-                    selected !== latestArtifact ||
-                    job.revision !== revision ||
-                    displayedReview.artifact.validation_result !== 'passed' ||
-                    !displayedReview.artifact.pdf
-                  }
-                  onClick={() => void act(false)}
-                >
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  Approve Resume
-                </button>
-              )}
-
-              <button
-                className={`${secondaryButton} text-xs font-semibold`}
-                disabled={busy || conflict || job.revision !== revision}
-                onClick={() => workingDraft ? navigate(`/tailor/canvas/jobs/${job.id}/${workingDraft.id}`) : void act(true)}
-              >
-                <Edit3 className="h-3.5 w-3.5" />
-                Continue Editing
-              </button>
-            </div>
-
-            {job.revision !== revision && (
-              <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-                Job changed. Reload review before taking action.
-              </p>
-            )}
-          </>
-        )}
-      </div>
-
-      {displayedReview && (
-        <div className="space-y-6">
-          {/* PDF Viewer & Page Previews */}
+const preview = displayedReview && (<>
           <div className={`${cardClass} p-5 space-y-3`}>
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-slate-900 dark:text-white flex items-center gap-2">
@@ -348,20 +190,9 @@ export function JobResumeReview({
             )}
           </div>
 
-          {/* Validation Diagnostics Accordion */}
-          <details className={`${cardClass} p-4 text-xs group`}>
-            <summary className="font-semibold text-slate-900 dark:text-white cursor-pointer select-none flex items-center justify-between">
-              <span>Validation diagnostics</span>
-              <span className="text-slate-400 text-[11px] group-open:rotate-180 transition-transform">
-                ▼
-              </span>
-            </summary>
-            <pre className="mt-3 whitespace-pre-wrap break-words font-mono text-[11px] bg-slate-50 dark:bg-slate-950 p-4 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200">
-              {JSON.stringify(displayedReview.validation_report, null, 2)}
-            </pre>
-          </details>
 
-          <details><summary>Comparison, evidence and preparation history</summary>
+</>);
+const comparison = displayedReview && (<>
           {/* Base to Candidate Diff */}
           <div className={`${cardClass} p-5 space-y-3`}>
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
@@ -443,9 +274,58 @@ export function JobResumeReview({
               <p className="text-xs text-slate-500">No brief available.</p>
             )}
           </div>
-          </details>
-        </div>
-      )}
-    </section>
-  );
+
+</>);
+const previous = pendingEdits || job.recovery?.kind === 'stale_inputs';
+const historical = selected !== latestArtifact;
+const unavailable = !displayedReview;
+const checksContent = displayedReview ? <section className="space-y-3">
+  <p>Validation: {displayedReview.artifact.validation_result}. Human approval: {isApproved ? 'Approved for this version' : 'Not approved for this version'}.</p>
+  <span ref={approvalStatus} tabIndex={-1} role="status" aria-label="Approval">{isApproved ? 'Approved for this version' : ''}</span>
+  {!isApproved && <button disabled={busy || conflict || pendingEdits || job.recovery?.kind === 'stale_inputs'
+    || historical || job.revision !== revision || displayedReview.artifact.validation_result !== 'passed' || !displayedReview.artifact.pdf}
+    onClick={() => void act(false)}>Approve Resume</button>}
+  <pre className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(displayedReview.validation_report, null, 2)}</pre>
+</section> : <p>No generated resume checks yet.</p>;
+return <section className="space-y-4 min-w-0">
+  <div><h2 className="text-lg font-semibold">{historical ? 'Historical resume' : previous ? 'Previous finalized resume' : 'Resume'}</h2></div>
+  <button disabled={busy} onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button>
+  {error && <div role="alert"><p>{error}</p><button onClick={() => { onSaved(); setReload(n => n + 1); }}>Retry</button></div>}
+  <JobResumeDetails actions={<>
+    {displayedReview && <button className={primaryButton} disabled={busy || conflict || job.revision !== revision || historical}
+      onClick={() => workingDraft ? navigate(`/tailor/canvas/jobs/${job.id}/${workingDraft.id}`) : void act(true)}>
+      {workingDraft ? 'Continue editing' : 'Edit resume'}
+    </button>}
+    {displayedReview?.artifact.pdf && (previous || historical ?
+      <a href={`${apiClient.jobPdfUrl(job.id, selected)}?download=1`}>{historical ? 'Download historical PDF' : 'Download previous PDF'}</a>
+      : <button className={secondaryButton} disabled={busy} onClick={() => void downloadCurrent()}>Download PDF</button>)}
+  </>} notice={open => <>
+    {pendingEdits && <p role="status">You have draft changes — continue editing to include them in a new PDF.</p>}
+    {job.recovery?.kind === 'stale_inputs' && <p role="status">Starting inputs changed. This is the previous PDF. <button onClick={() => navigate(`/jobs/${job.id}`)}>Review posting and inputs</button></p>}
+    {artifacts.length > 0 && job.preparation_state === 'needs_input' && job.recovery?.kind !== 'stale_inputs' &&
+      <p role="status">Preparation needs attention. <button onClick={() => open(job.recovery?.kind === 'render' ? 'checks' : 'corrections')}>Resolve preparation issues</button></p>}
+    {historical && <button onClick={() => setSelected(latestArtifact)}>Return to current resume</button>}
+    {!artifacts.length && <p role="status">{job.preparation_state === 'preparing' ? 'Preparing your resume…' : 'No generated resume yet.'}
+      {job.preparation_state === 'needs_input' ? <button onClick={() => open('corrections')}>Resolve corrections</button>
+        : <button onClick={() => navigate(`/jobs/${job.id}`)}>Review posting and preparation</button>}</p>}
+    {displayedReview && displayedReview.artifact.validation_result !== 'passed' && <p role="status">This version needs attention. <button onClick={() => open('checks')}>View checks</button></p>}
+    {job.revision !== revision && <p role="status">The job changed. <button onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button></p>}
+  </>} preview={unavailable ? (artifacts.length && !error ? <p role="status">Loading resume…</p> : null) : preview}
+    renderView={view => {
+      if (view === 'checks') return checksContent;
+      if (view === 'corrections') return <JobProposalReview job={job} onSaved={onSaved} />;
+      if (view === 'comparison') return displayedReview ? comparison : <p>No comparison available yet.</p>;
+      if (view === 'exports') return displayedReview ? <JobExports job={job} artifact={displayedReview.artifact}
+        blocked={job.recovery?.kind === 'stale_inputs' ? 'Starting inputs changed. Prepare with current inputs; historical files remain available.' : pendingEdits || historical} /> : <p>No exports available yet.</p>;
+      return <section className="space-y-4">
+        <label className="flex min-w-0 flex-col gap-2 text-sm font-medium text-slate-700 dark:text-slate-300">Artifact version <select
+          className={`${inputClass} min-h-11 min-w-0 max-w-full [color-scheme:light] dark:[color-scheme:dark]`}
+          aria-label="Artifact version" value={selected} onChange={e => setSelected(e.target.value)} disabled={busy}>
+          {artifacts.map(a => <option key={a.id} value={a.id}>{new Date(a.created_at).toLocaleString()} · {a.id.slice(0, 8)}</option>)}
+        </select></label>
+        <ol>{events.map(event => <li key={event.id}>{event.created_at} · {describeJobEvent(event.payload)}</li>)}</ol>
+      </section>;
+    }} />
+</section>;
+
 }

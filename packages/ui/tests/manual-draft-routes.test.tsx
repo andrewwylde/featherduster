@@ -43,7 +43,7 @@ it.each(['workspace mismatch', 'navigation', 'source switch'] as const)('rejects
   } else {
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
     if (reason === 'navigation') fireEvent.click(screen.getByRole('link', { name: 'Skills' }));
-    else fireEvent.change(screen.getByLabelText('Select resume variant'), { target: { value: 'second' } });
+    else chooseSecond();
   }
   await act(async () => resolveHealth({ status: 'ok', workspaceDir: '/workspace', workspaceId: 'workspace' }));
   expect(save).not.toHaveBeenCalled();
@@ -76,7 +76,7 @@ it('keeps a hydrated manual draft editable when its source disappears from the r
   vi.mocked(apiClient.getResumes).mockResolvedValue([]);
   render(<App />);
   fireEvent.change(await screen.findByDisplayValue('Recovered content'), { target: { value: 'Edited without current source' } });
-  expect(screen.getByLabelText('Select resume variant')).toHaveValue('base');
+  expect(screen.getByLabelText('Select resume variant')).toHaveValue('base (saved source)');
   const recovered = JSON.parse(localStorage.getItem(key)!).record;
   expect(recovered.payload.jobDescription).toBe('Edited without current source');
   expect(recovered.base).toEqual(pinnedBase);
@@ -104,7 +104,7 @@ it('creates independent drafts when changing source and retains the first browse
   render(<App />);
   fireEvent.change(await screen.findByPlaceholderText(/Paste target job specification/), { target: { value: 'First manual edits' } });
   const firstPath = window.location.pathname;
-  fireEvent.change(screen.getByLabelText('Select resume variant'), { target: { value: 'second' } });
+  chooseSecond();
   expect(window.location.pathname).not.toBe(firstPath);
   const snapshots = Object.keys(localStorage).filter(k => k.startsWith(RECOVERY_PREFIX)).map(k => JSON.parse(localStorage.getItem(k)!));
   expect(snapshots).toHaveLength(2);
@@ -126,7 +126,7 @@ it('restores excluded bullets, stable IDs, and unfinished fields in a non-first 
   const base = (await apiClient.getResumes())[0];
   vi.mocked(apiClient.getResumes).mockResolvedValue([base, { ...base, id: 'second', name: 'Second', spec: { ...base.spec, experiences: [{ company: 'Company', role: 'Role', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Keep excluded text', citations: ['ev-1'] }] }] } }]);
   const first = render(<App />);
-  fireEvent.change(await screen.findByLabelText('Select resume variant'), { target: { value: 'second' } });
+  await screen.findByLabelText('Select resume variant'); chooseSecond();
   fireEvent.click(await screen.findByRole('checkbox'));
   fireEvent.change(screen.getByPlaceholderText('Company'), { target: { value: '' } });
   const key = Object.keys(localStorage).find(k => k.startsWith(RECOVERY_PREFIX))!;
@@ -134,7 +134,7 @@ it('restores excluded bullets, stable IDs, and unfinished fields in a non-first 
   first.unmount(); render(<App />);
   expect(await screen.findByRole('checkbox')).not.toBeChecked();
   expect(screen.getByPlaceholderText('Company')).toHaveValue('');
-  expect(screen.getByLabelText('Select resume variant')).toHaveValue('second');
+  expect(screen.getByLabelText('Select resume variant')).toHaveValue('Second (template)');
   fireEvent.change(screen.getByPlaceholderText(/Paste target job specification/), { target: { value: 'Another edit' } });
   const after = JSON.parse(localStorage.getItem(key)!).record.payload;
   expect(after.experiences).toEqual(before.experiences);
@@ -149,8 +149,8 @@ it('guards navigation and source changes when no store holds the latest manual c
   vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw Error('Quota'); });
   fireEvent.change(posting, { target: { value: 'Memory-only edits' } });
   const path = window.location.pathname;
-  fireEvent.change(screen.getByLabelText('Select resume variant'), { target: { value: 'second' } });
-  expect(screen.getByLabelText('Select resume variant')).toHaveValue('base');
+  chooseSecond();
+  expect(screen.getByLabelText('Select resume variant')).toHaveValue('Base (template)');
   fireEvent.click(screen.getByRole('link', { name: 'Skills' }));
   expect(window.location.pathname).toBe(path);
   expect(screen.getByDisplayValue('Memory-only edits')).toBeInTheDocument();
@@ -183,3 +183,9 @@ it('creates a durable setup handoff and preserves the independent manual draft',
   first.unmount(); render(<App />);
   expect(await screen.findByLabelText('Job posting')).toHaveValue('Posting for setup with enough detail');
 });
+
+function chooseSecond() {
+  const input = screen.getByRole('combobox', { name: 'Select resume variant' });
+  fireEvent.focus(input); fireEvent.change(input, { target: { value: 'Second' } });
+  fireEvent.keyDown(input, { key: 'ArrowDown' }); fireEvent.keyDown(input, { key: 'Enter' });
+}

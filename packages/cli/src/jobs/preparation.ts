@@ -1,3 +1,4 @@
+import { checkedRender } from './checked-render.js';
 import { CorpusRepository } from '../corpus/repository.js';
 import { CorpusService } from '../corpus/service.js';
 import { ProposalRepository } from './proposal-repository.js';
@@ -153,17 +154,12 @@ export class JobPreparation {
         r.database.files.writeBundle('artifacts', attempt.job_id, id, { 'failure.json': bytes });
         throw new PreparationBlocked(message, { ...recovery('render'), failed_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/failure.json`, fingerprint: fingerprint(bytes) } });
       };
-      let result: Awaited<ReturnType<typeof renderer.renderPdf>>;
-      try { result = await abortable(renderer.renderPdf({ templateId: template.id, spec: cleaned.candidate, rules, signal }), signal); }
-      catch (error) { guard(); return retainFailure({ diagnostics: [{ code: 'renderer_exception', message: String(error) }] }, String(error)); }
-      guard();
-      if (result.status !== 'passed') {
-        return retainFailure({ ...result, pdf: result.pdf?.toString('base64'), previews: result.previews.map(p => ({ ...p, bytes: p.bytes.toString('base64') })) }, result.diagnostics.map(d => d.message).join('; ') || 'PDF validation failed');
-      }
-      const output = { source: result.source, pdf: result.pdf?.toString('base64'), previews: result.previews.map(p => p.bytes.toString('base64')), report: result.report };
-      const parsed = renderedSchema.safeParse(output);
-      if (!parsed.success || parsed.data.report.pageCount > input.policy.page_budget || parsed.data.report.pageBudget !== input.policy.page_budget) return retainFailure({ ...output, diagnostics: [{ code: 'invalid_pdf', message: 'Invalid PDF/page budget' }] }, 'Invalid PDF/page budget');
-      return parsed.data;
+const checked = await abortable(checkedRender(renderer, { templateId: template.id, spec: cleaned.candidate, rules, signal }, input.policy.page_budget), signal);
+guard();
+if (checked.status !== 'ready' || !checked.output) return retainFailure(checked.failure ?? checked, checked.issues.map(i => i.message).join('; '));
+return renderedSchema.parse(checked.output);
+
+
     });
     await stage('verify', z.literal(true), async () => {
       if (compiled.report.pageCount > input.policy.page_budget || compiled.report.pageBudget !== input.policy.page_budget || !Buffer.from(compiled.pdf, 'base64').length || compiled.previews.some(p => !Buffer.from(p, 'base64').length)) throw new Error('Invalid PDF/page budget');

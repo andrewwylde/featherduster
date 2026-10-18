@@ -1,7 +1,7 @@
-import { applyCandidateProposals, validateCandidateProposals } from './preparation.js';
+import { checkCandidateFields } from './candidate-checks.js';
+import { applyCandidateProposals } from './preparation.js';
 import type { ProposalValidationContext } from '../tailoring/validators.js';
 import type { PrivacyRulesConfig } from '../schemas/privacy.js';
-import { redactText } from '../integrity/redaction-engine.js';
 import { z } from 'zod';
 import { SourceSupportSchema } from '../corpus/schemas.js';
 import { ResumeSpecSchema } from '../schemas/resume.js';
@@ -158,23 +158,12 @@ export function detectProposalConflicts(proposals: Proposal[]): ProposalIssue[] 
 export function validateProposalReview(base: z.infer<typeof ResumeSpecSchema>, proposals: Proposal[], context: Omit<ProposalValidationContext, 'baseResume'>, rules?: PrivacyRulesConfig, supportFor?: (proposal: Proposal) => ProposalValidationContext['skillSupport']) {
   const result = applyCandidateProposals(base, proposals.map(p => ({ ...p, checks: [] })), context, supportFor);
   const items: Parameters<typeof normalizeProposalIssues>[0] = result.proposals.filter(p => p.decision !== 'rejected').map(p => ({ subject: { kind: 'proposal', proposal_id: p.id }, issues: p.checks }));
-  const fields = [{ path: 'summary', text: result.candidate.summary ?? '', citations: result.proposals.filter(p => p.type === 'summary.rewrite' && result.appliedProposalIds.includes(p.id)).flatMap(p => p.citations), experience_index: -1, bullet_index: -1 }, ...result.candidate.experiences.flatMap((e, ei) => e.bullets.map((b, bi) => ({ path: `experiences.${ei}.bullets.${bi}.text`, text: b.text, citations: b.citations ?? [], experience_index: ei, bullet_index: bi })))];
-  for (const field of fields) {
-    const probe = ProposalSchema.parse({ id: field.path, type: field.path === 'summary' ? 'summary.rewrite' : 'bullet.rewrite', target: { experience_index: field.experience_index, bullet_index: field.bullet_index }, before: field.text, after: field.text, citations: field.citations });
-    const origin = result.proposals.find(p => result.appliedProposalIds.includes(p.id) && (p.edited_after ?? p.after) === field.text && JSON.stringify(p.citations) === JSON.stringify(field.citations));
-    const issues = validateCandidateProposals([probe], { ...context, baseResume: result.candidate, skillSupport: origin && supportFor ? supportFor(origin) : context.skillSupport })[0].checks.filter(i => ['unsupported_experience', 'unsupported_citation', 'metric_unverified', 'metric_needed'].includes(i.kind));
-    items.push({ subject: { kind: 'candidate', path: field.path }, issues });
-  }
-  if (rules) {
-    const scan = (value: unknown, path: string) => {
-      if (typeof value === 'string') {
-        const redacted = redactText(value, rules);
-        if (!redacted.isClean) items.push({ subject: { kind: 'candidate', path }, issues: [{ severity: 'block', kind: 'privacy', message: redacted.violations.join('; ') }] });
-      } else if (Array.isArray(value)) value.forEach((v, i) => scan(v, `${path}.${i}`));
-      else if (value && typeof value === 'object') Object.entries(value).forEach(([key, v]) => scan(v, path ? `${path}.${key}` : key));
-    };
-    scan(result.candidate, '');
-  }
+const candidateIssues = checkCandidateFields(result.candidate,
+  result.proposals.filter(p => result.appliedProposalIds.includes(p.id)),
+  { ...context, baseResume: result.candidate }, rules, supportFor);
+for (const i of candidateIssues) items.push({ subject: { kind: 'candidate', path: i.path },
+  issues: [{ kind: i.code, severity: i.severity, message: i.message }] });
+
   const issues = [...normalizeProposalIssues(items), ...detectProposalConflicts(proposals)];
   return { ...result, issues, valid: !issues.some(i => i.details.some(d => d.severity === 'block')) };
 }

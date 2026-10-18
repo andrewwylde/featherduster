@@ -78,7 +78,7 @@ describe('static application routes', () => {
     fireEvent.change(manual, { target: { value: 'Unsaved manual bullet' } });
     window.history.pushState({}, '', `/tailor/canvas/jobs/${id}/${id}`);
     window.dispatchEvent(new PopStateEvent('popstate'));
-    await screen.findByRole('button', { name: 'Save job draft' });
+    await screen.findByRole('button', { name: 'Save draft' });
     const linked = await screen.findByDisplayValue('Original bullet');
     fireEvent.change(linked, { target: { value: 'Unsaved linked bullet' } });
     window.history.pushState({}, '', '/tailor/canvas');

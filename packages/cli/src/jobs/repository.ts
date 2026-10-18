@@ -246,7 +246,14 @@ export class JobsRepository {
       if (event.payload.kind === 'resume_review') {
         const artifact = this.getArtifact(event.payload.artifact_version_id); this.sameJob(artifact, event.job_id);
         if (artifact.version_fingerprint !== event.payload.artifact_fingerprint || artifact.input_snapshot_id !== event.payload.input_snapshot_id || artifact.input_fingerprint !== event.payload.input_fingerprint) this.error('invalid_relationship', 'Review binding mismatch');
-      } else if (event.payload.kind === 'channel_action' && event.payload.artifact_version_id) this.sameJob(this.getArtifact(event.payload.artifact_version_id), event.job_id);
+      } else if (event.payload.kind === 'resume_finalized') {
+  const a = this.getArtifact(event.payload.artifact_version_id);
+  const d = this.getDraftRevision(event.payload.draft_id, event.payload.draft_revision);
+  this.sameJob(a, event.job_id); this.sameJob(d, event.job_id);
+  if (a.origin !== 'manual' || a.parent_version_id !== event.payload.parent_artifact_version_id
+    || d.parent_artifact_version_id !== a.parent_version_id || d.input_snapshot_id !== a.input_snapshot_id)
+    this.error('invalid_relationship', 'Finalization event binding mismatch');
+} else if (event.payload.kind === 'channel_action' && event.payload.artifact_version_id) this.sameJob(this.getArtifact(event.payload.artifact_version_id), event.job_id);
       const row = this.database.db.prepare('SELECT payload FROM events WHERE id=? OR (workspace_id=? AND idempotency_key=?)').get(event.id, event.workspace_id, event.idempotency_key);
       if (row) {
         const old = this.decode(row, C.JobEventSchema);
@@ -414,6 +421,42 @@ export class JobsRepository {
   private verifyArtifact(a: C.ArtifactVersion): void {
     for (const ref of [a.source, a.pdf, a.preview, a.validation_report]) if (ref) { try { this.database.files.readArtifact(ref, a.job_id, a.id); } catch { this.error('corrupt_data', 'Artifact missing, unsafe or changed; recover original files'); } }
   }
+assertManualPublication(request: { draft_id: string; expected_draft_revision: number;
+  expected_job_revision: number; parent_artifact_id: string; parent_artifact_fingerprint: string }) {
+  const draft = this.getLatestDraft(request.draft_id), job = this.getJob(draft.job_id);
+  this.revision(draft.revision, request.expected_draft_revision);
+  this.revision(job.revision, request.expected_job_revision);
+  const parent = this.getArtifact(request.parent_artifact_id);
+  this.sameJob(parent, job.id);
+  if (parent.version_fingerprint !== request.parent_artifact_fingerprint || draft.parent_artifact_version_id !== parent.id
+    || job.artifact_version_ids.at(-1) !== parent.id || draft.input_snapshot_id !== parent.input_snapshot_id)
+    this.error('invalid_relationship', 'The draft or current resume changed. Reload before finalizing.');
+  if (this.active().some(a => a.job_id === job.id) || job.recovery?.kind === 'stale_inputs')
+    this.error('ineligible', 'Job preparation or changed inputs must be resolved first.');
+  return { draft, job, parent };
+}
+publishManualArtifact(value: C.ArtifactVersion, request: Parameters<JobsRepository['assertManualPublication']>[0], idempotencyKey: string) {
+  return this.tx(() => {
+    const { draft, job, parent } = this.assertManualPublication(request);
+    const artifact = C.ArtifactVersionSchema.parse(value);
+    this.sameJob(artifact, job.id);
+    if (artifact.origin !== 'manual' || artifact.attempt_id !== parent.attempt_id
+      || artifact.parent_version_id !== parent.id || artifact.input_snapshot_id !== parent.input_snapshot_id
+      || artifact.input_fingerprint !== parent.input_fingerprint || artifact.validation_result !== 'passed')
+      this.error('invalid_relationship', 'Manual artifact binding mismatch');
+    this.verifyArtifact(artifact);
+    this.immutable('artifacts', artifact, C.ArtifactVersionSchema, { attempt_id: artifact.attempt_id,
+      input_snapshot_id: artifact.input_snapshot_id, parent_version_id: artifact.parent_version_id });
+    this.putJob({ ...job, artifact_version_ids: [...job.artifact_version_ids, artifact.id],
+      preparation_state: 'resume_ready', state_reason: null, recovery: undefined });
+    this.appendEvent({ schema_version: 1, id: this.uuid(), workspace_id: job.workspace_id, job_id: job.id,
+      created_at: this.now(), actor: { kind: 'user', id: 'local-human' }, attempt_id: null,
+      idempotency_key: `finalize:${idempotencyKey}`, payload: { kind: 'resume_finalized', artifact_version_id: artifact.id,
+        parent_artifact_version_id: parent.id, draft_id: draft.id, draft_revision: draft.revision } });
+    return artifact;
+  });
+}
+
   getArtifact(id: string): C.ArtifactVersion { const a = this.get('artifacts', id, C.ArtifactVersionSchema); this.verifyArtifact(a); return a; }
   publishArtifact(value: C.ArtifactVersion, fence: OwnershipFence, draft?: { id: string; revision: number }): C.ArtifactVersion {
     return this.tx(() => {

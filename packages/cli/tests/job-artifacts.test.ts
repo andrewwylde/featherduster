@@ -198,3 +198,21 @@ it('reads legacy manifests without inserting a default knowledge reference or ch
   expect(f.service.getInputSnapshot(legacy.id)).toEqual(legacy);
   expect(fs.readFileSync(path.join(f.root, manifestPath), 'utf8')).toBe(bytes);
 });
+it('publishes manual edits once without claiming another preparation attempt', () => {
+  const f = fixture(), parent = f.service.publishCandidate(f.publish);
+  f.repo.transitionPreparation(f.job.id, 'complete', f.repo.getJob(f.job.id).revision, 'complete-parent', f.publish.fence);
+  const draft = f.service.continueEditing({ job_id: f.job.id, artifact_version_id: parent.id,
+    artifact_fingerprint: parent.version_fingerprint, expected_job_revision: f.repo.getJob(f.job.id).revision, idempotency_key: 'edit' });
+  const request = { draft_id: draft.id, expected_draft_revision: draft.revision,
+    expected_job_revision: f.repo.getJob(f.job.id).revision, parent_artifact_id: parent.id,
+    parent_artifact_fingerprint: parent.version_fingerprint, source: 'edited tex', pdf: 'edited pdf',
+    previews: ['edited preview'], validation_report: '{"passed":true}', idempotency_key: 'finalize' };
+  const first = f.repo.withReceipt('finalize_job_draft', 'finalize', request, () => f.service.publishManualCandidate(request)).result;
+  const replay = f.repo.withReceipt('finalize_job_draft', 'finalize', request, () => { throw Error('must not publish twice'); }).result;
+  expect(replay).toEqual(first);
+  expect(first).toMatchObject({ origin: 'manual', parent_version_id: parent.id, attempt_id: parent.attempt_id });
+  expect(f.repo.getJob(f.job.id).artifact_version_ids).toEqual([parent.id, first.id]);
+  expect(f.repo.active()).toEqual([]);
+  expect(f.repo.listEvents(f.job.id).filter(e => e.payload.kind === 'resume_review')).toHaveLength(0);
+  expect(() => f.service.publishManualCandidate({ ...request, idempotency_key: 'stale' })).toThrow();
+});

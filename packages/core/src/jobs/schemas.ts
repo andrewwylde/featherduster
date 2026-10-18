@@ -1,3 +1,4 @@
+import { DraftResumeSpecSchema } from './draft-content.js';
 import { z } from 'zod';
 import { ResumeSpecSchema } from '../schemas/resume.js';
 import { AlignmentRowSchema, ProposalSetSchema, TAILORING_STEPS, ValidationIssueSchema } from '../tailoring/schemas.js';
@@ -157,6 +158,7 @@ export const CheckpointSchema = z.object({
 }).strict();
 export type Checkpoint = z.infer<typeof CheckpointSchema>;
 export const ArtifactVersionSchema = z.object({
+  origin: z.enum(['automatic', 'manual']).optional(),
   ...jobEntity, attempt_id: uuid, input_snapshot_id: uuid, input_fingerprint: text, version_fingerprint: text,
   parent_version_id: uuid.nullable(), created_at: timestamp, source: ImmutableReferenceSchema,
   pdf: ImmutableReferenceSchema.nullable(), preview: ImmutableReferenceSchema.nullable(), validation_report: ImmutableReferenceSchema.nullable(),
@@ -172,7 +174,7 @@ export const ResumeReviewSchema = z.object({
 export type ResumeReview = z.infer<typeof ResumeReviewSchema>;
 export const JobDraftSchema = z.object({
   ...jobEntity, revision: count, input_snapshot_id: uuid, parent_artifact_version_id: uuid.nullable(),
-  candidate: ResumeSpecSchema, proposals: ProposalSetSchema, ...dates,
+  candidate: DraftResumeSpecSchema, proposals: ProposalSetSchema, ...dates,
 }).strict();
 export type JobDraft = z.infer<typeof JobDraftSchema>;
 export const JobEventSchema = z.object({
@@ -187,6 +189,8 @@ export const JobEventSchema = z.object({
     z.object({ kind: z.literal('application_transition'), from: ApplicationLifecycleSchema, to: ApplicationLifecycleSchema, reason: text }).strict(),
     z.object({ kind: z.literal('proposal_review'), review_id: uuid, revision: count, generation_id: uuid, input_fingerprint: text }).strict(),
     z.object({ kind: z.literal('resume_review'), review_id: uuid, ...reviewBinding }).strict(),
+    z.object({ kind: z.literal('resume_finalized'), artifact_version_id: uuid,
+  parent_artifact_version_id: uuid, draft_id: uuid, draft_revision: count }).strict(),
     z.object({ kind: z.literal('channel_action'), action: z.enum(['form_draft_prepared', 'resume_attached', 'application_submitted', 'email_drafted', 'email_sent', 'survey_completed', 'user_reported_outcome']),
       channel: text, destination: text, source_type: z.enum(['user', 'posting', 'import', 'model']), timestamp,
       artifact_version_id: uuid.nullable(), confirmation_reference: text.nullable(), verification_method: text,

@@ -1,3 +1,4 @@
+import type { JobLeaveGuard } from './views/jobs/JobDraftActions.js';
 import { ResumeTailor } from './views/ResumeTailor';
 import { JobsView } from './views/jobs/JobsView';
 import { JobDetail } from './views/jobs/JobDetail';
@@ -39,26 +40,35 @@ export function App() {
   const [tailorView, setTailorView] = useState<TailorView>(() => tailorViewForPath(window.location.pathname + window.location.search));
   const [jobsView, setJobsView] = useState(() => jobsViewForPath(window.location.pathname + window.location.search));
   const [linkedDraft, setLinkedDraft] = useState(() => jobDraftForPath(window.location.pathname + window.location.search));
-  const linkedDraftRef = useRef(linkedDraft);
-  linkedDraftRef.current = linkedDraft;
-  const lastPath = useRef(window.location.pathname + window.location.search);
   const [linkedVisible, setLinkedVisible] = useState(() => !!jobDraftForPath(window.location.pathname + window.location.search));
   const [canvasResumeId, setCanvasResumeId] = useState<string | undefined>(undefined);
   const desk = useDeskData();
   const [strengthenId, setStrengthenId] = useState<string | null>(null);
 
   const [tailorListVisit, setTailorListVisit] = useState(0);
+  const linkedLeaveGuard = useRef<JobLeaveGuard | null>(null);
+  const linkedLeaveBypass = useRef(false);
+  const linkedVisibleRef = useRef(linkedVisible);
+  linkedVisibleRef.current = linkedVisible;
+  const navigateLatest = useRef<(path: string, replace?: boolean) => void>(() => {});
+
   const navigationGuard = useRef<() => boolean>(() => true);
   const [navigationError, setNavigationError] = useState<string | null>(null);
   const currentPath = useRef(window.location.pathname + window.location.search);
   const navigatePath = (path: string, replace = false) => {
+    if (!replace && linkedVisibleRef.current && !linkedLeaveBypass.current && linkedLeaveGuard.current) {
+      linkedLeaveGuard.current(() => {
+        linkedLeaveBypass.current = true;
+        try { navigateLatest.current(path, replace); } finally { linkedLeaveBypass.current = false; }
+      });
+      return;
+    }
+
     if (!replace && !navigationGuard.current()) { setNavigationError('Changes are not saved yet. Retry saving before leaving this draft.'); return; }
     const draft = jobDraftForPath(path);
-    if (draft && linkedDraft && draft.draftId !== linkedDraft.draftId && !window.confirm('Replace the open job draft? Unsaved edits will be lost.')) return;
     if (draft) setLinkedDraft(draft);
     setLinkedVisible(!!draft);
     setJobsView(jobsViewForPath(path));
-    lastPath.current = path;
     setNavigationError(null);
     if (window.location.pathname + window.location.search !== path) {
       window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
@@ -69,19 +79,26 @@ export function App() {
     if (!draft) setTailorView(tailorViewForPath(path));
   };
 
+  navigateLatest.current = navigatePath;
   const navigateTo = (tab: NavTab) => navigatePath(pathForTab(tab));
 
   useEffect(() => {
     const handlePopState = () => {
+      if (linkedVisibleRef.current && linkedLeaveGuard.current) {
+        const destination = canonicalPath(window.location.pathname + window.location.search);
+        window.history.pushState({}, '', currentPath.current);
+        linkedLeaveGuard.current(() => {
+          linkedLeaveBypass.current = true;
+          try { navigateLatest.current(destination); } finally { linkedLeaveBypass.current = false; }
+        });
+        return;
+      }
+
       if (!navigationGuard.current()) { window.history.pushState({}, '', currentPath.current); setNavigationError('Changes are not saved yet. Retry saving before leaving this draft.'); return; }
       setNavigationError(null);
       const path = canonicalPath(window.location.pathname + window.location.search);
       const draft = jobDraftForPath(path);
-      if (draft && linkedDraftRef.current && draft.draftId !== linkedDraftRef.current.draftId && !window.confirm('Replace the open job draft? Unsaved edits will be lost.')) {
-        window.history.pushState({}, '', lastPath.current);
-        return;
-      }
-      lastPath.current = path;
+
       if (draft) setLinkedDraft(draft);
       setLinkedVisible(!!draft);
       setJobsView(jobsViewForPath(path));
@@ -155,7 +172,11 @@ export function App() {
 
         {currentTab === 'jobs' && (jobsView ? <JobDetail key={jobsView.id} id={jobsView.id} section={jobsView.section} navigate={navigatePath} /> : <JobsView navigate={navigatePath} />)}
         {linkedDraft && <div className={currentTab === 'tailor' && linkedVisible ? 'block' : 'hidden'}>
-          <ResumeTailor key={linkedDraft.draftId} linkedJobDraft={linkedDraft} onBackToRuns={() => navigatePath(`/jobs/${linkedDraft.jobId}/resume`)} />
+          <ResumeTailor key={linkedDraft.draftId} linkedJobDraft={linkedDraft} onLeaveGuard={guard => { linkedLeaveGuard.current = guard; }} onBackToRuns={() => {
+  linkedLeaveBypass.current = true;
+  try { navigatePath(`/jobs/${linkedDraft.jobId}/resume`); }
+  finally { linkedLeaveBypass.current = false; }
+}} />
         </div>}
         {currentTab === 'tailor' && tailorView.mode === 'unavailable' && <div><h1>Draft unavailable</h1><button onClick={() => navigatePath('/tailor')}>Back to tailoring</button></div>}
 

@@ -1,3 +1,4 @@
+import { JobDraftFinalization } from './draft-finalization.js';
 import { JobExports } from './exports.js';
 import { JobMaterials } from './materials.js';
 import { JobFit } from './fit.js';
@@ -93,13 +94,16 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   }).immediate();
   const fit = new JobFit(repository);
   const materials = new JobMaterials(repository, artifacts, (id, ids) => selectFit(id, ids), deps.loadPrivacyRules);
-  const preparation = new JobPreparation({ repository, artifacts, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer: deps.renderer ?? new LatexRenderer() });
+  const renderer = deps.renderer ?? new LatexRenderer();
+  const preparation = new JobPreparation({ repository, artifacts, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer });
   const service = new JobsService({ repository, preparation: { run: (attempt, signal, previous) => repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : preparation.run(attempt, signal, previous) }, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
   const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service);
   const selectFit = (id: string, ids?: string[]) => {
     const job = repository.getJob(id);
     return selectJobSkillset(corpus.read({ job_id: id, employer: job.employer_id ?? undefined, role: job.role ?? undefined }), ids);
   };
+const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.loadPrivacyRules, renderer);
+
   const readFit = (id: string) => fit.read(id, ids => selectFit(id, ids), deps.loadPrivacyRules());
   const assessFit = (id: string, request: { expected_revision: number; idempotency_key: string; evidence_ids?: string[]; runner?: RunnerId }, materialKind?: C.MaterialContent['kind']) => {
     // Capture and admission are atomic; a replay never captures or invokes again.
@@ -126,11 +130,21 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
     return receipt;
   };
   const exports = new JobExports(repository, artifacts, materials, selectFit, deps.loadPrivacyRules);
-  return { repository, artifacts, intake, service, corpus, proposals, captureInputs, assessFit, readFit, materials, exports, flushEvents,
+  return { repository, artifacts, intake, service, corpus, proposals, captureInputs, assessFit, readFit, materials, exports, drafts, flushEvents,
     subscribeCorpus(listener: (event: { revision: number; update_ids: string[] }) => void) { monitor(); corpusListeners.add(listener); return () => { corpusListeners.delete(listener); }; },
     subscribe(listener: (event: C.JobEvent) => void) { monitor(); listeners.add(listener); return () => { listeners.delete(listener); }; },
     initialize() { monitor(); service.initialize(); },
-    dispose(): Promise<void> { if (!disposed) { clearInterval(timer); listeners.clear(); corpusListeners.clear(); disposed = service.dispose().finally(() => database.close()); } return disposed; },
+dispose(): Promise<void> {
+  if (!disposed) {
+    clearInterval(timer); listeners.clear(); corpusListeners.clear();
+    disposed = Promise.allSettled([drafts.dispose(), service.dispose()]).then(results => {
+      database.close();
+      const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failed) throw failed.reason;
+    });
+  }
+  return disposed;
+},
   };
 }
 export type JobsRuntime = ReturnType<typeof createJobsRuntime>;

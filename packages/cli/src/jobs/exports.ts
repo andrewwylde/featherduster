@@ -1,7 +1,7 @@
+import { currentResumeContext } from './resume-context.js';
 import { randomUUID } from 'node:crypto';
 import * as C from '@featherduster/core';
 import { z } from 'zod';
-import { sourceFingerprint } from '../corpus/load.js';
 import { JobArtifactsService } from './artifacts.js';
 import { JobMaterials } from './materials.js';
 import { JobsRepository, RepositoryError } from './repository.js';
@@ -34,18 +34,9 @@ export class JobExports {
     if (job.artifact_version_ids.at(-1) !== artifact.id) blocked('This is historical. Open its saved release, or return to the current resume.');
     if (this.r.active().some(a => a.job_id === jobId)) blocked('Stop or finish preparation before publishing current files.');
     if (view.working_draft && canonical(view.working_draft.candidate) !== canonical(draft.candidate)) blocked('Working resume has pending edits. Save and check it before exporting; saved releases remain available.');
-    const context = this.artifacts.capturedContext(artifact.input_snapshot_id), input = context.input;
-    if (!context.job_scope || canonical(context.job_scope) !== canonical({ company: job.company, role: job.role, employer_id: job.employer_id })) blocked('Job scope changed or its historical binding is unavailable. Prepare current inputs explicitly; the validated PDF and saved history remain available.');
-    const latest = this.r.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload, '$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(jobId) as { id: string } | undefined;
-    if (latest?.id !== input.id || job.posting_snapshot_id !== input.posting.id || job.recovery?.kind === 'stale_inputs') blocked('Posting or starting inputs changed. Explicitly prepare and check the new inputs; previous releases are retained.');
-    const read = (ref: C.ImmutableReference) => this.r.database.files.readSnapshot(ref, jobId, input.id).toString();
-    const rules = C.PrivacyRulesConfigSchema.parse(JSON.parse(read(input.privacy_rules)));
-    if (canonical(rules) !== canonical(C.PrivacyRulesConfigSchema.parse(this.rules()))) blocked('Privacy rules changed. Prepare and check the resume with the current privacy rules.');
-    const evidence = context.evidence.getAll();
-    let live: ReturnType<typeof selectJobSkillset>;
-    try { live = this.select(jobId, evidence.map(e => e.id)); }
-    catch { return blocked('Selected evidence is unavailable. Inspect sources and prepare again.'); }
-    if (canonical(evidence.map(sourceFingerprint)) !== canonical(live.evidence.map(sourceFingerprint)) || canonical(context.knowledge.materialized ?? { support: [], sources: [] }) !== canonical(live.knowledge.materialized ?? { support: [], sources: [] })) blocked('Evidence or scoped support changed. Inspect sources and prepare again before publishing.');
+const { context, rules } = currentResumeContext(this.r, this.artifacts, jobId, artifact.id, this.select, this.rules);
+const input = context.input;
+
     if (artifact.validation_result !== 'passed' || !artifact.pdf || !view.validation_report || view.validation_report.passed !== true || view.validation_report.pageCount !== 1 || view.validation_report.pageBudget !== 1 || input.policy.page_budget !== 1) blocked('A verified one-page PDF is required. Return to resume checks; exports never render a replacement.');
     const scan = C.redactText(C.compileMarkdownResume(draft.candidate), rules);
     if (!C.scanConfidentiality(C.compileMarkdownResume(draft.candidate), rules).isClean || !scan.isClean || scan.redactedText !== C.compileMarkdownResume(draft.candidate)) blocked('Resume contains private wording. Correct it and check a new PDF before exporting.');
