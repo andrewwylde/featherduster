@@ -24,6 +24,7 @@ import { JobMaterialReview } from './JobMaterialReview.js';
 import { JobFitReview } from './JobFitReview.js';
 import { JobResumeReview } from './JobResumeReview.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
+import { actorLabel, describeJobEvent, describeStateReason, displayPreparationState, hasCancellableWork, formatDateTime, hasRecoveredCapture, preparationActionFor, startPreventedHelp } from './job-utils.js';
 
 export function JobDetail({
   id,
@@ -93,9 +94,13 @@ export function JobDetail({
   };
 
   const job = data?.job;
+  // A failed URL capture fixed by pasted text reads as a saved job until preparation starts.
+  const recoveredCapture = job ? hasRecoveredCapture(job) : false;
+  const state = job ? displayPreparationState(job) : undefined;
+  const stateReason = recoveredCapture ? null : describeStateReason(job?.state_reason);
   const hasReview = data?.proposal_review?.availability === 'available';
   const canRecover = data?.proposal_review?.availability === 'missing_output' && data.proposal_review.recoverable;
-  const focusedCorrection = section === 'resume' && hasReview && job?.preparation_state === 'needs_input';
+  const focusedCorrection = section === 'resume' && hasReview && state === 'needs_input';
   const setup = job?.recovery?.kind === 'setup';
   const recoveryAction = hasReview ? { label: 'Resolve proposals', path: `/jobs/${id}/resume` }
     : setup ? { label: 'Resolve setup', path: '/settings' }
@@ -121,11 +126,11 @@ export function JobDetail({
   };
 
   return (
-    <div className="space-y-4 max-w-6xl mx-auto min-w-0">
+    <div className={`${focusedCorrection ? 'space-y-2' : 'space-y-4'} max-w-6xl mx-auto min-w-0`}>
       {/* Top Breadcrumb & Return */}
       <div className="flex items-center justify-between">
         <button
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors min-h-[44px] underline"
+          className={`inline-flex items-center gap-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white transition-colors ${focusedCorrection ? 'py-1' : 'min-h-[44px]'} underline`}
           onClick={() => navigate('/jobs')}
         >
           <ArrowLeft className="h-3.5 w-3.5" />
@@ -163,9 +168,9 @@ export function JobDetail({
       {data && job && (
         <>
           {/* Job Header Hero Card */}
-          <div className={`${cardClass} p-4 space-y-3`}>
-            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
-              <div className="space-y-1.5">
+          <div className={`${cardClass} ${focusedCorrection ? 'px-3 py-2 space-y-1' : 'p-4 space-y-3'}`}>
+            <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-2">
+              <div className="space-y-0.5">
                 <div className={focusedCorrection ? 'hidden' : 'flex items-center gap-2'}>
                   <span className="text-xs font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
                     Job Details
@@ -187,31 +192,31 @@ export function JobDetail({
                   {job.company ?? 'Unknown company'} — {job.role ?? 'Untitled role'}
                 </h1>
 
-                <p className={focusedCorrection ? 'hidden' : 'text-xs text-slate-500 dark:text-slate-400'}>
-                  {job.preparation_state === 'saved' ? 'Saved. Choose an optional activity below.' : job.preparation_state === 'resume_ready' ? 'Resume available for review.' : job.preparation_state === 'needs_input' ? 'Preparation needs your attention.' : data.activity === 'fit' ? 'Fit assessment' : data.activity === 'cover_letter' ? 'Cover-letter preparation' : data.activity === 'interview_brief' ? 'Interview-brief preparation' : 'Resume preparation'}
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {state === 'saved' ? 'Saved. Choose an optional activity below.' : state === 'resume_ready' ? 'Resume available for review.' : state === 'needs_input' ? (focusedCorrection ? 'Preparation stopped — proposal review needs your input.' : 'Preparation needs your attention.') : data.activity === 'fit' ? 'Fit assessment' : data.activity === 'cover_letter' ? 'Cover-letter preparation' : data.activity === 'interview_brief' ? 'Interview-brief preparation' : 'Resume preparation'}
                 </p>
 
-                <p className={focusedCorrection ? 'hidden' : 'text-xs font-medium text-slate-700 dark:text-slate-300'}>
-                  {job.state_reason}
-                </p>
+                {stateReason && <p className={focusedCorrection ? 'hidden' : 'text-xs font-medium text-slate-700 dark:text-slate-300'}>
+                  {stateReason}
+                </p>}
               </div>
 
               {section === 'posting' && <button className={primaryButton} onClick={() => navigate(`/jobs/${id}/resume`)}>Tailor resume</button>}
               {/* Action Buttons */}
               {!focusedCorrection && job.kind === 'job' && (section === 'resume' || section === 'posting') && (
                 <div className="flex flex-wrap items-center gap-2.5">
-                  {section === 'resume' && ['saved', 'queued'].includes(job.preparation_state) && (
+                  {section === 'resume' && ['saved', 'queued'].includes(state!) && (
                     <button
                       className={`${primaryButton} text-xs font-semibold`}
                       disabled={busy}
-                      onClick={() => void prepare('prepare')}
+                      onClick={() => void prepare(preparationActionFor(job) === 'resume' ? 'resume' : 'prepare')}
                     >
                       <Sparkles className="h-3.5 w-3.5" />
                       Prepare resume
                     </button>
                   )}
 
-                  {job.preparation_state === 'needs_input' && !(section === 'resume' && hasReview) && (
+                  {state === 'needs_input' && !(section === 'resume' && hasReview) && (
                     <button
                       className={`${primaryButton} text-xs font-semibold`}
                       disabled={busy}
@@ -234,7 +239,8 @@ export function JobDetail({
                     </button>
                   )}
 
-                  {['queued', 'preparing', 'needs_input'].includes(job.preparation_state) && (
+                  {/* The host allows cancelling needs_input; the list keeps cancel to queued or active work. */}
+                  {(hasCancellableWork(job) || state === 'needs_input') && (
                     <button
                       type="button"
                       className="inline-flex items-center gap-1.5 rounded-desk border border-rose-200 dark:border-rose-900/60 bg-white dark:bg-slate-900 px-3 py-1.5 text-xs font-semibold text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors"
@@ -257,13 +263,13 @@ export function JobDetail({
               )}
             </div>
 
-            {setup && section !== 'fit' && <p role="status">Last attempt setup diagnostic: {job.state_reason}. PDF tools must be repaired in the service environment, not by editing proposals or changing the model timeout. Settings does not automatically restart preparation.</p>}
+            {setup && section !== 'fit' && <p role="status">Last attempt setup diagnostic: {stateReason}{/[.!?]$/.test(stateReason ?? '') ? '' : '.'} PDF tools must be repaired in the service environment, not by editing proposals or changing the model timeout. Settings does not automatically restart preparation.</p>}
             {failure && (
               <div
                 role="alert"
                 className="flex items-center justify-between rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800 dark:border-rose-900/50 dark:bg-rose-950/40 dark:text-rose-300"
               >
-                <span>{failure}</span>
+                <span>{failure}{startPreventedHelp(failure) && <> {startPreventedHelp(failure)}</>}</span>
                 <button className="underline font-semibold" onClick={() => void refresh()}>
                   Reload job
                 </button>
@@ -274,7 +280,7 @@ export function JobDetail({
           {/* Section Navigation Tabs */}
           <nav
             aria-label="Job sections"
-            className="flex gap-2 overflow-x-auto border-b border-slate-200 dark:border-slate-800 pb-px"
+            className="flex flex-wrap gap-x-2 border-b border-slate-200 dark:border-slate-800 pb-px"
           >
             {Object.entries(jobSections).map(([key, label]) => {
               const active = section === key;
@@ -379,58 +385,48 @@ export function JobDetail({
               )}
 
               <ol className="divide-y divide-slate-100 dark:divide-slate-800">
-                {data.events.map((event) => (
-                  <li key={event.id} className="py-3 text-xs space-y-1.5 break-words">
-                    <div className="flex items-center gap-2 text-slate-500">
-                      <time className="font-mono text-[11px]">{event.created_at}</time>
-                      <span>—</span>
-                      <span className="font-semibold text-slate-700 dark:text-slate-300">
-                        {event.actor.kind}
-                      </span>
-                    </div>
-
-                    {event.payload.kind === 'channel_action' ? (
-                      <div className="rounded-lg bg-slate-50 dark:bg-slate-900/40 p-3 space-y-1 border border-slate-200/60 dark:border-slate-800">
-                        <p className="font-semibold text-slate-900 dark:text-white">
-                          {event.payload.action} — {event.payload.status.replace('_', ' ')}
-                        </p>
-                        <p>
-                          {event.payload.channel} → {event.payload.destination}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          Verification: {event.payload.verification_method}. Confirmation:{' '}
-                          {event.payload.confirmation_reference ?? 'None'}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          Artifact: {event.payload.artifact_version_id ?? 'None'}
-                        </p>
-                        {event.payload.original_notes && <p>{event.payload.original_notes}</p>}
+                {data.events.map((event) => {
+                  const p = event.payload;
+                  return (
+                    <li key={event.id} className="py-3 text-xs space-y-1.5 break-words">
+                      <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                        <time className="text-[11px]" dateTime={event.created_at} title={event.created_at}>{formatDateTime(event.created_at)}</time>
+                        <span aria-hidden="true">—</span>
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">{actorLabel(event.actor.kind)}</span>
                       </div>
-                    ) : event.payload.kind === 'application_transition' ||
-                      event.payload.kind === 'preparation_transition' ? (
-                      <p className="text-slate-800 dark:text-slate-200">
-                        {event.payload.kind}: {event.payload.from} → {event.payload.to} —{' '}
-                        {event.payload.reason}
+                      <p className={p.kind === 'resume_review' ? 'font-medium text-emerald-700 dark:text-emerald-400' : 'font-medium text-slate-800 dark:text-slate-200'}>
+                        {describeJobEvent(p)}
                       </p>
-                    ) : event.payload.kind === 'resume_review' ? (
-                      <p className="text-emerald-700 dark:text-emerald-400 font-medium">
-                        Resume approved: {event.payload.artifact_version_id} (not submitted)
-                      </p>
-                    ) : event.payload.kind === 'proposal_review' ? (
-                      <p>Proposal review saved: revision {event.payload.revision}</p>
-                    ) : (
-                      <div className="rounded-lg bg-slate-50 dark:bg-slate-900/40 p-3 space-y-1">
-                        <p className="font-medium">
-                          Imported status: {event.payload.original_status ?? 'Unknown'}
-                        </p>
-                        <p>{event.payload.notes}</p>
-                        <pre className="whitespace-pre-wrap break-words text-[11px] font-mono text-slate-600 dark:text-slate-400">
-                          {event.payload.events_json}
-                        </pre>
-                      </div>
-                    )}
-                  </li>
-                ))}
+                      <details className="text-[11px] text-slate-500 dark:text-slate-400">
+                        <summary className="cursor-pointer select-none">Details</summary>
+                        <div className="mt-1.5 rounded-lg bg-slate-50 dark:bg-slate-900/40 p-3 space-y-1 border border-slate-200/60 dark:border-slate-800">
+                          {(p.kind === 'preparation_transition' || p.kind === 'application_transition') && (
+                            <>
+                              <p>{p.reason}</p>
+                              <p className="font-mono">{p.from} → {p.to}</p>
+                            </>
+                          )}
+                          {p.kind === 'channel_action' && (
+                            <>
+                              <p>{p.channel} → {p.destination} · {p.status.replace('_', ' ')}</p>
+                              <p>Verification: {p.verification_method}. Confirmation: {p.confirmation_reference ?? 'None'}</p>
+                              <p>Artifact: {p.artifact_version_id ?? 'None'}</p>
+                              {p.original_notes && <p>{p.original_notes}</p>}
+                            </>
+                          )}
+                          {p.kind === 'resume_review' && <p>Approved version: {p.artifact_version_id}</p>}
+                          {p.kind === 'proposal_review' && <p>Review {p.review_id}, revision {p.revision}</p>}
+                          {p.kind === 'import_history' && (
+                            <>
+                              {p.notes && <p>{p.notes}</p>}
+                              <pre className="whitespace-pre-wrap break-words font-mono">{p.events_json}</pre>
+                            </>
+                          )}
+                        </div>
+                      </details>
+                    </li>
+                  );
+                })}
               </ol>
             </section>
           )}

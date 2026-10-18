@@ -24,3 +24,13 @@ it('preserves actionable prevented-start errors', async () => {
   await expect(new ApiClient().continueJobProposals('job', 'review', { expected_job_revision: 2, expected_review_revision: 1, input_fingerprint: 'hash', validation_fingerprint: 'hash', idempotency_key: 'start' })).rejects.toMatchObject({ name: 'ApiError', code: 'ineligible', status: 409 });
   expect(ApiError).toBeDefined();
 });
+it('rejects slow requests with a plain timeout error that keeps the endpoint out of the message', async () => {
+  vi.useFakeTimers();
+  try {
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise((_, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason)))));
+    const pending = new ApiClient().getJobProposals('job');
+    const settled = expect(pending).rejects.toMatchObject({ name: 'TimeoutError', endpoint: '/api/jobs/job/proposals', message: 'The host is taking longer than expected to respond.' });
+    await vi.advanceTimersByTimeAsync(15000);
+    await settled;
+  } finally { vi.useRealTimers(); }
+});

@@ -78,7 +78,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
         />
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-8 pb-20 md:pb-8">
+        <main className="flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-8 pb-[calc(6rem+env(safe-area-inset-bottom,0px))] md:pb-8">
           <div className="max-w-7xl mx-auto w-full">{children}</div>
         </main>
       </div>

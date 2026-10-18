@@ -25,6 +25,7 @@ it('checks on open/focus and cancels preview without syncing', async () => {
   render(<UpstreamSyncControl coordinator={writer} verifyWorkspace={async () => {}} />);
   expect(await screen.findByText('Base resume updated')).toBeInTheDocument();
   fireEvent(window, new Event('focus')); await waitFor(() => expect(apiClient.getDraftUpstream).toHaveBeenCalledTimes(2));
+  expect(screen.getByRole('button', { name: 'Sync upstream' })).toHaveClass('rounded-desk', 'border');
   fireEvent.click(screen.getByRole('button', { name: 'Sync upstream' }));
   expect(await screen.findByRole('dialog', { name: 'Sync upstream resume' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Apply upstream sync' })).toBeDisabled();

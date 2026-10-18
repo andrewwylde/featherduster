@@ -3,7 +3,6 @@ import { CorpusService } from '../corpus/service.js';
 import { ProposalRepository } from './proposal-repository.js';
 import { ProposalService } from './proposal-service.js';
 import { randomUUID } from 'node:crypto';
-import yaml from 'js-yaml';
 import { z } from 'zod';
 import * as C from '@featherduster/core';
 import type { ModelRunner } from '../runners/types.js';
@@ -54,7 +53,9 @@ export class JobPreparation {
     guard();
     const input = artifacts.getInputSnapshot(attempt.input_snapshot_id);
     const read = (ref: C.ImmutableReference) => r.database.files.readSnapshot(ref, input.job_id, input.id).toString();
-    const base = C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume)));
+    const captured = artifacts.capturedContext(input.id);
+    // A fresh generation is prompted with the corrections its initial review will carry forward.
+    const base = C.effectiveBaseResume(captured.base_resume, selection ?? { base_corrections: reviews.carryBaseCorrections(attempt.job_id, captured.base_resume).carried });
     const rules = C.PrivacyRulesConfigSchema.parse(JSON.parse(read(input.privacy_rules)));
     const template = C.LatexTemplateProfileSchema.parse(JSON.parse(read(input.template)));
     if (JSON.stringify(template) !== JSON.stringify(getLatexTemplate(template.id))) throw new PreparationBlocked('Template is not an installed trusted profile');
@@ -68,7 +69,6 @@ export class JobPreparation {
     if (!detection.available) throw new PreparationBlocked(detection.detail);
     const tools = await abortable(renderer.preflight(template.id, signal), signal); guard();
     if (!tools.available) throw new PreparationBlocked(tools.diagnostics.map(d => d.message).join('; '));
-    const captured = artifacts.capturedContext(input.id);
     const all = captured.evidence.getAll();
     const skillSupport = captured.skillSupport;
     const posting = r.getPostingSnapshot(input.posting.id).text;

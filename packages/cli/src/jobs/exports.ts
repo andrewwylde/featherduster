@@ -68,8 +68,13 @@ export class JobExports {
     if (request.dossier) {
       const job = this.r.getJob(jobId), posting = this.r.getPostingSnapshot(context.input.posting.id);
       const options = { targetCompany: job.company ?? undefined, targetRole: job.role ?? undefined, jobDescription: posting.text, date: view.artifact.created_at.slice(0, 10) };
-      add('confidential-dossier.md', 'text/markdown', C.compileDefenseBrief(spec, context.evidence, options), true);
-      add('confidential-dossier.html', 'text/html', C.compileHtmlDefenseBrief(spec, context.evidence, options), true);
+      const dossierMd = C.compileDefenseBrief(spec, context.evidence, options)
+        .replace(/^# 🛡️ Interview Defense Brief:/m, '# 🛡️ Confidential Evidence Dossier (Private Candidate Preparation — Not the Interview Brief):');
+      const dossierHtml = C.compileHtmlDefenseBrief(spec, context.evidence, options)
+        .replace('<title>Interview Defense Brief -', '<title>Confidential Evidence Dossier -')
+        .replace('<h1>Interview Defense Brief:', '<h1>Confidential Evidence Dossier (Private Candidate Preparation — Not the Interview Brief):');
+      add('confidential-dossier.md', 'text/markdown', dossierMd, true);
+      add('confidential-dossier.html', 'text/html', dossierHtml, true);
     }
     for (const kind of ['cover_letter', 'interview_brief'] as const) {
       const revision = request[kind];

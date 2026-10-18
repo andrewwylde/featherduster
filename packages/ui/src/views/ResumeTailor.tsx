@@ -74,6 +74,7 @@ interface ResumeTailorProps {
 
 export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete, linkedJobDraft }) => {
   const [jobDraft, setJobDraft] = useState<JobDraft | null>(null);
+  const [linkedJobLabel, setLinkedJobLabel] = useState<string | null>(null);
   const [savingJobDraft, setSavingJobDraft] = useState(false);
   const savingDraftRef = useRef(false);
   // Remote data state
@@ -172,9 +173,11 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
     setLoadError(null);
     try {
       if (linkedJobDraft) {
-        const [{ draft }, evidence] = await Promise.all([apiClient.getJobDraft(linkedJobDraft.jobId, linkedJobDraft.draftId), apiClient.getEvidence()]);
+        // The posting is context for keyword matching only; a failed read must not block the draft.
+        const [{ draft }, evidence, linkedJob] = await Promise.all([apiClient.getJobDraft(linkedJobDraft.jobId, linkedJobDraft.draftId), apiClient.getEvidence(), apiClient.getJob(linkedJobDraft.jobId).catch(() => null)]);
         initialized.current = true; setJobDraft(draft);
-        const next = manualFromSpec(draft.candidate, draft.id);
+        setLinkedJobLabel(linkedJob?.job ? `${linkedJob.job.company} — ${linkedJob.job.role}` : null);
+        const next = { ...manualFromSpec(draft.candidate, draft.id), jobDescription: linkedJob?.posting?.text ?? '' };
         payloadRef.current = next; setPayload(next); setEvidenceList(evidence);
         return;
       }
@@ -505,7 +508,7 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
               Tailoring runs
             </button>
           )}
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
             Resume Tailoring Canvas
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-purple-950/50 text-purple-300 border border-purple-500/30">
               Multi-Target ATS
@@ -613,7 +616,8 @@ export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun,
       </div>
 
       {linkedJobDraft && <section className="border rounded p-4 space-y-2">
-        <p>Linked job draft. Parent artifact: {jobDraft?.parent_artifact_version_id}. Saving is not approval or a newly validated PDF.</p>
+        <p>{linkedJobLabel ? `Linked to the resume prepared for ${linkedJobLabel}.` : 'Linked to a prepared job resume.'} Saving is not approval or a newly validated PDF.</p>
+        <details className="text-xs"><summary className="cursor-pointer">Details</summary><p className="break-all">Parent artifact: {jobDraft?.parent_artifact_version_id}</p></details>
         <button className="min-h-[44px] border rounded px-3" disabled={!jobDraft || savingJobDraft} onClick={async () => {
           if (!jobDraft || savingDraftRef.current) return;
           savingDraftRef.current = true; setSavingJobDraft(true);

@@ -106,7 +106,8 @@ export function JobMaterialReview({ job, kind, onSaved }: { job: Job; kind: Mate
       <button className="underline" disabled={busy} onClick={() => void action(async () => {
         const response = await fetch(`/api/jobs/${job.id}/materials/${kind}/export?revision=${current.id}&format=text`);
         if (!response.ok) throw new Error('The export is no longer current. Reload and inspect checks.');
-        await navigator.clipboard.writeText(await response.text());
+        const text = await response.text();
+        try { await navigator.clipboard.writeText(text); } catch { throw new Error('Clipboard access is blocked by your browser. Download the Markdown or HTML file instead.'); }
       })}>Copy text</button>
     </section>}
     {!!data?.history.length && <details><summary className="cursor-pointer text-sm">Revision history ({data.history.length})</summary><button className="block underline py-2 text-sm" onClick={() => setHistoryId('')}>Return to current version</button>{data.history.map(r => <button key={r.id} className="block underline py-2 text-sm" onClick={() => { setHistoryId(r.id); setIndex(0); }}>Revision {r.revision} · {new Date(r.created_at).toLocaleString()}{r.review ? ' · reviewed' : ''}</button>)}</details>}

@@ -15,7 +15,8 @@ it('shows exact support and provenance and withdraws with revision binding', asy
   expect(await screen.findByText(/Backend/)).toBeInTheDocument();
   expect(screen.getAllByText(/Built APIs/).length).toBeGreaterThan(0);
   expect(screen.getByText(/local-human/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Withdraw u' }));
+  fireEvent.click(screen.getByRole('button', { name: "Withdraw 'backend' for all jobs" }));
+  fireEvent.click(screen.getByRole('button', { name: "Confirm withdraw 'backend' for all jobs" }));
   await waitFor(() => expect(withdraw).toHaveBeenCalledWith('u', expect.objectContaining({ expected_revision: 3, explanation: 'Withdrawn by user', change: { kind: 'withdrawal', update_id: 'u', reason: 'Withdrawn by user' } })));
 });
 

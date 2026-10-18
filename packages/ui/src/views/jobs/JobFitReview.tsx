@@ -3,6 +3,7 @@ import type { Job } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
+import { describeStateReason, hasRecoveredCapture } from './job-utils.js';
 
 export function JobFitReview({ job, onSaved, navigate }: { job: Job; onSaved(): void; navigate(path: string): void }) {
   const load = useCallback(() => apiClient.getJobFit(job.id), [job.id]);
@@ -15,6 +16,7 @@ export function JobFitReview({ job, onSaved, navigate }: { job: Job; onSaved(): 
   const intent = useIntentKey();
   const ids = selected ?? sources.data?.map(e => e.id) ?? [];
   const active = job.preparation_state === 'preparing' || job.preparation_state === 'queued';
+  const stateReason = hasRecoveredCapture(job) ? null : describeStateReason(job.state_reason);
   const assess = async () => {
     if (pending.current) return;
     pending.current = true; setBusy(true); setFailure('');
@@ -46,7 +48,7 @@ export function JobFitReview({ job, onSaved, navigate }: { job: Job; onSaved(): 
         : /runner|model|consent/i.test(failure) ? <button className="underline" onClick={() => navigate('/settings')}>Runner and consent settings</button>
         : <button className="underline" onClick={() => { void refresh(); void sources.refresh(); }}>Reload assessment and sources</button>}
     </div>}
-    {['needs_input', 'failed', 'interrupted', 'cancelled'].includes(job.preparation_state) && job.state_reason && <p role="status" className="text-sm">Last work stopped: {job.state_reason}. Inspect the cause before reassessing. <button className="underline" onClick={() => navigate('/settings')}>Runner and consent settings</button></p>}
+    {['needs_input', 'failed', 'interrupted', 'cancelled'].includes(job.preparation_state) && stateReason && <p role="status" className="text-sm">Last work stopped: {stateReason}{/[.!?]$/.test(stateReason) ? '' : '.'} Inspect the cause before reassessing. <button className="underline" onClick={() => navigate('/settings')}>Runner and consent settings</button></p>}
     <details>
       <summary className="cursor-pointer text-sm font-medium">Selected sources ({ids.length})</summary>
       <p className="text-sm my-2">The working skillset mapping uses your evidence and explicitly saved support, not resume skills or the job rubric.</p>

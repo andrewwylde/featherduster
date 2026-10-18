@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_STARTER_RESUME, ProposalSchema, ProposalPatchSchema, applyProposalPatches, normalizeGenerationProposals, detectProposalConflicts, normalizeProposalIssues, validateProposalReview, ProposalReviewRevisionSchema } from '../src/index.js';
+import { DEFAULT_STARTER_RESUME, ProposalSchema, ProposalPatchSchema, applyProposalPatches, normalizeGenerationProposals, detectProposalConflicts, normalizeProposalIssues, validateProposalReview, ProposalReviewRevisionSchema, BaseCorrectionSchema, relocateBaseCorrection, ResumeSpecSchema } from '../src/index.js';
 const p = (id = 'p') => ProposalSchema.parse({ id, type: 'summary.rewrite', target: {}, after: 'Engineer' });
 describe('proposal review boundary', () => {
   it('normalizes duplicate and empty IDs once and removes model authority', () => {
@@ -51,4 +51,25 @@ it('invalidates a grounding only when its captured source binding changes', () =
   const groundings = [{ proposal_id: 'p', sources: [{ evidence_id: 'ev-1', evidence_fingerprint: 'old' }] }, { proposal_id: 'other', sources: [{ evidence_id: 'ev-2', evidence_fingerprint: 'same' }] }] as Parameters<typeof applyProposalPatches>[3];
   const result = applyProposalPatches([p(), p('other')], [], [], groundings, new Map([['ev-1', 'new'], ['ev-2', 'same']]));
   expect(result.groundings.map(g => g.proposal_id)).toEqual(['other']);
+});
+
+describe('starting-resume correction relocation', () => {
+  const exp = (company: string, ...texts: string[]) => ({ company, role: 'Engineer', startDate: '2020-01', endDate: '2024-01', bullets: texts.map(text => ({ text })) });
+  const spec = (...experiences: ReturnType<typeof exp>[]) => ResumeSpecSchema.parse({ profile: { name: 'T', title: 'E', email: 'a@b.com' }, experiences, education: [], skills: [] });
+  const fix = { path: 'experiences.0.bullets.0.text', before: 'Cut cost 91%.', after: 'Cut cost.', recorded_by: 'local-human', recorded_at: new Date().toISOString() };
+  it('parses older anchor-less corrections and carries them only on an exact index and text match', () => {
+    expect(BaseCorrectionSchema.parse(fix)).toEqual(fix);
+    expect(relocateBaseCorrection(spec(exp('Acme', 'Cut cost 91%.')), fix)).toMatchObject({ status: 'carried', correction: { path: fix.path } });
+    expect(relocateBaseCorrection(spec(exp('Globex', 'Other.'), exp('Acme', 'Cut cost 91%.')), fix)).toEqual({ status: 'unapplied' });
+  });
+  it('follows an anchored employer and its captured wording, never a different employer with the same text', () => {
+    const anchored = { ...fix, anchor: { company: 'Acme', role: 'Engineer', startDate: '2020-01' } };
+    expect(relocateBaseCorrection(spec(exp('Globex', 'Cut cost 91%.'), exp('Acme', 'New first.', 'Cut cost 91%.')), anchored)).toMatchObject({ status: 'carried', correction: { path: 'experiences.1.bullets.1.text' } });
+    expect(relocateBaseCorrection(spec(exp('Acme', 'Cut cost 91%.'), exp('Acme', 'Cut cost 91%.')), anchored)).toEqual({ status: 'unapplied' });
+    expect(relocateBaseCorrection(spec(exp('Globex', 'Cut cost 91%.')), anchored)).toEqual({ status: 'unapplied' });
+    expect(relocateBaseCorrection(spec(exp('Acme', 'Cut cost.')), anchored)).toEqual({ status: 'already_shared' });
+  });
+  it('rejects leading-zero location aliases', () => {
+    expect(BaseCorrectionSchema.safeParse({ ...fix, path: 'experiences.01.bullets.0.text' }).success).toBe(false);
+  });
 });

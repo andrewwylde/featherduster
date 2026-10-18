@@ -89,24 +89,25 @@ export const IssueList: React.FC<{ issues?: ValidationIssue[] }> = ({ issues }) 
   );
 };
 
-export const CitationChip: React.FC<{ id: string; onClick?: (id: string) => void; onRemove?: (id: string) => void }> = ({
+export const CitationChip: React.FC<{ id: string; label?: string; onClick?: (id: string) => void; onRemove?: (id: string) => void }> = ({
   id,
+  label = id,
   onClick,
   onRemove,
 }) => (
   <span className="inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 px-1.5 py-0.5 font-mono text-[11px] text-slate-700 dark:text-slate-300">
     {onClick ? (
       <button type="button" onClick={() => onClick(id)} className="hover:text-vermilion-600 dark:hover:text-vermilion-400 focus-visible:outline-none focus-visible:underline">
-        {id}
+        {label}
       </button>
     ) : (
-      id
+      label
     )}
     {onRemove && (
       <button
         type="button"
         onClick={() => onRemove(id)}
-        aria-label={`Remove citation ${id}`}
+        aria-label={`Remove citation ${label}`}
         className="text-slate-400 hover:text-rose-600"
       >
         ×

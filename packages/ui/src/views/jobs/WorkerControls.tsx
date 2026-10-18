@@ -5,7 +5,7 @@ import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 import { QueueVisualization } from './QueueVisualization.js';
-import { isNeedsInput } from './job-utils.js';
+import { isNeedsInput, pluralize } from './job-utils.js';
 
 export interface WorkerControlsProps {
   jobs?: Job[];
@@ -49,6 +49,10 @@ export function WorkerControls({
 
   const isProcessing = Boolean(data?.active.length);
   const isStopped = Boolean(data?.control.stopped_at || !data?.control.automatic_preparation_enabled);
+  // Start only changes something when automatic work is off, stopped or set to pause.
+  const automaticOn = Boolean(data && data.control.automatic_preparation_enabled && !data.control.stopped_at && !data.control.pause_after_current);
+  // Nothing to stop once the worker is stopped and idle, unless a Start is still in flight.
+  const nothingToStop = Boolean(data?.control.stopped_at && !isProcessing && !pending.includes('start'));
   const status = error
     ? 'Host unavailable'
     : !data
@@ -57,7 +61,7 @@ export function WorkerControls({
         ? 'Processing'
         : data.control.stopped_at
           ? 'Stopped'
-          : data.needs_review_count ? `Idle — ${data.needs_review_count} jobs need review` : 'Idle';
+          : data.needs_review_count ? `Idle — ${pluralize(data.needs_review_count, 'job needs', 'jobs need')} review` : 'Idle';
 
   const getBadgeStyle = () => {
     if (error) {
@@ -129,17 +133,18 @@ export function WorkerControls({
           {/* Start Button */}
           <button
             className={`${isStopped ? primaryButton : secondaryButton} text-xs font-medium min-h-[44px] sm:min-h-0 sm:py-1.5`}
-            disabled={!data || pending.length > 0}
+            disabled={!data || pending.length > 0 || automaticOn}
             onClick={() => void act('start')}
           >
             <Play className="h-3.5 w-3.5 fill-current" />
             Start automatic preparation
           </button>
+          {automaticOn && <p className="self-center text-xs text-slate-600 dark:text-slate-400">Automatic preparation is on.</p>}
 
           {/* Pause Button */}
           <button
             className={`${secondaryButton} text-xs font-medium min-h-[44px] sm:min-h-0 sm:py-1.5`}
-            disabled={!data || pending.length > 0}
+            disabled={!data || pending.length > 0 || !automaticOn}
             onClick={() => void act('pause')}
           >
             <Pause className="h-3.5 w-3.5" />
@@ -150,7 +155,7 @@ export function WorkerControls({
           {/* Stop Button */}
           <button
             className="inline-flex items-center justify-center gap-1.5 rounded-desk border border-rose-200 dark:border-rose-900/60 bg-rose-50/50 dark:bg-rose-950/20 px-3 py-1.5 min-h-[44px] sm:min-h-0 text-xs font-medium text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-rose-500"
-            disabled={!data || pending.includes('stop')}
+            disabled={!data || pending.includes('stop') || nothingToStop}
             onClick={() => void act('stop')}
           >
             <Square className="h-3.5 w-3.5 fill-current" />

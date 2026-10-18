@@ -13,7 +13,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 /** Compact, opt-in publication inside resume review. Historical files never claim freshness. */
-export function JobExports({ job, artifact, blocked = false }: { job: Job; artifact: ArtifactVersion; blocked?: boolean }) {
+/** A string `blocked` is the reason shown to the user; `true` means a historical or pending resume. */
+export function JobExports({ job, artifact, blocked = false }: { job: Job; artifact: ArtifactVersion; blocked?: boolean | string }) {
   const [open, setOpen] = useState(false), [material, setMaterial] = useState('resume');
   const [files, setFiles] = useState<File[]>([]), [releases, setReleases] = useState<Release[]>([]);
   const [error, setError] = useState(''), [notice, setNotice] = useState(''), [busy, setBusy] = useState(false);
@@ -25,7 +26,7 @@ export function JobExports({ job, artifact, blocked = false }: { job: Job; artif
     setFiles([]); setSelection(null); setError(''); setNotice('');
     request<{ releases: Release[] }>(base).then(value => { if (live) setReleases(value.releases); }, e => { if (live) setError(e.message); });
     const check = async () => {
-      if (blocked) throw new Error('This is a historical or pending resume. Return to the current checked resume; saved releases remain below.');
+      if (blocked) throw new Error(typeof blocked === 'string' ? blocked : 'This is a historical or pending resume. Return to the current checked resume; saved releases remain below.');
       const next: Record<string, unknown> = { artifact_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint, dossier: material === 'dossier' };
       for (const kind of ['cover_letter', 'interview_brief'] as const) {
         if (material !== kind && material !== 'all') continue;
@@ -67,7 +68,9 @@ export function JobExports({ job, artifact, blocked = false }: { job: Job; artif
         {file.name.endsWith('.txt') && <button className={secondaryButton} disabled={busy} onClick={() => void act(async () => {
           const response = await fetch(url(file.name, false));
           if (!response.ok) { const value = await response.json(); throw new Error(value.error ?? 'Copy failed'); }
-          await navigator.clipboard.writeText(await response.text()); setNotice('Copied saved text');
+          const text = await response.text();
+          try { await navigator.clipboard.writeText(text); } catch { throw new Error('Clipboard access is blocked by your browser. Download the .txt file instead.'); }
+          setNotice('Copied saved text');
         })}>Copy plain text</button>}
       </li>)}</ul>
       <button className={primaryButton} disabled={busy || !selection || !files.length} onClick={() => void act(async () => {

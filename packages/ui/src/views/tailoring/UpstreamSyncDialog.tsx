@@ -5,6 +5,7 @@ import { sseClient } from '../../api/events';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import type { DraftCoordinator } from '../../tailoring-drafts/coordinator';
 import { MergeValue, PreviousOutputs, ResumePreview, resolvedCandidate } from './ResumeMergePreview';
+import { secondaryButton } from './ui';
 
 const label = (path: string) => path.split('/').filter(Boolean).map(part => /^\d+$/.test(part) ? String(Number(part) + 1) : part.replace(/([A-Z])/g, ' $1').replace(/^./, c => c.toUpperCase())).join(' › ');
 function ConflictChoices({ conflict, group, choice, disabled, manual, onChoose }: {
@@ -112,7 +113,7 @@ export function UpstreamSyncControl({ coordinator, verifyWorkspace, onLoaded }: 
       {upstream?.missing
         ? <p>Live source unavailable. Your pinned snapshot is retained.</p>
         : upstream?.changed && <p role="status">Base resume updated</p>}
-      <button type="button"
+      <button type="button" className={secondaryButton}
         disabled={busy || !upstream || upstream.missing || !upstream.changed || state.status === 'conflict'}
         onClick={() => void open()}>
         {busy && !preview ? 'Loading upstream preview…' : 'Sync upstream'}

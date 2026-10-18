@@ -81,30 +81,6 @@ export class JobArtifactsService {
       return r.saveInputSnapshot(input);
     });
   }
-  correctStartingResume(request: { job_id: string; input_snapshot_id: string; expected_job_revision: number; idempotency_key: string; base_resume: C.ResumeSpec }) {
-    const r = this.repository;
-    return r.withReceipt('correct_starting_resume', request.idempotency_key, request, () => {
-      const job = r.getJob(request.job_id);
-      if (job.revision !== request.expected_job_revision) throw new RepositoryError('revision_conflict', 'Job changed; retain your draft and compare current inputs');
-      if (['queued', 'preparing'].includes(job.preparation_state) || r.active().some(a => a.job_id === job.id)) throw new RepositoryError('ineligible', 'Stop preparation before correcting its starting resume');
-      const latest = r.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload, '$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(job.id) as { id: string } | undefined;
-      if (latest?.id !== request.input_snapshot_id) throw new RepositoryError('revision_conflict', 'Starting inputs changed; retain your draft and inspect the current version');
-      const input = this.getInputSnapshot(request.input_snapshot_id);
-      if (input.job_id !== job.id || (job.posting_snapshot_id && job.posting_snapshot_id !== input.posting.id)) throw new RepositoryError('invalid_relationship', 'Captured posting is no longer current');
-      const files = r.database.files;
-      const read = (ref: C.ImmutableReference) => files.readSnapshot(ref, job.id, input.id).toString();
-      const manifest = inputManifest.parse(JSON.parse(read({ id: `${files.bundlePath('snapshots', job.id, input.id)}/manifest.json`, fingerprint: input.fingerprint })));
-      const next = this.captureInputs({ job_id: job.id, posting_id: input.posting.id,
-        base_resume: yaml.dump(C.ResumeSpecSchema.parse(request.base_resume)),
-        selected_evidence: input.selected_evidence.map((ref, i) => ({ source_id: manifest.evidence_sources[i], bytes: read(ref) })),
-        privacy_rules: JSON.parse(read(input.privacy_rules)), template: JSON.parse(read(input.template)),
-        runner_configuration: JSON.parse(read(input.runner_configuration)), policy: input.policy,
-        corpus_knowledge: input.corpus_knowledge ? JSON.parse(read(input.corpus_knowledge)) : undefined,
-      });
-      const updated = r.updateJob({ ...job, recovery: { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' }, state_reason: 'Job-local starting resume saved. Previous checks and materials are unchanged; explicitly prepare the new inputs.' }, job.revision);
-      return { input_snapshot: next, job: updated };
-    });
-  }
   getInputSnapshot(id: string): C.InputSnapshot {
     const input = this.repository.getInputSnapshot(id);
     return this.corrupt(() => {
@@ -173,6 +149,13 @@ export class JobArtifactsService {
       return { artifact, manifest };
     });
   }
+  /** The review an attempt continued from, or the initial review it generated; its corrections define the effective base. */
+  private attemptReview(attemptId: string | null) {
+    const db = this.repository.database.db;
+    const row = attemptId ? (db.prepare('SELECT r.payload FROM attempt_proposal_reviews a JOIN proposal_review_revisions r ON r.id=a.review_id AND r.revision=a.revision WHERE a.attempt_id=?').get(attemptId)
+      ?? db.prepare('SELECT r.payload FROM proposal_generations g JOIN proposal_review_revisions r ON r.generation_id=g.id AND r.revision=0 WHERE g.attempt_id=?').get(attemptId)) as { payload: string } | undefined : undefined;
+    return row ? C.ProposalReviewRevisionSchema.parse(JSON.parse(row.payload)) : null;
+  }
   preparationContext(attemptId: string | null) {
     return this.corrupt(() => {
       if (!attemptId) return { analysis: null, alignment: null, brief_markdown: null };
@@ -203,7 +186,7 @@ export class JobArtifactsService {
       if (artifact.pdf) files.readArtifact(artifact.pdf, jobId, id);
       const working = r.database.db.prepare('SELECT id FROM draft_revisions WHERE job_id=? AND parent_artifact_version_id=? ORDER BY rowid DESC LIMIT 1').get(jobId, id) as { id: string } | undefined;
       return { artifact, working_draft: working ? r.getLatestDraft(working.id) : null, draft: r.getDraftRevision(manifest.draft_id, manifest.draft_revision),
-        base_resume: C.ResumeSpecSchema.parse(yaml.load(files.readSnapshot(input.base_resume, jobId, input.id).toString())),
+        base_resume: C.effectiveBaseResume(C.ResumeSpecSchema.parse(yaml.load(files.readSnapshot(input.base_resume, jobId, input.id).toString())), this.attemptReview(artifact.attempt_id) ?? {}),
         ...this.preparationContext(artifact.attempt_id),
         validation_report: artifact.validation_report ? JSON.parse(files.readArtifact(artifact.validation_report, jobId, id).toString()) : null,
         preview_count: manifest.previews.length };

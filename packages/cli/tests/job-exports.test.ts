@@ -54,8 +54,12 @@ it('exports all resume formats from one binding, exact validated PDF/source and 
   for (const file of result.files) expect(file.bytes.length).toBeGreaterThan(0);
   expect(result.files.find(f => f.name === 'resume.pdf')!.bytes.toString()).toBe('synthetic test PDF');
   expect(result.files.find(f => f.name === 'resume.tex')!.bytes.toString()).toBe('exact validated latex');
-  expect(result.files.filter(f => f.confidential)).toHaveLength(2);
-  expect(result.files.find(f => f.name === 'confidential-dossier.md')!.bytes.toString()).toContain('Strictly Confidential');
+  const dossierMd = result.files.find(f => f.name === 'confidential-dossier.md')!.bytes.toString();
+  expect(dossierMd).toContain('# 🛡️ Confidential Evidence Dossier (Private Candidate Preparation — Not the Interview Brief):');
+  expect(dossierMd).not.toContain('# 🛡️ Interview Defense Brief:');
+  expect(dossierMd).toContain('Strictly Confidential');
+  const dossierHtml = result.files.find(f => f.name === 'confidential-dossier.html')!.bytes.toString();
+  expect(dossierHtml).toContain('<h1>Confidential Evidence Dossier (Private Candidate Preparation — Not the Interview Brief):');
   const response = await f.app.request(`/api/jobs/${f.job.id}/exports/current/resume.html?selection=${encodeURIComponent(JSON.stringify(f.selection))}&download=1`);
   expect(response.status).toBe(200); expect(response.headers.get('Content-Disposition')).toContain('resume.html');
   expect(await response.text()).toContain('Synthetic');
@@ -111,8 +115,14 @@ it('includes reviewed letter and interview as separate real files with exact cur
     selection[kind] = f.runtime.materials.review(f.job.id, kind, { expected_revision_id: current.id, idempotency_key: `review-${kind}` }).result.id;
   }
   f.run.mockClear();
+  const briefOnlySelection = { ...f.selection, interview_brief: selection.interview_brief, dossier: false };
+  expect(f.runtime.exports.files(f.job.id, briefOnlySelection).files.some(x => x.confidential)).toBe(false);
+  const deniedDossier = await f.app.request(`/api/jobs/${f.job.id}/exports/current/confidential-dossier.md?selection=${encodeURIComponent(JSON.stringify(briefOnlySelection))}`);
+  expect(deniedDossier.status).toBe(404);
   const release = f.runtime.exports.save(f.job.id, selection, 'all-materials');
   expect(release.files).toHaveLength(12);
+  expect(release.files.some(x => x.confidential)).toBe(false);
+  expect(() => f.runtime.exports.content(f.job.id, release.id, 'confidential-dossier.md')).toThrow(/not found/);
   expect(f.runtime.exports.content(f.job.id, release.id, 'cover_letter.md').bytes.toString()).toBe('Maintained APIs.');
   expect(f.runtime.exports.content(f.job.id, release.id, 'interview_brief.html').bytes.toString()).toContain('My contribution: Maintained APIs.');
   expect(f.run).not.toHaveBeenCalled();

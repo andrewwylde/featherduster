@@ -9,7 +9,7 @@ const artifact = { id: 'artifact', version_fingerprint: 'fingerprint' } as any;
 const files = ['resume.pdf', 'resume.md', 'resume.txt', 'resume.html', 'resume.typ', 'resume.tex', 'confidential-dossier.md', 'confidential-dossier.html'].map(name => ({ name, type: name.endsWith('.html') ? 'text/html' : name.endsWith('.pdf') ? 'application/pdf' : 'text/plain', confidential: name.startsWith('confidential') }));
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 const response = (value: unknown, ok = true) => ({ ok, json: async () => value });
-function setup(blocked = false) {
+function setup(blocked: boolean | string = false) {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
     if (init?.method === 'POST') return response({ release: { id: 'saved' } });
     if (url.includes('/check?')) return response({ files });
@@ -35,6 +35,12 @@ it('keeps saved release access while pending/historical publication is blocked w
   expect(screen.getByRole('button', { name: 'Save release bundle' })).toBeDisabled();
   expect(screen.getByRole('link', { name: 'resume.pdf' })).toHaveAttribute('href', '/api/jobs/job/exports/saved/resume.pdf?download=1');
 });
+it('names the actual reason when current exports are blocked', async () => {
+  setup('The job details changed after this resume was prepared. Prepare it again with the current details; saved releases remain below.'); open();
+  expect(await screen.findByRole('alert')).toHaveTextContent('The job details changed after this resume was prepared.');
+  expect(screen.queryByText(/historical or pending/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /^Download / })).not.toBeInTheDocument();
+});
 it('discloses the confidential dossier separately and refuses unsaved material drafts', async () => {
   setup(); open(); await screen.findByRole('button', { name: 'Download resume.pdf' });
   fireEvent.change(screen.getByLabelText('Export material'), { target: { value: 'dossier' } });
@@ -51,7 +57,7 @@ it('reports clipboard denial rather than acknowledging a false copy', async () =
   Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: vi.fn().mockRejectedValue(new Error('Clipboard denied')) } });
   fetcher.mockResolvedValueOnce({ ok: true, text: async () => 'Persisted wording' } as any);
   fireEvent.click(screen.getByRole('button', { name: 'Copy plain text' }));
-  await screen.findByRole('alert'); expect(screen.getByRole('alert')).toHaveTextContent('Clipboard denied');
+  await screen.findByRole('alert'); expect(screen.getByRole('alert')).toHaveTextContent('Clipboard access is blocked by your browser. Download the .txt file instead.');
   expect(screen.queryByText('Copied saved text')).not.toBeInTheDocument();
 });
 it('shows a server stale-input reason and retains the shelf after download failure', async () => {

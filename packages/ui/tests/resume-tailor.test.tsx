@@ -646,5 +646,34 @@ describe('Resume Tailor & Pre-Flight Gate Tests', () => {
     expect(summary).toHaveValue('My retained linked edits');
     expect(save).toHaveBeenCalledWith(id, id, 3, expect.objectContaining({ experiences: expect.arrayContaining([expect.objectContaining({ bullets: expect.arrayContaining([expect.objectContaining({ text: 'My retained linked edits' })]) })]) }));
   });
+  it('opens a linked job draft with the job posting as its target description and a readable heading', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const draft = { schema_version: 1 as const, id, workspace_id: 'w', job_id: id, revision: 3, input_snapshot_id: id, parent_artifact_version_id: id, candidate: sampleResumeRecord.spec, proposals: { proposals: [] }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+    vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft });
+    const getJob = vi.spyOn(apiClient, 'getJob').mockResolvedValue({ posting: { text: 'Platform Engineer posting: build backend APIs.' } } as Awaited<ReturnType<typeof apiClient.getJob>>);
+    render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} />);
+    expect(await screen.findByDisplayValue('Platform Engineer posting: build backend APIs.')).toBeInTheDocument();
+    expect(getJob).toHaveBeenCalledWith(id);
+    const heading = screen.getByRole('heading', { level: 1, name: /Resume Tailoring Canvas/ });
+    expect(heading).toHaveClass('text-slate-900', 'dark:text-white');
+    expect(heading).not.toHaveClass('text-white');
+  });
+  it('describes the linked parent resume by job and keeps its id behind Details', async () => {
+    const id = '11111111-1111-4111-8111-111111111111', parent = 'e5d17ad4-0000-4000-8000-000000000000';
+    const draft = { schema_version: 1 as const, id, workspace_id: 'w', job_id: id, revision: 3, input_snapshot_id: id, parent_artifact_version_id: parent, candidate: sampleResumeRecord.spec, proposals: { proposals: [] }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+    vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft });
+    vi.spyOn(apiClient, 'getJob').mockResolvedValue({ job: { company: 'Synthetic Example', role: 'Platform Engineer' }, posting: null } as unknown as Awaited<ReturnType<typeof apiClient.getJob>>);
+    render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} />);
+    expect(await screen.findByText(/Linked to the resume prepared for Synthetic Example — Platform Engineer\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Parent artifact: e5d17ad4/)?.closest('details')).toBeTruthy();
+  });
+  it('still opens a linked job draft when the posting cannot be loaded', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const draft = { schema_version: 1 as const, id, workspace_id: 'w', job_id: id, revision: 3, input_snapshot_id: id, parent_artifact_version_id: id, candidate: sampleResumeRecord.spec, proposals: { proposals: [] }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' };
+    vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft });
+    vi.spyOn(apiClient, 'getJob').mockRejectedValue(new Error('Offline'));
+    render(<ResumeTailor linkedJobDraft={{ jobId: id, draftId: id }} />);
+    expect(await screen.findByRole('button', { name: 'Save job draft' })).toBeInTheDocument();
+  });
 
 });

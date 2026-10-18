@@ -28,6 +28,53 @@ export const ClaimGroundingSchema = z.object({
   recorded_by: text, recorded_at: z.string().datetime(),
 }).strict();
 export type ClaimGrounding = z.infer<typeof ClaimGroundingSchema>;
+export const BASE_TEXT_PATH = /^(summary|experiences\.(0|[1-9]\d*)\.bullets\.(0|[1-9]\d*)\.text)$/;
+export const BASE_TEXT_MAX = 8192;
+/** Identifies the employer entry a bullet correction belongs to, independent of its position. */
+export const ExperienceAnchorSchema = z.object({ company: z.string(), role: z.string(), startDate: z.string() }).strict();
+/** A job-local starting-resume edit; `before` is the captured text it replaces. Older records have no anchor. */
+export const BaseCorrectionSchema = z.object({
+  path: z.string().regex(BASE_TEXT_PATH), before: z.string(), after: text.max(BASE_TEXT_MAX), anchor: ExperienceAnchorSchema.optional(), recorded_by: text, recorded_at: z.string().datetime(),
+}).strict();
+export type BaseCorrection = z.infer<typeof BaseCorrectionSchema>;
+export function baseText(base: z.infer<typeof ResumeSpecSchema>, path: string): string | undefined {
+  const match = BASE_TEXT_PATH.exec(path);
+  if (!match) return undefined;
+  return path === 'summary' ? base.summary ?? '' : base.experiences[Number(match[2])]?.bullets[Number(match[3])]?.text;
+}
+export function experienceAnchor(base: z.infer<typeof ResumeSpecSchema>, path: string): BaseCorrection['anchor'] {
+  const match = BASE_TEXT_PATH.exec(path);
+  const e = match && path !== 'summary' ? base.experiences[Number(match[2])] : undefined;
+  return e ? { company: e.company, role: e.role, startDate: e.startDate } : undefined;
+}
+/**
+ * Locates a correction in newly captured base wording. Anchored bullets are found by employer, then by
+ * their captured text; wording the shared resume already adopted needs no overlay, and anything ambiguous
+ * or changed is unapplied rather than guessed.
+ */
+export function relocateBaseCorrection(base: z.infer<typeof ResumeSpecSchema>, c: BaseCorrection): { status: 'carried'; correction: BaseCorrection } | { status: 'already_shared' | 'unapplied' } {
+  const carried = (path: string) => ({ status: 'carried' as const, correction: { ...structuredClone(c), path } });
+  if (c.path === 'summary' || !c.anchor) { const t = baseText(base, c.path); return t === c.before ? carried(c.path) : { status: t === c.after ? 'already_shared' : 'unapplied' }; }
+  const anchor = c.anchor;
+  const experiences = base.experiences.flatMap((e, i) => e.company === anchor.company && e.role === anchor.role && e.startDate === anchor.startDate ? [i] : []);
+  if (experiences.length !== 1) return { status: 'unapplied' };
+  const ei = experiences[0], original = Number(BASE_TEXT_PATH.exec(c.path)![3]);
+  const bullets = base.experiences[ei].bullets.flatMap((b, i) => b.text === c.before ? [i] : []);
+  const bi = bullets.length === 1 ? bullets[0] : bullets.includes(original) ? original : undefined;
+  if (bi !== undefined) return carried(`experiences.${ei}.bullets.${bi}.text`);
+  return { status: base.experiences[ei].bullets.some(b => b.text === c.after) ? 'already_shared' : 'unapplied' };
+}
+/** Captured base plus the review's job-local corrections; the captured snapshot itself never changes. */
+export function effectiveBaseResume(base: z.infer<typeof ResumeSpecSchema>, review: { base_corrections?: BaseCorrection[] }) {
+  const result = structuredClone(base);
+  for (const c of review.base_corrections ?? []) {
+    if (baseText(result, c.path) !== c.before) throw new Error(`Starting-resume correction no longer matches ${c.path}`);
+    const match = BASE_TEXT_PATH.exec(c.path)!;
+    if (c.path === 'summary') result.summary = c.after;
+    else result.experiences[Number(match[2])].bullets[Number(match[3])].text = c.after;
+  }
+  return result;
+}
 export const ProposalIssueSchema = z.object({
   id: text, subject: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('proposal'), proposal_id: text }).strict(),
@@ -41,11 +88,13 @@ export const ProposalReviewValidationSchema = z.object({
 }).strict().refine(v => v.status !== 'ready' || !v.issues.some(i => i.details.some(d => d.severity === 'block')), 'Blocked validation cannot be ready');
 export const ProposalReviewRevisionSchema = z.object({
   ...binding, id: uuid, generation_id: uuid, revision, patches: z.array(ProposalPatchSchema), groundings: z.array(ClaimGroundingSchema),
+  base_corrections: z.array(BaseCorrectionSchema).optional(),
   feedback_ids: z.array(uuid), corpus_update_ids: z.array(uuid), candidate_preview: ResumeSpecSchema,
   validation: ProposalReviewValidationSchema, created_at: z.string().datetime(),
 }).strict().superRefine((r, ctx) => {
   if (r.validation.generation_id !== r.generation_id || r.validation.input_fingerprint !== r.input_fingerprint || r.validation.review_revision !== r.revision || r.groundings.some(g => g.review_id !== r.id || g.review_revision !== r.revision)) ctx.addIssue({ code: 'custom', message: 'Review validation/grounding binding mismatch' });
   if (new Set(r.patches.map(p => p.proposal_id)).size !== r.patches.length) ctx.addIssue({ code: 'custom', message: 'Duplicate patch' });
+  if (new Set(r.base_corrections?.map(c => c.path)).size !== (r.base_corrections?.length ?? 0)) ctx.addIssue({ code: 'custom', message: 'Duplicate starting-resume correction' });
 });
 export type ProposalReviewRevision = z.infer<typeof ProposalReviewRevisionSchema>;
 

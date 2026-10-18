@@ -53,3 +53,16 @@ it('failed admission retains the source selection and provides a local explanati
   expect(screen.getByLabelText('Migration')).not.toBeChecked();
   expect(start).toHaveBeenCalledWith('job', expect.objectContaining({ evidence_ids: ['a'] }));
 });
+it('does not report a recovered URL capture as stopped work on the Fit tab', async () => {
+  vi.spyOn(apiClient, 'getJobFit').mockResolvedValue({ current: null, history: [] });
+  vi.spyOn(apiClient, 'getEvidence').mockResolvedValue([]);
+  const recovered = { id: 'job', revision: 2, preparation_state: 'needs_input', posting_snapshot_id: 'posting', current_attempt_id: null, missing_inputs: [], state_reason: 'capture_failed: Unable to capture posting. Paste posting text instead.' } as any;
+  const view = render(<JobFitReview job={recovered} onSaved={() => {}} navigate={() => {}} />);
+  await screen.findByText(/No evidence sources/);
+  expect(screen.queryByText(/Last work stopped/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/capture_failed/)).not.toBeInTheDocument();
+  view.unmount();
+  render(<JobFitReview job={{ ...recovered, posting_snapshot_id: null, missing_inputs: [{ key: 'posting_text' }] }} onSaved={() => {}} navigate={() => {}} />);
+  expect(await screen.findByText(/Last work stopped: We couldn't capture the posting from its link\./)).toBeInTheDocument();
+  expect(screen.queryByText(/capture_failed/)).not.toBeInTheDocument();
+});

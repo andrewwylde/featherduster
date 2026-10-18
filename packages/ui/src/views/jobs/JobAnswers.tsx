@@ -3,6 +3,7 @@ import { HelpCircle } from 'lucide-react';
 import type { Job, ScopedAnswer } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { cardClass, inputClass, primaryButton } from '../tailoring/ui.js';
+import { describeStateReason, hasRecoveredCapture } from './job-utils.js';
 
 const scopeLabel = (scope: ScopedAnswer['scope']) =>
   scope.kind === 'job'
@@ -154,7 +155,7 @@ export function JobAnswers({
   ) => a.key === b.key && JSON.stringify(a.scope) === JSON.stringify(b.scope);
 
   if (job.recovery && job.recovery.kind !== 'fact') return <section className={`${cardClass} p-4 space-y-3`}>
-    <h2>Resolve {job.recovery.kind}</h2><p>{job.state_reason}</p>
+    <h2>Resolve {job.recovery.kind}</h2>{!hasRecoveredCapture(job) && describeStateReason(job.state_reason) && <p>{describeStateReason(job.state_reason)}</p>}
     <p>This is not a candidate fact. A confirmed answer cannot bypass validation.</p>
     <a href={`/jobs/${job.id}/resume`}>Open proposal review, diagnostics and input refresh</a>
     {job.recovery.kind === 'setup' && <a className="block" href="/settings">Open runner and consent settings</a>}

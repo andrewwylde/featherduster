@@ -23,6 +23,7 @@ export const SaveReviewSchema = ReviewBindingSchema.extend({
   idempotency_key: text,
 }).strict();
 export const ContinueReviewSchema = ReviewBindingSchema.extend({ validation_fingerprint: text, idempotency_key: text }).strict();
+export const CorrectBaseSchema = ReviewBindingSchema.extend({ review_id: uuid, path: z.string().regex(C.BASE_TEXT_PATH), text: text.max(C.BASE_TEXT_MAX), idempotency_key: text }).strict();
 export const RecoverReviewSchema = z.object({ expected_job_revision: revision, input_snapshot_id: uuid, idempotency_key: text }).strict();
 type Binding = z.infer<typeof ReviewBindingSchema> & { job_id: string; review_id: string };
 export type SaveProposalReviewRequest = z.infer<typeof SaveReviewSchema> & { job_id: string; review_id: string };
@@ -69,8 +70,13 @@ export class ProposalService {
     const history = (this.jobs.database.db.prepare('SELECT id,revision FROM proposal_review_revisions WHERE job_id=? ORDER BY rowid').all(jobId) as { id: string; revision: number }[]).map(r => this.proposals.getRevision(r.id, r.revision));
     return { availability: 'available' as const, generation, generations: [...new Set(history.map(r => r.generation_id))].map(id => this.proposals.getGeneration(id)), review, history, latest_input_snapshot_id, input_stale: latest_input_snapshot_id !== review.input_snapshot_id, corpus_revision: this.corpus.repository.snapshot().revision, captured: { source_fingerprints: Object.fromEntries(ctx.captured.evidence.getAll().map(r => [r.id, sourceFingerprint(r)])), input: ctx.captured.input, base_resume: ctx.captured.base_resume, evidence: ctx.captured.evidence.getAll(), knowledge: ctx.captured.knowledge, skillSupport: ctx.captured.skillSupport, analysis: ctx.analysis, alignment: ctx.alignment } };
   }
-  evaluate(g: C.ProposalGeneration, review: Pick<C.ProposalReviewRevision, 'id' | 'revision' | 'patches' | 'groundings'>) {
+  private effectiveBase(base: C.ResumeSpec, review: Pick<C.ProposalReviewRevision, 'base_corrections'>) {
+    try { return C.effectiveBaseResume(base, review); } catch (error) { return this.fail(error instanceof Error ? error.message : 'Starting-resume correction mismatch'); }
+  }
+  evaluate(g: C.ProposalGeneration, review: Pick<C.ProposalReviewRevision, 'id' | 'revision' | 'patches' | 'groundings' | 'base_corrections'>) {
     const ctx = this.context(g);
+    const corrections = review.base_corrections ?? [];
+    const base = this.effectiveBase(ctx.captured.base_resume, review);
     const overlay = C.applyProposalPatches(g.proposals.proposals, [], review.patches);
     for (const grounding of review.groundings) {
       const p = overlay.proposals.find(p => p.id === grounding.proposal_id);
@@ -81,12 +87,13 @@ export class ProposalService {
       }
     }
     const supportFor = (p: C.Proposal): C.SkillSupport[] => [...ctx.captured.skillSupport, ...review.groundings.filter(x => x.proposal_id === p.id).map(x => ({ skill: x.term, facet: x.term, permitted_terms: [x.term], support: 'direct' as const, scope: { kind: 'job' as const, key: g.job_id }, sources: x.sources, explanation: x.explanation }))];
-    const result = C.validateProposalReview(ctx.captured.base_resume, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport }, ctx.rules, supportFor);
-    const validation: C.ProposalReviewRevision['validation'] = { authority: 'server', version: '1', fingerprint: fingerprint(canonical({ generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, proposals: overlay.proposals, groundings: review.groundings, validator_version: 1 })), generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, status: result.valid ? 'ready' : 'blocked', issues: result.issues };
+    const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport }, ctx.rules, supportFor);
+    const validation: C.ProposalReviewRevision['validation'] = { authority: 'server', version: '1', fingerprint: fingerprint(canonical({ generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, proposals: overlay.proposals, groundings: review.groundings, validator_version: 1, ...(corrections.length ? { base_corrections: corrections } : {}) })), generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, status: result.valid ? 'ready' : 'blocked', issues: result.issues };
     return { candidate_preview: result.candidate, validation, proposals: result.proposals, appliedProposalIds: result.appliedProposalIds };
   }
   initial(g: C.ProposalGeneration, fence: OwnershipFence) {
-    const value = { schema_version: 1 as const, id: randomUUID(), revision: 0, workspace_id: g.workspace_id, job_id: g.job_id, generation_id: g.id, input_snapshot_id: g.input_snapshot_id, input_fingerprint: g.input_fingerprint, patches: [], groundings: [], feedback_ids: [], corpus_update_ids: [], created_at: new Date().toISOString() };
+    const carried = this.carryBaseCorrections(g.job_id, this.context(g).captured.base_resume).carried;
+    const value = { schema_version: 1 as const, id: randomUUID(), revision: 0, workspace_id: g.workspace_id, job_id: g.job_id, generation_id: g.id, input_snapshot_id: g.input_snapshot_id, input_fingerprint: g.input_fingerprint, patches: [], groundings: [], ...(carried.length ? { base_corrections: carried } : {}), feedback_ids: [], corpus_update_ids: [], created_at: new Date().toISOString() };
     const { candidate_preview, validation } = this.evaluate(g, value);
     const active = this.proposals.getActive(g.job_id);
     return this.jobs.database.db.transaction(() => {
@@ -123,6 +130,43 @@ export class ProposalService {
       this.event(saved);
       return { job: savedJob, review: saved, corpus_revision: this.corpus.repository.snapshot().revision, update, requires_refresh: stale };
     });
+  }
+  /** Job-local starting-resume wording is a review overlay: deterministic checks only, no new input capture. */
+  correctBase(request: z.infer<typeof CorrectBaseSchema> & { job_id: string }) {
+    const { job_id, ...body } = request; CorrectBaseSchema.parse(body);
+    return this.jobs.withReceipt('correct_starting_resume', request.idempotency_key, request, () => {
+      const { job, review, generation } = this.bound(request);
+      if (['queued', 'preparing'].includes(job.preparation_state)) throw new RepositoryError('ineligible', 'Stop preparation before correcting its starting resume');
+      const captured = this.context(generation).captured.base_resume;
+      const before = C.baseText(captured, request.path);
+      if (before === undefined) this.fail('Starting-resume location does not exist');
+      const current = C.baseText(this.effectiveBase(captured, review), request.path);
+      if (request.text === current) this.fail('Starting-resume wording is unchanged');
+      const recorded_at = new Date().toISOString();
+      const others = (review.base_corrections ?? []).filter(c => c.path !== request.path);
+      const anchor = C.experienceAnchor(captured, request.path);
+      const base_corrections = request.text === before ? others : [...others, { path: request.path, before, after: request.text, ...(anchor ? { anchor } : {}), recorded_by: 'local-human', recorded_at }];
+      const draft = { ...review, revision: review.revision + 1, base_corrections, created_at: recorded_at, groundings: review.groundings.map(g => ({ ...g, review_revision: review.revision + 1 })) };
+      const { candidate_preview, validation } = this.evaluate(generation, draft);
+      const feedback: C.FeedbackEvent = { schema_version: 1, id: randomUUID(), workspace_id: job.workspace_id, job_id, proposal_id: null, review_revision: draft.revision, kind: 'wording', before: current ?? '', after: request.text, explanation: `Job-local starting-resume correction at ${request.path}`, scope: { kind: 'job', key: job_id }, recorded_by: 'local-human', recorded_at };
+      this.corpus.repository.saveFeedback(feedback);
+      const saved = this.proposals.appendReview({ ...draft, candidate_preview, validation, feedback_ids: [...review.feedback_ids, feedback.id] }, review.revision);
+      const stale = job.recovery?.kind === 'stale_inputs';
+      const savedJob = this.jobs.updateJob({ ...job, recovery: stale ? job.recovery : { kind: 'proposals', subject: {}, action: 'review_proposals' }, state_reason: 'Job-local starting resume saved and rechecked; your shared resume is unchanged.' }, job.revision);
+      this.event(saved);
+      return { job: savedJob, review: saved };
+    });
+  }
+  /** Locates the active review's corrections in newly captured base wording; snapshots themselves stay unchanged. */
+  carryBaseCorrections(jobId: string, base: C.ResumeSpec) {
+    const carried: C.BaseCorrection[] = [], unapplied: C.BaseCorrection[] = [];
+    for (const c of this.proposals.getActive(jobId)?.base_corrections ?? []) {
+      const result = C.relocateBaseCorrection(base, c);
+      if (result.status === 'carried') carried.push(result.correction);
+      else if (result.status === 'unapplied') unapplied.push(c);
+    }
+    // Relocation can never let two corrections claim one passage.
+    return new Set(carried.map(c => c.path)).size === carried.length ? { carried, unapplied } : { carried: [], unapplied: [...unapplied, ...carried] };
   }
   recheck(request: Binding) {
     const { job_id, review_id, ...body } = request; ReviewBindingSchema.parse(body);

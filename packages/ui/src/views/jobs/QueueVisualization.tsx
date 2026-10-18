@@ -12,7 +12,7 @@ import {
 import type { Attempt, Job } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { useIntentKey } from '../../hooks/useJobsData.js';
-import { isNeedsInput } from './job-utils.js';
+import { isNeedsInput, pluralize } from './job-utils.js';
 import { secondaryButton } from '../tailoring/ui.js';
 
 export const PIPELINE_STAGES = [
@@ -288,7 +288,7 @@ export function QueueVisualization({
               Upcoming Queue
             </h3>
             <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:text-slate-400">
-              {queuedJobs.length} {queuedJobs.length === 1 ? 'job' : 'jobs'}
+              {pluralize(queuedJobs.length, 'job')}
             </span>
           </div>
           {queuedJobs.length > 0 && (

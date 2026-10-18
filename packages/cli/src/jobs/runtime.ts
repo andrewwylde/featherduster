@@ -72,7 +72,7 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
     if (id !== 'fake') config[id] = { ...config[id], model: settings.model } as never;
     return (deps.runnerFactory ?? defaultRunnerFactory)(id, config);
   };
-  const captureInputs = (jobId: string, revision: number, selection: InputSelection = {}) => database.db.transaction(() => {
+  const captureInputs = (jobId: string, revision: number, selection: InputSelection = {}): C.InputSnapshot => database.db.transaction(() => {
     const job = repository.getJob(jobId);
     if (job.revision !== revision) throw new RepositoryError('revision_conflict', 'Stale job revision');
     const invalid = (message: string): never => { throw new RepositoryError('invalid_relationship', message); };

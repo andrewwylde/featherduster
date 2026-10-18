@@ -12,6 +12,13 @@
     font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
+  /* Keep focused or scrolled-to controls above the fixed mobile navigation. */
+  @media (max-width: 767px) {
+    html {
+      scroll-padding-bottom: calc(6rem + env(safe-area-inset-bottom, 0px));
+    }
+  }
+
   /* Accessible motion override */
   @media (prefers-reduced-motion: reduce) {
     *,

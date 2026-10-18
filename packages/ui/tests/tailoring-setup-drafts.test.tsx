@@ -31,8 +31,8 @@ it('creates a recoverable URL on the first edit, retaining the same form before 
   fireEvent.change(posting, { target: { value: 'Immediate refresh posting' } });
   expect(window.location.pathname).toMatch(/^\/tailor\/drafts\/[\da-f-]{36}$/);
   expect(screen.getByLabelText('Job posting')).toHaveValue('Immediate refresh posting');
-  expect(screen.getByRole('button', { name: 'Back to list' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Discard draft' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Back to list' })).toHaveClass('rounded-desk', 'border');
+  expect(screen.getByRole('button', { name: 'Discard draft' })).toHaveClass('rounded-desk', 'border');
   const key = Object.keys(localStorage).find(k => k.startsWith(RECOVERY_PREFIX))!;
   expect(JSON.parse(localStorage.getItem(key)!).record.payload.posting).toBe('Immediate refresh posting');
   first.unmount(); render(<App />);

@@ -83,4 +83,12 @@ describe('Desk Layout and Navigation Shell', () => {
 
     expect(screen.queryByText(/Local-first privacy foundation/i)).not.toBeInTheDocument();
   });
+
+  it('keeps primary actions clear of the fixed mobile navigation', () => {
+    render(<TestShell />);
+    const main = screen.getByRole('main');
+    // Bottom padding covers the nav height plus the safe area, and scrolled-to elements stop above the nav.
+    expect(main.className).toMatch(/pb-\[calc\(6rem\+env\(safe-area-inset-bottom/);
+    expect(main.className).toMatch(/md:pb-8/);
+  });
 });

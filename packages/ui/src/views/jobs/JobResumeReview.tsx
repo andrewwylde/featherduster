@@ -41,6 +41,9 @@ export function JobResumeReview({
   const [conflict, setConflict] = useState(false);
   const [reload, setReload] = useState(0);
   const pending = useRef(false);
+  // Set as soon as approval succeeds, before the refreshed events arrive, so the status and focus move together.
+  const [approvedHere, setApprovedHere] = useState<string | null>(null);
+  const approvalStatus = useRef<HTMLSpanElement>(null);
   const intentKey = useIntentKey();
   const latestArtifact = artifacts.at(-1)?.id ?? '';
   const previousLatest = useRef(latestArtifact);
@@ -98,6 +101,7 @@ export function JobResumeReview({
           input_fingerprint: a.input_fingerprint,
           idempotency_key: intentKey({ editing, id: a.id, ...payload }),
         });
+        setApprovedHere(a.id);
         onSaved();
       }
     } catch (e) {
@@ -118,6 +122,9 @@ export function JobResumeReview({
         e.payload.artifact_fingerprint === displayedReview.artifact.version_fingerprint &&
         e.payload.input_fingerprint === displayedReview.artifact.input_fingerprint
     );
+
+  const isApproved = Boolean(approved) || (!!displayedReview && approvedHere === displayedReview.artifact.id);
+  useEffect(() => { if (approvedHere) approvalStatus.current?.focus(); }, [approvedHere]);
 
   if (!artifacts.length) {
     return (
@@ -235,27 +242,38 @@ export function JobResumeReview({
               )}
             </div>
 
-            <JobExports job={job} artifact={displayedReview.artifact} blocked={pendingEdits || selected !== latestArtifact || job.recovery?.kind === 'stale_inputs'} />
+            <JobExports job={job} artifact={displayedReview.artifact} blocked={job.recovery?.kind === 'stale_inputs' ? 'The job details changed after this resume was prepared. Prepare it again with the current details; saved releases remain below.' : pendingEdits || selected !== latestArtifact} />
 
             {/* Main Action Buttons */}
             <div className="flex flex-wrap items-center gap-3 pt-2">
-              <button
-                className={`${primaryButton} text-xs font-semibold`}
-                disabled={
-                  busy ||
-                  conflict ||
-                  pendingEdits ||
-                  job.recovery?.kind === 'stale_inputs' ||
-                  selected !== latestArtifact ||
-                  job.revision !== revision ||
-                  displayedReview.artifact.validation_result !== 'passed' ||
-                  !displayedReview.artifact.pdf
-                }
-                onClick={() => void act(false)}
-              >
-                <CheckCircle2 className="h-3.5 w-3.5" />
-                Approve Resume
-              </button>
+              {/* Persistent live region: filled after approval and focused so focus never drops to the body. */}
+              <span ref={approvalStatus} role="status" aria-label="Approval" tabIndex={-1} className="rounded-desk focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500">
+                {isApproved && (
+                  <span className="inline-flex items-center gap-1.5 rounded-desk border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/40 dark:text-emerald-200">
+                    <ShieldCheck className="h-3.5 w-3.5" />
+                    Approved for this version
+                  </span>
+                )}
+              </span>
+              {!isApproved && (
+                <button
+                  className={`${primaryButton} text-xs font-semibold`}
+                  disabled={
+                    busy ||
+                    conflict ||
+                    pendingEdits ||
+                    job.recovery?.kind === 'stale_inputs' ||
+                    selected !== latestArtifact ||
+                    job.revision !== revision ||
+                    displayedReview.artifact.validation_result !== 'passed' ||
+                    !displayedReview.artifact.pdf
+                  }
+                  onClick={() => void act(false)}
+                >
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  Approve Resume
+                </button>
+              )}
 
               <button
                 className={`${secondaryButton} text-xs font-semibold`}
@@ -299,33 +317,34 @@ export function JobResumeReview({
               ) : null}
             </div>
 
-            {displayedReview.artifact.pdf ? (
-              <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-950">
-                <iframe
-                  title="Resume PDF preview"
-                  className="hidden md:block w-full h-[650px]"
-                  src={apiClient.jobPdfUrl(job.id, selected)}
-                />
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500 dark:text-slate-400">PDF unavailable.</p>
-            )}
-
+            {/* The validated page images render everywhere; an embedded PDF needs a browser PDF viewer
+                (headless and some mobile browsers have none), so it is only a fallback. */}
             {displayedReview.preview_count ? (
-              <div className="space-y-3 md:hidden">
+              <div className="space-y-3">
                 {Array.from({ length: displayedReview.preview_count }, (_, i) => (
                   <img
-                    className="max-w-full rounded-lg border border-slate-200 dark:border-slate-800 shadow-sm"
+                    className="w-full max-w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white shadow-sm"
                     key={i}
                     alt={`Resume page ${i + 1}`}
                     src={apiClient.jobPreviewUrl(job.id, selected, i + 1)}
                   />
                 ))}
               </div>
+            ) : displayedReview.artifact.pdf ? (
+              <div className="space-y-2">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  No preview pages available. If the PDF does not appear below, use Open PDF.
+                </p>
+                <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-950">
+                  <iframe
+                    title="Resume PDF preview"
+                    className="block w-full h-[650px]"
+                    src={apiClient.jobPdfUrl(job.id, selected)}
+                  />
+                </div>
+              </div>
             ) : (
-              <p className="text-xs text-slate-500 md:hidden">
-                No preview pages available. Use the PDF link.
-              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">PDF unavailable.</p>
             )}
           </div>
 

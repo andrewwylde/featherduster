@@ -4,6 +4,7 @@ import { apiClient } from '../../api/client';
 import { useModalA11y } from '../../hooks/useModalA11y';
 import type { DraftCoordinator } from '../../tailoring-drafts/coordinator';
 import { UpstreamSyncControl } from './UpstreamSyncDialog';
+import { secondaryButton } from './ui';
 export function DraftControls(props: DraftChoiceProps) {
   const { coordinator, verifyWorkspace, onBack, onLoaded } = props;
   const state = useSyncExternalStore(coordinator.subscribe, coordinator.getSnapshot);
@@ -40,9 +41,9 @@ export function DraftControls(props: DraftChoiceProps) {
   };
   return <>
     <UpstreamSyncControl coordinator={coordinator} verifyWorkspace={props.verifySyncIdentity ?? verifyWorkspace} onLoaded={onLoaded} />
-    <div className="flex gap-3">
-      <button type="button" onClick={onBack}>Back to list</button>
-      <button type="button" disabled={!state.token || state.status === 'conflict'} onClick={() => { release.current = coordinator.pauseForChoice(); setError(undefined); setConfirmation({ token: state.token!, operationId: crypto.randomUUID() }); }}>{run ? 'Discard unapplied edits' : 'Discard draft'}</button>
+    <div className="flex flex-wrap gap-3">
+      <button type="button" className={secondaryButton} onClick={onBack}>Back to list</button>
+      <button type="button" className={secondaryButton} disabled={!state.token || state.status === 'conflict'} onClick={() => { release.current = coordinator.pauseForChoice(); setError(undefined); setConfirmation({ token: state.token!, operationId: crypto.randomUUID() }); }}>{run ? 'Discard unapplied edits' : 'Discard draft'}</button>
     </div>
     {!confirmation && <DraftConflictDialog {...props} />}
     {confirmation && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">

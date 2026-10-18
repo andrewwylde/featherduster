@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ArtifactVersion, Job, ResumeSpec } from '@featherduster/core';
 import { apiClient, ApiError, type JobReview, type JobsControl, type JobsDetail } from '../src/api/client.js';
-import { JobsView, matchesJobFilter, getJobPriority, compareJobs, isNeedsInput, isQueued } from '../src/views/jobs/JobsView.js';
+import { JobsView, filters, matchesJobFilter, getJobPriority, compareJobs, isNeedsInput, isQueued } from '../src/views/jobs/JobsView.js';
 import { JobDetail } from '../src/views/jobs/JobDetail.js';
 import { JobDetailsEditor } from '../src/views/jobs/JobDetailsEditor.js';
 import { JobIntake } from '../src/views/jobs/JobIntake.js';
@@ -47,10 +47,10 @@ it('routes validated job sections and linked drafts without interpreting them as
   expect(jobDraftForPath(`/tailor/canvas/jobs/${id}/${version}`)).toEqual({ jobId: id, draftId: version });
 });
 it('keeps application and preparation filters independent and retains archived records', async () => {
-  expect(matchesJobFilter(job({ preparation_state: 'resume_ready' }), 'Applied')).toBe(false);
+  expect(filters).not.toContain('Applied');
   expect(matchesJobFilter(job({ application_lifecycle: 'needs_input' }), 'Needs input')).toBe(true);
   for (const [filter, state] of [['Queued', 'queued'], ['Preparing', 'preparing'], ['Needs input', 'needs_input'], ['Resume ready', 'resume_ready'], ['Archived', 'cancelled']] as const) expect(matchesJobFilter(job({ preparation_state: state }), filter)).toBe(true);
-  expect(matchesJobFilter(job({ application_lifecycle: 'submitted' }), 'Applied')).toBe(true);
+  expect(matchesJobFilter(job({ preparation_state: 'resume_ready', application_lifecycle: 'submitted' }), 'Resume ready')).toBe(true);
   expect(matchesJobFilter(job({ preparation_state: 'failed' }), 'All')).toBe(true);
   render(<JobsView navigate={vi.fn()} />);
   const heading = await screen.findByRole('heading', { level: 2, name: 'Acme — Engineer' });
@@ -96,13 +96,15 @@ it('uses distinct worker mutations, keeps stop reachable and reuses keys after f
   fireEvent.click(screen.getByRole('button', { name: 'Start automatic preparation' }));
   fireEvent.click(screen.getByRole('button', { name: 'Stop processing' }));
   await waitFor(() => expect(control).toHaveBeenCalledWith('stop', expect.any(String)));
+  // Once started, automatic work is on and Pause becomes available.
+  vi.mocked(apiClient.getJobsControl).mockResolvedValue({ ...stopped, control: { ...stopped.control, automatic_preparation_enabled: true, stopped_at: null } });
   finish({}); await waitFor(() => expect(screen.getByRole('button', { name: 'Pause after current' })).toBeEnabled());
   control.mockRejectedValue(new Error('Offline'));
   fireEvent.click(screen.getByRole('button', { name: 'Pause after current' })); await screen.findByText('Offline');
   const key = control.mock.calls.at(-1)![1];
   fireEvent.click(screen.getByRole('button', { name: 'Pause after current' }));
   await waitFor(() => expect(control.mock.calls.at(-1)).toEqual(['pause', key]));
-  expect(screen.getByText('Stopped')).toBeInTheDocument();
+  expect(screen.getByText('Idle')).toBeInTheDocument();
 });
 it('renders direct detail sections read-only and updates section URLs', async () => {
   const navigate = vi.fn();
@@ -134,7 +136,7 @@ it('shows immutable actual candidate diff, PDF, brief and exact approval binding
   render(<JobResumeReview job={job()} artifacts={[artifact]} events={[]} onSaved={onSaved} navigate={vi.fn()} />);
   await screen.findByText('Base to candidate diff');
   expect([...document.querySelectorAll('ins')].map(n => n.textContent).join(' ')).toContain('Actual cleaned candidate');
-  expect(screen.getByTitle('Resume PDF preview')).toHaveAttribute('src', `/api/jobs/${id}/artifacts/${version}/pdf`);
+  expect(screen.getByRole('link', { name: 'Open PDF' })).toHaveAttribute('href', `/api/jobs/${id}/artifacts/${version}/pdf`);
   expect(screen.getByAltText('Resume page 1')).toHaveAttribute('src', `/api/jobs/${id}/artifacts/${version}/previews/1`);
   expect(screen.getByText('Evidence backed')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Approve Resume' }));
@@ -149,7 +151,7 @@ it('keeps the previously loaded resume review visible when a reload times out', 
   fireEvent.click(screen.getByRole('button', { name: 'Reload review' }));
   await screen.findByRole('alert');
   expect(screen.getByText('Base to candidate diff')).toBeInTheDocument();
-  expect(screen.getByTitle('Resume PDF preview')).toHaveAttribute('src', `/api/jobs/${id}/artifacts/${version}/pdf`);
+  expect(screen.getByRole('link', { name: 'Open PDF' })).toHaveAttribute('href', `/api/jobs/${id}/artifacts/${version}/pdf`);
 });
 it('blocks failed validation but permits explicit historical draft fork', async () => {
   vi.spyOn(apiClient, 'getJobReview').mockResolvedValue({ ...review, artifact: { ...artifact, validation_result: 'failed' } });
@@ -333,7 +335,7 @@ it('leads ready review with the current PDF and discloses earlier corrections', 
   vi.spyOn(apiClient, 'getJobReview').mockResolvedValue(review);
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
   render(<JobResumeReview job={job({ preparation_state: 'resume_ready' })} artifacts={[artifact]} events={[]} onSaved={vi.fn()} navigate={vi.fn()} />);
-  expect(await screen.findByTitle('Resume PDF preview')).toBeInTheDocument();
+  expect(await screen.findByAltText('Resume page 1')).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Current resume' })).toBeVisible();
   expect(screen.getByText('Earlier corrections').closest('details')).not.toHaveAttribute('open');
   expect(screen.getByText('Comparison, evidence and preparation history').closest('details')).not.toHaveAttribute('open');
@@ -461,4 +463,143 @@ it('supports cancelling jobs from JobsView and JobDetail', async () => {
       reason: 'Cancelled by user from job details',
     });
   });
+});
+const posting = { schema_version: 1, id: 'posting', workspace_id: 'workspace', job_id: id, original_url: 'https://example.com/unavailable', final_url: null, captured_at: time, text: 'Pasted posting text' } as unknown as NonNullable<JobsDetail['posting']>;
+const recoveredCapture = (patch: Partial<Job> = {}) => job({ preparation_state: 'needs_input', original_url: 'https://example.com/unavailable', posting_snapshot_id: 'posting', missing_inputs: [], current_attempt_id: null, state_reason: 'capture_failed: Unable to capture posting. Paste posting text instead.', ...patch });
+it('treats a pasted posting after a failed URL capture as a saved job, not one needing attention', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue({ ...detail(recoveredCapture()), posting });
+  render(<JobDetail id={id} section="posting" navigate={vi.fn()} />);
+  expect(await screen.findByText('Saved. Choose an optional activity below.')).toBeInTheDocument();
+  expect(screen.queryByText('Preparation needs your attention.')).not.toBeInTheDocument();
+  expect(screen.queryByText(/capture_failed/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Resume job' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Cancel job' })).not.toBeInTheDocument();
+  expect(isNeedsInput(recoveredCapture())).toBe(false);
+  expect(matchesJobFilter(recoveredCapture(), 'Needs input')).toBe(false);
+});
+it('starts preparation explicitly for a recovered capture with the resume action', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue({ ...detail(recoveredCapture()), posting });
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  vi.spyOn(apiClient, 'captureJobInputs').mockResolvedValue({ input_snapshot: { id: 'input' } } as never);
+  render(<JobDetail id={id} section="resume" navigate={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Prepare resume' }));
+  await waitFor(() => expect(apiClient.prepareJob).toHaveBeenCalledWith(id, 'resume', expect.objectContaining({ input_snapshot_id: 'input' })));
+});
+it('never shows raw reason codes while a capture still needs posting text', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue(detail(recoveredCapture({ posting_snapshot_id: null, missing_inputs: [{ key: 'posting_text', question: 'Paste posting text', scope: { kind: 'job', job_id: id }, reason: 'capture_failed: x' }] })));
+  const view = render(<JobDetail id={id} section="posting" navigate={vi.fn()} />);
+  expect(await screen.findByText("We couldn't capture the posting from its link. Paste the posting text instead.")).toBeInTheDocument();
+  expect(screen.queryByText(/capture_failed/)).not.toBeInTheDocument();
+  view.unmount();
+  vi.mocked(apiClient.getJob).mockResolvedValue(detail(job({ preparation_state: 'needs_input', state_reason: 'mystery_code: internal detail' })));
+  render(<JobDetail id={id} section="posting" navigate={vi.fn()} />);
+  expect(await screen.findByText('Preparation stopped and needs a look. Check Posting and History for details.')).toBeInTheDocument();
+  expect(screen.queryByText(/mystery_code/)).not.toBeInTheDocument();
+});
+it('offers cancel in the jobs list only for queued or active work', async () => {
+  vi.mocked(apiClient.getJobs).mockResolvedValue({ jobs: [
+    job({ id: 'a', company: 'Queued Co', preparation_state: 'queued' }),
+    job({ id: 'b', company: 'Active Co', preparation_state: 'preparing' }),
+    job({ id: 'c', company: 'Blocked Co', preparation_state: 'needs_input', current_attempt_id: id }),
+    job({ id: 'd', company: 'Saved Co', preparation_state: 'saved' }),
+  ] });
+  render(<JobsView navigate={vi.fn()} />);
+  await screen.findByRole('heading', { level: 2, name: 'Blocked Co — Engineer' });
+  expect(screen.getAllByRole('button', { name: 'Cancel job' })).toHaveLength(2);
+});
+it('describes history events in plain language and keeps raw detail behind a disclosure', async () => {
+  const event = (n: number, actor: 'user' | 'worker', payload: JobsDetail['events'][number]['payload']) => ({ schema_version: 1, id: `event-${n}`, workspace_id: 'workspace', job_id: id, created_at: time, actor: { kind: actor, id: actor }, attempt_id: null, idempotency_key: null, payload }) as JobsDetail['events'][number];
+  vi.mocked(apiClient.getJob).mockResolvedValue({ ...detail(job({ preparation_state: 'resume_ready' })), events: [
+    event(1, 'worker', { kind: 'preparation_transition', from: 'queued', to: 'preparing', reason: 'Preparation claimed' }),
+    event(2, 'worker', { kind: 'preparation_transition', from: 'preparing', to: 'needs_input', reason: 'Introduces terms not backed by cited evidence: backend.' }),
+    event(3, 'user', { kind: 'application_transition', from: 'not_started', to: 'submitted', reason: 'Marked as applied' }),
+  ] });
+  render(<JobDetail id={id} section="history" navigate={vi.fn()} />);
+  expect(await screen.findByText('Preparation started')).toBeInTheDocument();
+  expect(screen.getByText('Preparation paused for your input')).toBeInTheDocument();
+  expect(screen.getByText('Application marked as submitted')).toBeInTheDocument();
+  expect(screen.getAllByText('Background worker')).toHaveLength(2);
+  expect(screen.getByText('You')).toBeInTheDocument();
+  expect(screen.queryByText(/preparation_transition|application_transition/)).not.toBeInTheDocument();
+  const details = screen.getAllByText('Details');
+  expect(details).toHaveLength(3);
+  expect(details[1].closest('details')).not.toHaveAttribute('open');
+  expect(details[1].closest('details')).toHaveTextContent('Introduces terms not backed by cited evidence: backend.');
+  expect(details[1].closest('details')).toHaveTextContent('preparing → needs_input');
+});
+it('shows an approved state instead of offering approval again for the approved version', async () => {
+  vi.spyOn(apiClient, 'getJobReview').mockResolvedValue(review);
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  const approval = { schema_version: 1, id: 'approval', workspace_id: 'workspace', job_id: id, created_at: time, actor: { kind: 'user', id: 'local-human' }, attempt_id: null, idempotency_key: null, payload: { kind: 'resume_review', review_id: id, artifact_version_id: version, artifact_fingerprint: 'artifact-hash', input_snapshot_id: id, input_fingerprint: 'input-hash' } } as unknown as JobsDetail['events'][number];
+  render(<JobResumeReview job={job({ preparation_state: 'resume_ready' })} artifacts={[artifact]} events={[approval]} onSaved={vi.fn()} navigate={vi.fn()} />);
+  expect(await screen.findByRole('status', { name: 'Approval' })).toHaveTextContent('Approved for this version');
+  expect(screen.queryByRole('button', { name: 'Approve Resume' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Continue Editing' })).toBeEnabled();
+});
+it('uses the rendered page images as the primary preview at every width and links to the PDF', async () => {
+  vi.spyOn(apiClient, 'getJobReview').mockResolvedValue(review);
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  render(<JobResumeReview job={job({ preparation_state: 'resume_ready' })} artifacts={[artifact]} events={[]} onSaved={vi.fn()} navigate={vi.fn()} />);
+  const page = await screen.findByAltText('Resume page 1');
+  expect(page).toHaveAttribute('src', `/api/jobs/${id}/artifacts/${version}/previews/1`);
+  for (let el: HTMLElement | null = page; el; el = el.parentElement) expect(el.className).not.toMatch(/(^|\s)(hidden|md:hidden)(\s|$)/);
+  expect(screen.queryByTitle('Resume PDF preview')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Open PDF' })).toHaveAttribute('href', `/api/jobs/${id}/artifacts/${version}/pdf`);
+});
+it('falls back to the embedded PDF only when no page images exist', async () => {
+  vi.spyOn(apiClient, 'getJobReview').mockResolvedValue({ ...review, preview_count: 0 });
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  render(<JobResumeReview job={job({ preparation_state: 'resume_ready' })} artifacts={[artifact]} events={[]} onSaved={vi.fn()} navigate={vi.fn()} />);
+  expect(await screen.findByTitle('Resume PDF preview')).toHaveAttribute('src', `/api/jobs/${id}/artifacts/${version}/pdf`);
+  expect(screen.getByTitle('Resume PDF preview').className).not.toMatch(/(^|\s)hidden(\s|$)/);
+});
+it('maps only known reason codes and never shows unknown code-shaped reasons raw', async () => {
+  const { describeStateReason, hasRecoveredCapture } = await import('../src/views/jobs/job-utils.js');
+  expect(describeStateReason('timeout: Unable to retrieve posting.')).toBe('The posting took too long to load. Paste the posting text instead.');
+  expect(describeStateReason('mystery_code: internal detail')).toBe('Preparation stopped and needs a look. Check Posting and History for details.');
+  expect(describeStateReason('Preparation claimed')).toBe('Preparation claimed');
+  expect(describeStateReason('Note: check the posting')).toBe('Note: check the posting');
+  expect(describeStateReason('pdftotext exited 99: bad file')).toBe('pdftotext exited 99: bad file');
+  expect(hasRecoveredCapture(recoveredCapture({ state_reason: 'mystery_code: internal detail' }))).toBe(false);
+});
+it('uses one derived state for the jobs list and the review action choice', async () => {
+  const { preparationActionFor } = await import('../src/views/jobs/job-utils.js');
+  expect(preparationActionFor(recoveredCapture())).toBe('resume');
+  expect(preparationActionFor(job({ preparation_state: 'saved' }))).toBe('prepare');
+  expect(preparationActionFor(job({ preparation_state: 'needs_input', current_attempt_id: id }))).toBe('resume');
+  expect(preparationActionFor(job({ preparation_state: 'resume_ready' }))).toBe('reprepare');
+  expect(preparationActionFor(job({ preparation_state: 'failed' }))).toBe('retry');
+  expect(preparationActionFor(job({ preparation_state: 'preparing' }))).toBeNull();
+  vi.mocked(apiClient.getJobs).mockResolvedValue({ jobs: [recoveredCapture({ company: 'Recovered Co' })] });
+  render(<JobsView navigate={vi.fn()} />);
+  await screen.findByRole('heading', { level: 2, name: 'Recovered Co — Engineer' });
+  expect(screen.getByText('Saved · preparation is optional')).toBeInTheDocument();
+  expect(screen.queryByText('Preparation needs your attention')).not.toBeInTheDocument();
+});
+it('offers cancel on the detail page for a needs-input job without an attempt', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue(detail(job({ preparation_state: 'needs_input', current_attempt_id: null, missing_inputs: [{ key: 'posting_text', question: 'Paste posting text', scope: { kind: 'job', job_id: id }, reason: 'capture_failed: x' }] })));
+  render(<JobDetail id={id} section="posting" navigate={vi.fn()} />);
+  expect(await screen.findByRole('button', { name: 'Cancel job' })).toBeInTheDocument();
+});
+it('announces approval in a persistent status and keeps focus off the body', async () => {
+  vi.spyOn(apiClient, 'getJobReview').mockResolvedValue(review);
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  vi.spyOn(apiClient, 'approveJobResume').mockResolvedValue({ review: {} } as never);
+  render(<JobResumeReview job={job({ preparation_state: 'resume_ready' })} artifacts={[artifact]} events={[]} onSaved={vi.fn()} navigate={vi.fn()} />);
+  const status = await screen.findByRole('status', { name: 'Approval' });
+  expect(status).toHaveTextContent('');
+  const approve = screen.getByRole('button', { name: 'Approve Resume' });
+  approve.focus();
+  fireEvent.click(approve);
+  await waitFor(() => expect(screen.getByRole('status', { name: 'Approval' })).toHaveTextContent('Approved for this version'));
+  expect(screen.getByRole('status', { name: 'Approval' })).toBe(status);
+  expect(screen.queryByRole('button', { name: 'Approve Resume' })).not.toBeInTheDocument();
+  expect(document.activeElement).toBe(status);
+});
+it('explains what stopped in the job header during focused proposal review', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue({ ...detail(job({ preparation_state: 'needs_input', state_reason: 'Introduces terms not backed by cited evidence: C++.' })), proposal_review: { availability: 'available', review_id: 'review', revision: 0, status: 'blocked', blocking_count: 1, input_stale: false } });
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  render(<JobDetail id={id} section="resume" navigate={vi.fn()} />);
+  const stoppedLine = await screen.findByText('Preparation stopped — proposal review needs your input.');
+  expect(stoppedLine).not.toHaveClass('hidden');
 });

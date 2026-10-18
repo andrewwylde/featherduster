@@ -1,5 +1,5 @@
 import { JobExportRequestSchema } from './exports.js';
-import { SaveReviewSchema, ReviewBindingSchema, ContinueReviewSchema, RecoverReviewSchema } from './proposal-service.js';
+import { SaveReviewSchema, ReviewBindingSchema, ContinueReviewSchema, RecoverReviewSchema, CorrectBaseSchema } from './proposal-service.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { JobSchema, ScopedAnswerSchema, ResumeSpecSchema } from '@featherduster/core';
@@ -155,12 +155,13 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     return { job: r.repository.updateJob({ ...r.repository.getJob(id), ...body.changes }, body.expected_revision) };
   }));
   app.put('/api/jobs/:id/starting-resume', handle(async (c, r) => {
-    const body = z.object({ expected_job_revision: revision, input_snapshot_id: uuid, idempotency_key: key, base_resume: ResumeSpecSchema }).strict().parse(await c.req.json());
-    return r.artifacts.correctStartingResume({ ...body, job_id: uuid.parse(c.req.param('id')) });
+    return r.proposals.correctBase({ ...CorrectBaseSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')) });
   }));
   app.post('/api/jobs/:id/inputs', handle(async (c, r) => {
     const body = z.object({ expected_revision: revision, base_resume_id: z.string().min(1).optional(), template_id: z.string().min(1).optional(), runner: z.enum(['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake']).optional(), evidence_ids: z.array(z.string().min(1)).optional() }).strict().parse(await c.req.json());
-    return { input_snapshot: r.captureInputs(uuid.parse(c.req.param('id')), body.expected_revision, body) };
+    const id = uuid.parse(c.req.param('id')); const input_snapshot = r.captureInputs(id, body.expected_revision, body);
+    // Capture already reapplied matching corrections; any left are reported, never silently dropped.
+    return { input_snapshot, unapplied_base_corrections: r.proposals.carryBaseCorrections(id, r.artifacts.capturedContext(input_snapshot.id).base_resume).unapplied };
   }, 201));
   for (const action of ['prepare', 'resume', 'retry', 'reprepare'] as const) app.post(`/api/jobs/:id/${action}`, handle(async (c, r) => r.service[action]({ ...preparationRequest.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')) }), 202));
   app.post('/api/jobs/:id/cancel', handle(async (c, r) => {

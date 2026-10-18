@@ -26,6 +26,7 @@ export interface ProposalSaveRequest extends ProposalBinding {
   remember?: { expected_corpus_revision: number; change: ClientCorpusChange; supersedes?: string };
   idempotency_key: string;
 }
+export interface ProposalBaseCorrectionRequest extends ProposalBinding { review_id: string; path: string; text: string; idempotency_key: string }
 export interface ProposalContinueRequest extends ProposalBinding { validation_fingerprint: string; idempotency_key: string }
 export interface ProposalRecoverRequest { expected_job_revision: number; input_snapshot_id: string; idempotency_key: string }
 export type ProposalReadResponse = { availability: 'missing_output'; recoverable: boolean; input_snapshot_id: string | null; latest_input_snapshot_id: string | null } | {
@@ -35,6 +36,7 @@ export type ProposalReadResponse = { availability: 'missing_output'; recoverable
 };
 export interface MutationReceipt<T> { result: T; replayed: boolean }
 export type ProposalSaveResponse = MutationReceipt<{ job: Job; review: ProposalReviewRevision; corpus_revision: number; update?: CorpusUpdate; requires_refresh: boolean }>;
+export type ProposalBaseCorrectionResponse = MutationReceipt<{ job: Job; review: ProposalReviewRevision }>;
 export type ProposalAdmissionResponse = MutationReceipt<{ admission: 'started'; attempt: Omit<Attempt, 'owner_token'>; previous_attempt_id: string | null }>;
 export type ProposalReviewSummary = { availability: 'missing_output'; recoverable: boolean } | { availability: 'available'; review_id: string; revision: number; status: 'ready' | 'blocked'; blocking_count: number; input_stale: boolean };
 export interface CorpusPreviewResponse {

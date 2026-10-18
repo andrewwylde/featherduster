@@ -413,27 +413,21 @@ it('retains prior output on context edits and requires current inputs without st
   expect(f.runtime().repository.getControl()).toEqual(controls);
 });
 
-it('corrects a job-local starting snapshot with CAS and receipts without touching shared files or starting work', async () => {
+it('binds starting-resume corrections to an active proposal review without capturing inputs or starting work', async () => {
   const f = fixture();
   const id = await f.add();
   const job = f.runtime().repository.getJob(id);
   const input = (await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision })).json()).input_snapshot;
-  const original = f.runtime().artifacts.capturedContext(input.id).base_resume;
   const control = f.runtime().repository.getControl();
-  const body = { expected_job_revision: job.revision, input_snapshot_id: input.id, idempotency_key: randomUUID(), base_resume: { ...original, summary: 'Job-local correction' } };
-  const response = await f.request(`/api/jobs/${id}/starting-resume`, body, 'PUT');
-  expect(response.status).toBe(200);
-  const saved = await response.json();
-  expect(saved.result.input_snapshot.id).not.toBe(input.id);
-  expect(f.runtime().artifacts.capturedContext(saved.result.input_snapshot.id).base_resume.summary).toBe('Job-local correction');
-  expect(f.runtime().artifacts.capturedContext(input.id).base_resume).toEqual(original);
-  expect(f.runtime().repository.getJob(id).revision).toBe(job.revision + 1);
-  expect((await (await f.request(`/api/jobs/${id}/starting-resume`, body, 'PUT')).json()).replayed).toBe(true);
-  expect((await f.request(`/api/jobs/${id}/starting-resume`, { ...body, idempotency_key: randomUUID() }, 'PUT')).status).toBe(409);
-  expect((await f.request(`/api/jobs/${id}/starting-resume`, { ...body, expected_job_revision: job.revision + 1, idempotency_key: randomUUID() }, 'PUT')).status).toBe(409);
+  const body = { expected_job_revision: job.revision, review_id: randomUUID(), expected_review_revision: 0, input_fingerprint: input.fingerprint, path: 'summary', text: 'Job-local correction', idempotency_key: randomUUID() };
+  expect((await f.request(`/api/jobs/${id}/starting-resume`, body, 'PUT')).status).toBe(409);
+  expect((await f.request(`/api/jobs/${id}/starting-resume`, { ...body, path: 'profile.name', idempotency_key: randomUUID() }, 'PUT')).status).toBe(400);
+  expect((await f.request(`/api/jobs/${id}/starting-resume`, { expected_job_revision: job.revision, input_snapshot_id: input.id, idempotency_key: randomUUID(), base_resume: {} }, 'PUT')).status).toBe(400);
   expect(f.run).not.toHaveBeenCalled();
   expect(f.runtime().repository.getControl()).toEqual(control);
-  expect(f.runtime().repository.getJob(id).current_attempt_id).toBeNull();
-  const fresh = (await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision + 1 })).json()).input_snapshot;
-  expect(f.runtime().artifacts.capturedContext(fresh.id).base_resume).toEqual(original);
+  expect(f.runtime().repository.getJob(id)).toMatchObject({ revision: job.revision, current_attempt_id: null });
+  // Refreshing inputs without job-local corrections captures the shared resume unchanged and reports nothing to reapply.
+  const fresh = await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: job.revision })).json();
+  expect(f.runtime().artifacts.capturedContext(fresh.input_snapshot.id).base_resume).toEqual(f.runtime().artifacts.capturedContext(input.id).base_resume);
+  expect(fresh.unapplied_base_corrections).toEqual([]);
 });

@@ -14,6 +14,9 @@ import {
   getJobPriority,
   compareJobs,
   matchesJobFilter,
+  displayPreparationState,
+  hasCancellableWork,
+  pluralize,
 } from './job-utils.js';
 
 export {
@@ -24,6 +27,8 @@ export {
   compareJobs,
   matchesJobFilter,
 };
+
+const jobListStatus = (state: Job['preparation_state']) => state === 'saved' ? 'Saved · preparation is optional' : state === 'resume_ready' ? 'Resume ready to review' : state === 'needs_input' ? 'Preparation needs your attention' : state === 'preparing' ? 'Preparing resume' : 'Open to review preparation';
 
 export function JobsView({ navigate }: { navigate: (path: string) => void }) {
   const load = useCallback(() => apiClient.getJobs(), []);
@@ -77,7 +82,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
             </h1>
             {data && (
               <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {allJobs.length} {allJobs.length === 1 ? 'record' : 'records'}
+                {pluralize(allJobs.length, 'record')}
               </span>
             )}
           </div>
@@ -253,7 +258,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
                     {/* Preserves test assertion text while styled cleanly */}
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {job.preparation_state === 'saved' ? 'Saved · preparation is optional' : job.preparation_state === 'resume_ready' ? 'Resume ready to review' : job.preparation_state === 'needs_input' ? 'Preparation needs your attention' : job.preparation_state === 'preparing' ? 'Preparing resume' : 'Open to review preparation'}
+                      {jobListStatus(displayPreparationState(job))}
                     </p>
                   </div>
                 </div>
@@ -262,7 +267,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
               {/* Action row */}
               <div className="pt-2 flex items-center justify-end gap-2">
-                {['queued', 'preparing', 'needs_input'].includes(job.preparation_state) && (
+                {hasCancellableWork(job) && (
                   confirmCancelId === job.id ? (
                     <div className="flex items-center gap-1.5">
                       <span className="text-xs text-rose-600 font-medium">Cancel job?</span>

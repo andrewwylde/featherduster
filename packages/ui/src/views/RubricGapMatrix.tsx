@@ -205,7 +205,7 @@ export const RubricGapMatrix: React.FC = () => {
   if (loading && rubrics.length === 0) {
     return (
       <div className="h-96 flex flex-col items-center justify-center space-y-3 text-slate-500 animate-fadeIn">
-        <RefreshCw className="w-7 h-7 animate-spin text-teal-400" />
+        <RefreshCw className="w-7 h-7 animate-spin text-teal-700 dark:text-teal-400" />
         <span className="text-sm font-medium">Loading Leveling Rubrics & Gap Matrix...</span>
       </div>
     );
@@ -217,18 +217,18 @@ export const RubricGapMatrix: React.FC = () => {
       {/* Top Header & Main Action Controls */}
       <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2.5">
             Competency Gap Matrix
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400 border border-teal-500/20 flex items-center gap-1.5">
+            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20 flex items-center gap-1.5">
               {analyzing && <RefreshCw className="w-3 h-3 animate-spin" />}
               <span>Live Evaluation</span>
             </span>
           </h1>
-          <p className="text-sm text-slate-400">
+          <p className="text-sm text-slate-600 dark:text-slate-400">
             Benchmark your evidence portfolio against leveling ladders and uncover promotion gaps.
           </p>
           {error && (
-            <div className="mt-2 p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-400 flex items-center gap-2">
+            <div className="mt-2 p-2.5 bg-rose-500/10 border border-rose-500/20 rounded-xl text-xs text-rose-700 dark:text-rose-400 flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{error}</span>
             </div>
@@ -238,9 +238,9 @@ export const RubricGapMatrix: React.FC = () => {
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <button
             onClick={() => setIsImporterOpen(true)}
-            className="px-3.5 py-2 min-h-[44px] sm:min-h-0 text-xs font-semibold text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors flex items-center space-x-1.5 border border-slate-700/60"
+            className="px-3.5 py-2 min-h-[44px] sm:min-h-0 text-xs font-semibold text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-colors flex items-center space-x-1.5 border border-slate-300 dark:border-slate-700/60"
           >
-            <Upload className="w-3.5 h-3.5 text-teal-400" />
+            <Upload className="w-3.5 h-3.5 text-teal-700 dark:text-teal-400" />
             <span>Import Rubric</span>
           </button>
           <button
@@ -255,20 +255,20 @@ export const RubricGapMatrix: React.FC = () => {
       </div>
 
       {/* Rubric & Target Level Selector Bar */}
-      <div className="p-4 bg-slate-900/70 border border-slate-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="p-4 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Rubric Dropdown */}
         <div className="flex items-center space-x-3 flex-1">
-          <div className="p-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 flex-shrink-0">
+          <div className="p-2 rounded-xl bg-teal-500/10 text-teal-700 dark:text-teal-400 border border-teal-500/20 flex-shrink-0">
             <Target className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1 max-w-md">
-            <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-0.5">
+            <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-0.5">
               Active Leveling Framework
             </label>
             <select
               value={selectedRubricId}
               onChange={(e) => setSelectedRubricId(e.target.value)}
-              className="w-full px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-0 bg-slate-950 border border-slate-800 rounded-xl text-xs font-semibold text-white focus:outline-none focus:border-teal-500 transition-colors"
+              className="w-full px-3 py-2 sm:py-1.5 min-h-[40px] sm:min-h-0 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-teal-500 transition-colors"
             >
               {rubrics.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -282,10 +282,10 @@ export const RubricGapMatrix: React.FC = () => {
         {/* Target Level Pills */}
         {currentRubric && currentRubric.levels.length > 0 && (
           <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-1">
+            <span className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider mr-1">
               Target Level:
             </span>
-            <div className="flex items-center space-x-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar">
+            <div className="flex items-center space-x-1.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar">
               {currentRubric.levels.map((lvl) => {
                 const isSelected = lvl.id === selectedLevel;
                 return (
@@ -295,7 +295,7 @@ export const RubricGapMatrix: React.FC = () => {
                     className={`px-3 py-1.5 min-h-[36px] sm:min-h-0 text-xs font-mono font-bold rounded-lg transition-all flex items-center justify-center ${
                       isSelected
                         ? 'bg-teal-500 text-slate-950 shadow-md shadow-teal-500/20'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800'
                     }`}
                     title={lvl.name}
                   >
@@ -311,24 +311,24 @@ export const RubricGapMatrix: React.FC = () => {
       {/* Summary Metric Counters */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
         {/* Coverage Card */}
-        <div className="col-span-2 lg:col-span-1 p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col justify-between">
+        <div className="col-span-2 lg:col-span-1 p-4 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Level Coverage</span>
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Level Coverage</span>
             <span
               data-testid="metric-coverage"
               className={`text-xs font-bold font-mono px-2 py-0.5 rounded-full ${
                 coveragePercent >= 80
-                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
                   : coveragePercent >= 50
-                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20'
+                  : 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
               }`}
             >
               {coveragePercent}%
             </span>
           </div>
           <div className="my-2">
-            <div className="w-full bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-800/80">
+            <div className="w-full bg-slate-100 dark:bg-slate-950 h-2.5 rounded-full overflow-hidden border border-slate-200 dark:border-slate-800/80">
               <div
                 className={`h-full transition-all duration-500 rounded-full ${
                   coveragePercent >= 80
@@ -342,96 +342,96 @@ export const RubricGapMatrix: React.FC = () => {
             </div>
           </div>
           <div className="text-[11px] text-slate-500">
-            Targeting <strong className="text-slate-300 font-mono">{selectedLevel}</strong> promotion
+            Targeting <strong className="text-slate-700 dark:text-slate-300 font-mono">{selectedLevel}</strong> promotion
           </div>
         </div>
 
         {/* Total Competencies */}
-        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col justify-between">
-          <div className="text-xs font-medium text-slate-400">Total Dimensions</div>
-          <div data-testid="metric-total" className="text-2xl font-bold text-white font-mono mt-1">{totalCompetencies}</div>
+        <div className="p-4 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col justify-between">
+          <div className="text-xs font-medium text-slate-600 dark:text-slate-400">Total Dimensions</div>
+          <div data-testid="metric-total" className="text-2xl font-bold text-slate-900 dark:text-white font-mono mt-1">{totalCompetencies}</div>
           <div className="text-[11px] text-slate-500">Evaluated competencies</div>
         </div>
 
         {/* Met Count */}
-        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col justify-between">
+        <div className="p-4 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Met</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Met</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
           </div>
-          <div data-testid="metric-met" className="text-2xl font-bold text-emerald-400 font-mono mt-1">{metCount}</div>
+          <div data-testid="metric-met" className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 font-mono mt-1">{metCount}</div>
           <div className="text-[11px] text-emerald-500/80">Verified & clean metrics</div>
         </div>
 
         {/* Partial Count */}
-        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col justify-between">
+        <div className="p-4 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Partial</span>
-            <AlertTriangle className="w-4 h-4 text-amber-400" />
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Partial</span>
+            <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-400" />
           </div>
-          <div data-testid="metric-partial" className="text-2xl font-bold text-amber-400 font-mono mt-1">{partialCount}</div>
+          <div data-testid="metric-partial" className="text-2xl font-bold text-amber-700 dark:text-amber-400 font-mono mt-1">{partialCount}</div>
           <div className="text-[11px] text-amber-500/80">Provisional or unverified</div>
         </div>
 
         {/* Gap Count */}
-        <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col justify-between">
+        <div className="p-4 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col justify-between">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-medium text-slate-400">Gaps</span>
-            <AlertCircle className="w-4 h-4 text-rose-400" />
+            <span className="text-xs font-medium text-slate-600 dark:text-slate-400">Gaps</span>
+            <AlertCircle className="w-4 h-4 text-rose-700 dark:text-rose-400" />
           </div>
-          <div data-testid="metric-gap" className="text-2xl font-bold text-rose-400 font-mono mt-1">{gapCount}</div>
+          <div data-testid="metric-gap" className="text-2xl font-bold text-rose-700 dark:text-rose-400 font-mono mt-1">{gapCount}</div>
           <div className="text-[11px] text-rose-500/80">0 evidence mapped</div>
         </div>
       </div>
 
       {/* Gap Recommendations & Action Items */}
       {actionItems.length > 0 ? (
-        <div className="p-5 bg-slate-900/70 border border-slate-800 rounded-2xl space-y-3">
+        <div className="p-5 bg-white dark:bg-slate-900/70 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-white flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-amber-400" />
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-700 dark:text-amber-400" />
               Promotion Readiness Action Items ({actionItems.length})
             </h3>
-            <span className="text-[11px] text-slate-400">Auto-generated recommendations</span>
+            <span className="text-[11px] text-slate-600 dark:text-slate-400">Auto-generated recommendations</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
             {actionItems.map((item) => (
               <div
                 key={item.competencyId}
-                className="p-3 bg-slate-950/70 rounded-xl border border-slate-800/80 flex items-start space-x-3 text-xs"
+                className="p-3 bg-white dark:bg-slate-950/70 rounded-xl border border-slate-200 dark:border-slate-800/80 flex items-start space-x-3 text-xs"
               >
                 {item.status === 'gap' ? (
-                  <AlertCircle className="w-4 h-4 text-rose-400 mt-0.5 flex-shrink-0" />
+                  <AlertCircle className="w-4 h-4 text-rose-700 dark:text-rose-400 mt-0.5 flex-shrink-0" />
                 ) : (
-                  <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                  <AlertTriangle className="w-4 h-4 text-amber-700 dark:text-amber-400 mt-0.5 flex-shrink-0" />
                 )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between mb-0.5">
-                    <span className="font-semibold text-slate-200">{item.competencyName}</span>
+                    <span className="font-semibold text-slate-800 dark:text-slate-200">{item.competencyName}</span>
                     <span
                       className={`text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
                         item.status === 'gap'
-                          ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                          : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          ? 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
+                          : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20'
                       }`}
                     >
                       {item.status}
                     </span>
                   </div>
-                  <p className="text-slate-400 text-[11px] leading-relaxed">{item.action}</p>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px] leading-relaxed">{item.action}</p>
                 </div>
               </div>
             ))}
           </div>
         </div>
       ) : !currentRubric || !currentRubric.competencies || currentRubric.competencies.length === 0 ? (
-        <div className="p-6 bg-slate-900/60 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-4">
+        <div className="p-6 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl flex flex-col sm:flex-row items-center justify-between text-xs text-slate-600 dark:text-slate-400 gap-4">
           <div className="flex items-center space-x-3">
             <Layers className="w-6 h-6 text-slate-500 flex-shrink-0" />
             <div>
-              <span className="font-bold text-slate-200 text-sm">No Rubric Competencies Loaded</span>
-              <p className="text-slate-400 text-xs mt-0.5">
+              <span className="font-bold text-slate-800 dark:text-slate-200 text-sm">No Rubric Competencies Loaded</span>
+              <p className="text-slate-600 dark:text-slate-400 text-xs mt-0.5">
                 Import an engineering ladder or select a rubric to begin gap analysis and level coverage tracking.
               </p>
             </div>
@@ -445,12 +445,12 @@ export const RubricGapMatrix: React.FC = () => {
           </button>
         </div>
       ) : (
-        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-between text-xs text-emerald-400">
+        <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-between text-xs text-emerald-700 dark:text-emerald-400">
           <div className="flex items-center space-x-2.5">
             <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
             <div>
               <span className="font-bold">100% Competency Coverage for Level {selectedLevel}!</span>
-              <p className="text-emerald-400/80 text-[11px] mt-0.5">
+              <p className="text-emerald-700/80 dark:text-emerald-400/80 text-[11px] mt-0.5">
                 All dimensions meet or exceed verified standards. Your evidence portfolio is promotion-ready.
               </p>
             </div>
@@ -467,12 +467,12 @@ export const RubricGapMatrix: React.FC = () => {
       {/* Competency Matrix Grid */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <Layers className="w-4 h-4 text-teal-400" />
+          <h2 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+            <Layers className="w-4 h-4 text-teal-700 dark:text-teal-400" />
             Competency Evaluation Grid
           </h2>
           <span className="text-xs text-slate-500">
-            Showing expectations for <strong className="text-slate-300 font-mono">{selectedLevel}</strong>
+            Showing expectations for <strong className="text-slate-700 dark:text-slate-300 font-mono">{selectedLevel}</strong>
           </span>
         </div>
 
@@ -502,36 +502,36 @@ export const RubricGapMatrix: React.FC = () => {
           return (
             <div
               key={comp.id}
-              className="p-5 bg-slate-900/60 border border-slate-800 rounded-2xl space-y-4 hover:border-slate-700/80 transition-colors"
+              className="p-5 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-2xl space-y-4 hover:border-slate-300 dark:hover:border-slate-700/80 transition-colors"
             >
               {/* Header row: Name, Category, Status Badge */}
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-800/80 pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-200 dark:border-slate-800/80 pb-3">
                 <div className="space-y-0.5">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-white">{comp.name}</h3>
-                    <span className="text-[10px] font-mono text-slate-500 bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                    <h3 className="text-base font-bold text-slate-900 dark:text-white">{comp.name}</h3>
+                    <span className="text-[10px] font-mono text-slate-500 bg-slate-100 dark:bg-slate-950 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-800">
                       {comp.id}
                     </span>
                   </div>
-                  <div className="text-xs text-teal-400/80 font-medium">{category}</div>
+                  <div className="text-xs text-teal-700/80 dark:text-teal-400/80 font-medium">{category}</div>
                 </div>
 
                 {/* Status Badge */}
                 <div>
                   {status === 'met' && (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       Met
                     </span>
                   )}
                   {status === 'partial' && (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
                       <AlertTriangle className="w-3.5 h-3.5" />
                       Partial
                     </span>
                   )}
                   {status === 'gap' && (
-                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20">
                       <AlertCircle className="w-3.5 h-3.5" />
                       Gap
                     </span>
@@ -540,19 +540,19 @@ export const RubricGapMatrix: React.FC = () => {
               </div>
 
               {/* Expectation description for current target level */}
-              <div className="p-3 bg-slate-950/70 border border-slate-800/60 rounded-xl space-y-1">
-                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <span className="font-mono text-teal-400">{selectedLevel}</span> Expectation:
+              <div className="p-3 bg-white dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800/60 rounded-xl space-y-1">
+                <div className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="font-mono text-teal-700 dark:text-teal-400">{selectedLevel}</span> Expectation:
                 </div>
-                <p className="text-xs text-slate-300 leading-relaxed">{expectation}</p>
+                <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">{expectation}</p>
               </div>
 
               {/* Mapped Evidence Section */}
               <div className="space-y-2">
-                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                <div className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider flex items-center justify-between">
                   <span>Mapped Evidence ({mappedRecords.length})</span>
                   {report?.issues && report.issues.length > 0 && (
-                    <span className="text-[11px] text-amber-400 font-normal lowercase">
+                    <span className="text-[11px] text-amber-700 dark:text-amber-400 font-normal lowercase">
                       {report.issues.join(' · ')}
                     </span>
                   )}
@@ -570,14 +570,14 @@ export const RubricGapMatrix: React.FC = () => {
                         <div
                           key={ev.id}
                           onClick={() => setSelectedEvidence(ev)}
-                          className="p-3.5 bg-slate-950 rounded-xl border border-slate-800/90 hover:border-teal-500/40 hover:bg-slate-950/80 transition-all cursor-pointer space-y-2 group"
+                          className="p-3.5 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800/90 hover:border-teal-500/40 hover:bg-white dark:hover:bg-slate-950/80 transition-all cursor-pointer space-y-2 group"
                         >
                           <div className="flex items-center justify-between">
                             <div className="flex items-center space-x-2">
-                              <span className="font-mono text-xs font-bold text-teal-400">
+                              <span className="font-mono text-xs font-bold text-teal-700 dark:text-teal-400">
                                 {ev.id}
                               </span>
-                              <span className="text-xs font-semibold text-white group-hover:text-teal-300 transition-colors truncate max-w-[200px]">
+                              <span className="text-xs font-semibold text-slate-900 dark:text-white group-hover:text-teal-700 dark:group-hover:text-teal-300 transition-colors truncate max-w-[200px]">
                                 {ev.title}
                               </span>
                             </div>
@@ -585,10 +585,10 @@ export const RubricGapMatrix: React.FC = () => {
                             <span
                               className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                                 ev.confidence === 'verified'
-                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/20'
                                   : ev.confidence === 'provisional'
-                                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                  : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20'
+                                  : 'bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-500/20'
                               }`}
                             >
                               {ev.confidence}
@@ -596,19 +596,19 @@ export const RubricGapMatrix: React.FC = () => {
                           </div>
 
                           {/* Impact Summary */}
-                          <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                          <p className="text-xs text-slate-600 dark:text-slate-400 line-clamp-2 leading-relaxed">
                             {ev.impact || ev.summary}
                           </p>
 
                           {/* Footer row: Company & Warnings */}
-                          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-900">
+                          <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200 dark:border-slate-900">
                             <span className="text-slate-500 flex items-center gap-1">
                               <Building2 className="w-3 h-3" />
                               {ev.company}
                             </span>
 
                             {hasMissingMetric && (
-                              <span className="text-amber-400 font-semibold flex items-center gap-1 text-[10px]">
+                              <span className="text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1 text-[10px]">
                                 <AlertTriangle className="w-3 h-3" />
                                 Metric Needed
                               </span>
@@ -619,7 +619,7 @@ export const RubricGapMatrix: React.FC = () => {
                     })}
                   </div>
                 ) : (
-                  <div className="p-3 bg-slate-950/40 border border-dashed border-slate-800/80 rounded-xl text-xs text-slate-500 flex items-center justify-between">
+                  <div className="p-3 bg-white dark:bg-slate-950/40 border border-dashed border-slate-200 dark:border-slate-800/80 rounded-xl text-xs text-slate-500 flex items-center justify-between">
                     <span>No evidence entries mapped to this competency yet.</span>
                     <span className="text-slate-600 text-[11px]">
                       Tag evidence with &ldquo;{comp.id}&rdquo; to automatically link

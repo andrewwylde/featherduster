@@ -1,4 +1,4 @@
-import type { CorpusView, CorpusWriteRequest, CorpusPreviewResponse, CorpusUpdate, MutationReceipt, ProposalBinding, ProposalSaveRequest, ProposalContinueRequest, ProposalRecoverRequest, ProposalReadResponse, ProposalSaveResponse, ProposalAdmissionResponse, ProposalReviewRevision, ProposalReviewSummary } from '@featherduster/core';
+import type { CorpusView, CorpusWriteRequest, CorpusPreviewResponse, CorpusUpdate, MutationReceipt, ProposalBinding, ProposalSaveRequest, ProposalContinueRequest, ProposalRecoverRequest, ProposalReadResponse, ProposalSaveResponse, ProposalAdmissionResponse, ProposalReviewRevision, ProposalReviewSummary, ProposalBaseCorrectionRequest, ProposalBaseCorrectionResponse, BaseCorrection } from '@featherduster/core';
 import type { Job, PostingSnapshot, Attempt, ArtifactVersion, JobEvent, ScopedAnswer, WorkerControl, JobDraft, InputSnapshot, ResumeReview } from '@featherduster/core';
 import type {
   DraftAcknowledgement, DraftEnvelope, DraftContext, DraftCompletion, DraftRecord, DraftUpdate, RevisionToken, SetupPayload, ManualDraftPayload,
@@ -50,6 +50,16 @@ export type AnswerRequest = Pick<ScopedAnswer, 'key' | 'question' | 'scope' | 's
 export interface ReviewBinding { expected_job_revision: number; artifact_fingerprint: string; idempotency_key: string }
 
 /** Error thrown for non-2xx API responses; keeps the server's machine-readable code. */
+/** A request the client gave up on; the endpoint is kept for diagnostics, never for display. */
+export class RequestTimeoutError extends Error {
+  readonly endpoint: string;
+  constructor(endpoint: string) {
+    super('The host is taking longer than expected to respond.');
+    this.name = 'TimeoutError';
+    this.endpoint = endpoint;
+  }
+}
+
 export class ApiError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -358,8 +368,8 @@ export class ApiClient {
   previewJobs(body: { mode: 'urls' | 'text'; input: string; details?: Partial<Pick<Job, 'company' | 'role' | 'notes' | 'context_url'>>; fallback_job_id?: string; expected_revision?: number }) { return this.fetchJson<IntakePreview>('/api/jobs/preview', this.jsonRequest('POST', body)); }
   addJobs(preview_id: string, idempotency_key: string) { return this.fetchJson<IntakeResult>('/api/jobs', this.jsonRequest('POST', { preview_id, idempotency_key })); }
   saveJobDetails(id: string, body: { expected_revision: number; idempotency_key: string; changes: Partial<Pick<Job, 'company' | 'role' | 'notes' | 'context_url'>>; posting_text?: string }) { return this.fetchJson<{ result: { job: Job }; replayed: boolean }>(`/api/jobs/${id}/details`, this.jsonRequest('PUT', body)); }
-  correctJobStartingResume(id: string, body: { expected_job_revision: number; input_snapshot_id: string; idempotency_key: string; base_resume: ResumeSpec }) { return this.fetchJson<{ result: { input_snapshot: InputSnapshot; job: Job }; replayed: boolean }>(`/api/jobs/${id}/starting-resume`, this.jsonRequest('PUT', body)); }
-  captureJobInputs(id: string, expected_revision: number, selection: { base_resume_id?: string; template_id?: string; runner?: RunnerId; evidence_ids?: string[] } = {}) { return this.fetchJson<{ input_snapshot: InputSnapshot }>(`/api/jobs/${id}/inputs`, this.jsonRequest('POST', { expected_revision, ...selection })); }
+  correctJobStartingResume(id: string, body: ProposalBaseCorrectionRequest) { return this.fetchJson<ProposalBaseCorrectionResponse>(`/api/jobs/${id}/starting-resume`, this.jsonRequest('PUT', body)); }
+  captureJobInputs(id: string, expected_revision: number, selection: { base_resume_id?: string; template_id?: string; runner?: RunnerId; evidence_ids?: string[] } = {}) { return this.fetchJson<{ input_snapshot: InputSnapshot; unapplied_base_corrections?: BaseCorrection[] }>(`/api/jobs/${id}/inputs`, this.jsonRequest('POST', { expected_revision, ...selection })); }
   prepareJob(id: string, action: 'prepare' | 'resume' | 'retry' | 'reprepare', body: { expected_revision: number; input_snapshot_id: string; idempotency_key: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/${action}`, this.jsonRequest('POST', body)); }
   cancelJob(id: string, body: { expected_revision: number; idempotency_key: string; reason?: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/cancel`, this.jsonRequest('POST', body)); }
   saveJobAnswer(id: string, body: AnswerRequest) { return this.fetchJson<{ job: Job; answer: ScopedAnswer }>(`/api/jobs/${id}/answers`, this.jsonRequest('PUT', body)); }
@@ -394,7 +404,7 @@ export class ApiClient {
     const url = `${this.baseUrl}${endpoint}`;
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      controller.abort(new Error(`Request timed out after 15s: ${endpoint}`));
+      controller.abort(new RequestTimeoutError(endpoint));
     }, 15000);
     if (init?.signal) {
       init.signal.addEventListener('abort', () => controller.abort(init.signal?.reason));
