@@ -19,6 +19,40 @@ function setup(extra = {}) {
   const props = { draft, candidate: changed, checks: check, onSaved: vi.fn(), onBack: vi.fn(), onBusy: vi.fn(), onFocusIssue: vi.fn(), ...extra };
   return { props, view: render(<JobDraftActions {...props} />) };
 }
+it('opens input review directly for saved stale drafts instead of retrying checks', () => {
+  const onReviewInputs = vi.fn();
+  setup({ candidate, onReviewInputs, checks: { ...check, ready: false, status: 'unavailable',
+    error: 'Job scope changed. Review current inputs first.' } });
+  expect(screen.getByText('Current inputs need review. Saving is available.')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Retry checks' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Save draft' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Finalize resume' })).toBeDisabled();
+  fireEvent.click(screen.getByRole('button', { name: 'Review current inputs' }));
+  expect(onReviewInputs).toHaveBeenCalledOnce();
+});
+it('keeps edits in the canvas until saving succeeds before input review', async () => {
+  const onReviewInputs = vi.fn();
+  const save = vi.spyOn(apiClient, 'saveJobDraft').mockRejectedValueOnce(Error('Offline'))
+    .mockResolvedValueOnce({ draft: { ...draft, revision: 2, candidate: changed } });
+  const { props } = setup({ onReviewInputs, checks: { ...check, ready: false, status: 'unavailable',
+    error: 'Job scope changed. Review current inputs first.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Review current inputs' }));
+  expect(onReviewInputs).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save and return' }));
+  await screen.findByText('Offline');
+  expect(onReviewInputs).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Save and return' }));
+  await waitFor(() => expect(onReviewInputs).toHaveBeenCalledOnce());
+  expect(save).toHaveBeenLastCalledWith(id, id, 1, changed);
+  expect(props.onBack).not.toHaveBeenCalled();
+});
+it('offers a working retry for temporary check failures', () => {
+  const retry = vi.fn(), onReviewInputs = vi.fn();
+  setup({ onReviewInputs, checks: { ...check, retry, ready: false, status: 'unavailable', error: 'Offline' } });
+  expect(screen.queryByRole('button', { name: 'Review current inputs' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Retry checks' }));
+  expect(retry).toHaveBeenCalledOnce();
+});
 it('saves invalid content before following the requested internal destination', async () => {
   let guard: JobLeaveGuard | null = null;
   const proceed = vi.fn();

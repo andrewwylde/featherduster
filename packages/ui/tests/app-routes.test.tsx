@@ -92,6 +92,26 @@ describe('static application routes', () => {
     expect(apiClient.getJobDraft).toHaveBeenCalledTimes(1);
   });
 
+  it('routes stale job drafts to the same job inputs through Review current inputs', async () => {
+    const id = '11111111-1111-4111-8111-111111111111';
+    const spec = { profile: { name: 'Alex', title: 'Engineer', email: 'a@example.com' }, experiences: [], education: [], skills: [] };
+    vi.spyOn(apiClient, 'getJobDraft').mockResolvedValue({ draft: { schema_version: 1, id, workspace_id: 'w', job_id: id, revision: 0, input_snapshot_id: id, parent_artifact_version_id: id, candidate: spec, proposals: { proposals: [] }, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' } });
+    vi.spyOn(apiClient, 'getJob').mockRejectedValue(Error('Fixture posting unavailable'));
+    vi.spyOn(apiClient, 'checkJobDraft').mockRejectedValue(Error('Job scope changed. Review current inputs first.'));
+    vi.spyOn(apiClient, 'saveJobDraft').mockImplementation(async (_job, _draft, _revision, candidate) => ({ draft: {
+      schema_version: 1, id, workspace_id: 'w', job_id: id, revision: 1, input_snapshot_id: id,
+      parent_artifact_version_id: id, candidate, proposals: { proposals: [] },
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z',
+    } }));
+    window.history.replaceState({}, '', `/tailor/canvas/jobs/${id}/${id}`);
+    render(<App />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Review current inputs' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Save and return' }));
+    await waitFor(() => expect(window.location.pathname).toBe(`/jobs/${id}/inputs`));
+    expect(screen.getByRole('link', { name: 'Jobs' })).toHaveAttribute('aria-current', 'page');
+    expect(apiClient.getJob).toHaveBeenCalledWith(id);
+  });
+
 });
 
 import { tailorViewForPath } from '../src/routing';

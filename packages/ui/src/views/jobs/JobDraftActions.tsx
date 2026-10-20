@@ -1,14 +1,16 @@
 import { primaryButton, secondaryButton } from '../tailoring/ui.js';
+import { JobFacts } from './JobFacts.js';
 import { useEffect, useRef, useState } from 'react';
 import { FinalizeJobDraftRequestSchema } from '@featherduster/core';
 import type { DraftIssue, FinalizeJobDraftRequest, JobDraft, ResumeSpec } from '@featherduster/core';
 import { apiClient, ApiError } from '../../api/client.js';
 import type { JobDraftChecks } from './useJobDraftChecks.js';
 export type JobLeaveGuard = (proceed: () => void) => void;
-export function JobDraftActions({ draft, candidate, checks, onSaved, onBack, onBusy, onFocusIssue, onLeaveGuard, onDiscard }: {
+export function JobDraftActions({ draft, candidate, checks, onSaved, onBack, onBusy, onFocusIssue, onLeaveGuard, onDiscard, onReviewInputs }: {
   draft: JobDraft; candidate: ResumeSpec; onSaved(draft: JobDraft): void; onBack(): void;
   onBusy(busy: boolean): void; onFocusIssue(issue: DraftIssue): void;
   checks: JobDraftChecks; onLeaveGuard?(guard: JobLeaveGuard | null): void; onDiscard?(candidate: ResumeSpec): void;
+  onReviewInputs?(): void;
 }) {
   const saved = useRef(draft), lock = useRef(false), current = useRef(candidate);
   current.current = candidate;
@@ -60,15 +62,18 @@ const recoverFinalization = async () => {
   useEffect(() => { if (leaving) saveAndReturnRef.current?.focus(); }, [leaving]);
   const pendingDestination = useRef<(() => void) | null>(null);
   const leave = () => { const next = pendingDestination.current; pendingDestination.current = null; if (next) next(); else onBack(); };
+  const requestLeave = (proceed: () => void) => {
+    if (lock.current) { setMessage('Wait for the current save or finalization.'); return; }
+    if (JSON.stringify(current.current) === JSON.stringify(saved.current.candidate)) { proceed(); return; }
+    pendingDestination.current = proceed; setLeaving(true);
+  };
   useEffect(() => {
-    onLeaveGuard?.(proceed => {
-      if (lock.current) { setMessage('Wait for the current save or finalization.'); return; }
-      if (JSON.stringify(current.current) === JSON.stringify(saved.current.candidate)) { proceed(); return; }
-      pendingDestination.current = proceed; setLeaving(true);
-    });
+    onLeaveGuard?.(requestLeave);
     return () => onLeaveGuard?.(null);
   }, [onLeaveGuard]);
   const dirty = JSON.stringify(candidate) !== savedKey;
+  // Existing servers expose input freshness failures through this recovery instruction.
+  const needsInputReview = checks.status === 'unavailable' && !!checks.error?.endsWith('Review current inputs first.');
   useEffect(() => {
     if (draft.revision > saved.current.revision) { saved.current = draft; setSavedKey(JSON.stringify(draft.candidate)); }
   }, [draft]);
@@ -130,18 +135,25 @@ const recoverFinalization = async () => {
       <button className={secondaryButton} ref={backRef} type="button" disabled={!!busy} onClick={() => dirty ? setLeaving(true) : onBack()}>Back to resume</button>
     </div>
     <p role="status" aria-live="polite">{busy === 'finalize' ? 'Finalizing resume…' : busy === 'save' ? 'Saving…' : dirty ? 'Unsaved changes' : 'Draft saved'}</p>
-    <p role="status" aria-live="polite">{checks.status === 'checking' ? 'Checking current edits…' : checks.ready ? 'Ready to finalize' : checks.status === 'blocked' ? 'Resolve the issues below to finalize. Saving is available.' : 'Checks unavailable — Retry'}</p>
+    <p role="status" aria-live="polite">{checks.status === 'checking' ? 'Checking current edits…' : checks.ready ? 'Ready to finalize' : checks.status === 'blocked' ? 'Resolve the issues below to finalize. Saving is available.' : needsInputReview ? 'Current inputs need review. Saving is available.' : 'Checks unavailable'}</p>
     {hasPendingIntent && <button disabled={!!busy} onClick={() => void recoverFinalization()}>Check finalization result</button>}
     {checks.error && <p>{checks.error}</p>}
-    {checks.status === 'unavailable' && <button disabled={!!busy} onClick={checks.retry}>Retry checks</button>}
+    {needsInputReview && onReviewInputs ? <div className="space-y-2">
+      <p className="text-sm">Review this job’s current details and posting before preparing with updated inputs. Your draft is kept.</p>
+      <button className={secondaryButton} type="button" disabled={!!busy} onClick={() => requestLeave(onReviewInputs)}>Review current inputs</button>
+    </div> : checks.status === 'unavailable' && <button className={secondaryButton} type="button" disabled={!!busy} onClick={checks.retry}>Retry checks</button>}
     {checks.issues.length > 0 && <ul aria-label="Resume issues">{checks.issues.map((issue, i) => <li key={`${issue.path}-${issue.code}-${i}`}>
       {issue.path ? <button onClick={() => onFocusIssue(issue)}>{issue.message}</button> : issue.message}
     </li>)}</ul>}
+    <details><summary className="cursor-pointer">Review evidence and facts</summary>
+      <JobFacts jobId={draft.job_id} target={{ kind: 'draft', draft_id: draft.id, candidate }} reactive onResolved={() => checks.retry()}
+        onRevise={fact => onFocusIssue({ path: fact.passage.subject.path, code: 'fact_review', severity: 'block', message: 'Revise this wording.' })} />
+    </details>
     {message && <p role="status">{message}</p>}
     {conflict && <button disabled={!!busy} onClick={() => void reloadRevision()}>Review latest saved revision</button>}
     {reviewedCandidate && <details><summary>Latest saved content</summary><pre className="whitespace-pre-wrap break-words">{JSON.stringify(reviewedCandidate, null, 2)}</pre></details>}
     {leaving && <section role="region" aria-label="Unsaved changes" className="rounded border p-3">
-      <p>Save your changes before returning to the resume?</p>
+      <p>Save your changes before leaving this draft?</p>
       <button ref={saveAndReturnRef} disabled={!!busy || conflict} onClick={() => void act('save', true)}>Save and return</button>
       <button disabled={!!busy} onClick={() => { pendingDestination.current = null; setLeaving(false); backRef.current?.focus(); }}>Keep editing</button>
       <button disabled={!!busy} onClick={() => { onDiscard?.(saved.current.candidate); current.current = saved.current.candidate; leave(); }}>Discard unsaved changes and return</button>

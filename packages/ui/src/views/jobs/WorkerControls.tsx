@@ -23,6 +23,14 @@ export function WorkerControls({
   const [failure, setFailure] = useState<string | null>(null);
   const [pending, setPending] = useState<string[]>([]);
   const [showQueue, setShowQueue] = useState(false);
+  const [reviewJobs, setReviewJobs] = useState<Job[] | null>(null);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+  const openReviews = async () => {
+    setLoadingReviews(true); setFailure(null);
+    try { setReviewJobs((await apiClient.getJobs()).jobs.filter(isNeedsInput)); }
+    catch (e) { setFailure(e instanceof Error ? e.message : 'Could not load jobs needing review.'); }
+    finally { setLoadingReviews(false); }
+  };
   const inflight = useRef(new Set<string>());
   const key = useIntentKey();
 
@@ -129,6 +137,9 @@ export function WorkerControls({
 
         {/* Action Controls */}
         <div className="flex flex-wrap items-center gap-2">
+          {!!data?.needs_review_count && <button className={primaryButton} disabled={loadingReviews} onClick={() => void openReviews()}>
+            {loadingReviews ? 'Loading reviews…' : 'Review jobs'}
+          </button>}
           <details><summary className="cursor-pointer text-xs underline">Automatic work controls</summary><div className="flex flex-wrap gap-2">
           {/* Start Button */}
           <button
@@ -183,6 +194,17 @@ export function WorkerControls({
         </div>
       </div>
 
+      {reviewJobs && <section aria-label="Jobs needing review" className="mt-4 space-y-2">
+        <h3 className="font-semibold">Jobs needing review</h3>
+        {!reviewJobs.length && <p>No jobs currently need review.</p>}
+        {reviewJobs.map(job => {
+          const section = job.recovery?.kind === 'stale_inputs' ? 'inputs' : job.recovery?.kind === 'proposals' ? 'proposals' : 'resume';
+          const href = `/jobs/${job.id}/${section}`;
+          return <a key={job.id} className={`${secondaryButton} block`} href={href} onClick={e => {
+            if (navigate && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) { e.preventDefault(); navigate(href); }
+          }}>Review {job.company ?? 'Unknown company'} — {job.role ?? 'Untitled role'}</a>;
+        })}
+      </section>}
       {showQueue && (
         <div className="mt-4 border-t border-slate-200/80 dark:border-slate-800 pt-3">
           <QueueVisualization

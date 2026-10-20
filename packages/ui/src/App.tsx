@@ -172,7 +172,12 @@ export function App() {
 
         {currentTab === 'jobs' && (jobsView ? <JobDetail key={jobsView.id} id={jobsView.id} section={jobsView.section} navigate={navigatePath} /> : <JobsView navigate={navigatePath} />)}
         {linkedDraft && <div className={currentTab === 'tailor' && linkedVisible ? 'block' : 'hidden'}>
-          <ResumeTailor key={linkedDraft.draftId} linkedJobDraft={linkedDraft} onLeaveGuard={guard => { linkedLeaveGuard.current = guard; }} onBackToRuns={() => {
+          <ResumeTailor key={linkedDraft.draftId} linkedJobDraft={linkedDraft} onReviewJobInputs={() => {
+            // JobDraftActions has already saved or explicitly discarded local edits.
+            linkedLeaveBypass.current = true;
+            try { navigatePath(`/jobs/${linkedDraft.jobId}/inputs`); }
+            finally { linkedLeaveBypass.current = false; }
+          }} onLeaveGuard={guard => { linkedLeaveGuard.current = guard; }} onBackToRuns={() => {
   linkedLeaveBypass.current = true;
   try { navigatePath(`/jobs/${linkedDraft.jobId}/resume`); }
   finally { linkedLeaveBypass.current = false; }

@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import '@testing-library/jest-dom/vitest';
-import { afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createHash, webcrypto } from 'node:crypto';
 import { EvidenceStore, type Job, type ProposalReadResponse } from '@featherduster/core';
@@ -10,11 +10,28 @@ import { JobProposalReview } from '../src/views/jobs/JobProposalReview.js';
 const job = { id: 'job', workspace_id: 'workspace', revision: 2, preparation_state: 'needs_input' } as Job;
 const candidate = { profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' }, summary: 'Original', experiences: [], education: [], skills: [] };
 const data = { availability: 'available', input_stale: false, corpus_revision: 0, generation: { id: 'generation', proposals: { proposals: [{ id: 'p1', type: 'summary.rewrite', target: {}, before: 'Original', after: 'Built backend APIs.', citations: [], requirement_ids: [], checks: [], decision: 'pending' }] } }, review: { id: 'review', revision: 0, input_fingerprint: 'hash', patches: [], groundings: [], candidate_preview: candidate, validation: { status: 'blocked', fingerprint: 'validation', issues: [{ id: 'default', subject: { kind: 'proposal', proposal_id: 'p1' }, group: 'grounding', action: 'edit_proposal', details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Check backend wording' }] }] } }, history: [], generations: [], captured: { evidence: [], skillSupport: [], analysis: { requirements: [] }, base_resume: candidate } } as unknown as Extract<ProposalReadResponse, { availability: 'available' }>;
+beforeEach(() => { vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue({ facts: [], clarifications: [], usage: { dispatched: 0, elapsed_ms: 0 }, execution: 'unchecked', configuration_evaluated: false } as any); });
+async function openWording() {
+  await act(async () => { await Promise.resolve(); await Promise.resolve(); });
+  const summary = screen.queryByText('Edit wording, citations, and preparation details');
+  if (summary && !summary.closest('details')?.open) fireEvent.click(summary);
+}
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
+it('explains the next correction and keeps optional input refresh secondary', async () => {
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(data);
+  render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
+  expect(await screen.findByRole('region', { name: 'Next step' })).toHaveTextContent('uncheck Include this change');
+  expect(screen.getByRole('button', { name: 'Go to next required correction' })).toBeEnabled();
+  expect(screen.getByRole('button', { name: 'Recheck saved revision' })).toBeVisible();
+  expect(document.getElementById('refresh-inputs')).not.toHaveAttribute('open');
+  expect(screen.getByRole('button', { name: 'Continue preparation' })).toBeDisabled();
+});
 it('keeps the last successful proposal review mounted through a poll timeout and recovery', async () => {
   vi.useFakeTimers();
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValueOnce(data).mockRejectedValueOnce(new Error('Request timed out after 15s: /api/jobs/job/proposals')).mockResolvedValue(data);
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
   const wording = screen.getByLabelText('Proposed wording');
   fireEvent.change(wording, { target: { value: 'Unsaved review text' } });
@@ -31,12 +48,13 @@ it('groups blockers by whether they belong to generated edits or the starting re
     { id: 'base-issue', subject: { kind: 'candidate', path: 'summary' }, group: 'grounding', action: 'refresh_base', details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Direct experience is not supported by cited evidence: TypeScript.' }] },
   ] } } } as any);
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByRole('heading', { name: 'Proposal review' })).toBeInTheDocument();
   expect(screen.getByText('1 proposed edit')).toBeInTheDocument();
   expect(screen.getByText('1 location in the starting resume')).toBeInTheDocument();
   expect(screen.getByText('Resume summary · 1 finding')).toBeInTheDocument();
-  expect(screen.getByText('Direct experience is not supported by cited evidence: TypeScript.').closest('details')).toBeNull();
-  expect(screen.getByText('Starting wording: “Original”').closest('details')).toBeNull();
+  expect(screen.getByText('Direct experience is not supported by cited evidence: TypeScript.').closest('details')).toHaveAttribute('open');
+  expect(screen.getByText('Starting wording: “Original”').closest('details')).toHaveAttribute('open');
   expect(screen.getByText(/Save a job-local copy/)).toBeInTheDocument();
   expect(screen.getByText('Resolve all 2 blockers and save to enable Continue preparation.')).toBeInTheDocument();
   const edits = document.getElementById('proposal-edits')!;
@@ -48,6 +66,7 @@ it('saves actual wording for this job without memory or implicit continuation', 
   const save = vi.spyOn(apiClient, 'saveJobProposals').mockResolvedValue({ result: { job: { ...job, revision: 3 }, review: { ...data.review, revision: 1, candidate_preview: { ...candidate, summary: 'Built APIs.' } }, corpus_revision: 0, requires_refresh: false }, replayed: false });
   const start = vi.spyOn(apiClient, 'continueJobProposals');
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.change(await screen.findByLabelText('Proposed wording'), { target: { value: 'Built APIs.' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save for this job' }));
   await waitFor(() => expect(save).toHaveBeenCalled());
@@ -56,13 +75,41 @@ it('saves actual wording for this job without memory or implicit continuation', 
   expect(start).not.toHaveBeenCalled();
   expect(await screen.findByText(/Saved revision 1\./)).toBeInTheDocument();
 });
+it('confirms a saved edit that remains blocked instead of implying acceptance', async () => {
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(data);
+  const saved = { ...data.review, revision: 1, patches: [{ proposal_id: 'p1', edited_after: 'Revised backend wording' }] };
+  vi.spyOn(apiClient, 'saveJobProposals').mockResolvedValue({ result: { job: { ...job, revision: 3 }, review: saved, corpus_revision: 0, requires_refresh: false } } as any);
+  render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
+  fireEvent.change(await screen.findByLabelText('Proposed wording'), { target: { value: 'Revised backend wording' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save for this job' }));
+  expect(await screen.findByText(/This passage still needs changes: Check backend wording/)).toBeVisible();
+  await waitFor(() => expect(screen.getByRole('status', { name: 'Passage save status' })).toHaveTextContent('Saved — still needs changes'));
+  expect(screen.getByLabelText('Proposed wording')).toHaveValue('Revised backend wording');
+  expect(screen.getByRole('button', { name: 'Continue preparation' })).toBeDisabled();
+});
+it('acknowledges a passing correction and opens the next required starting-resume field', async () => {
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(data);
+  const saved = { ...data.review, revision: 1, patches: [{ proposal_id: 'p1', edited_after: 'Built APIs.' }], validation: { ...data.review.validation, issues: [{ id: 'base', subject: { kind: 'candidate', path: 'summary' }, group: 'grounding', action: 'refresh_base', details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Fix starting summary' }] }] } };
+  vi.spyOn(apiClient, 'saveJobProposals').mockResolvedValue({ result: { job: { ...job, revision: 3 }, review: saved, corpus_revision: 0, requires_refresh: false } } as any);
+  render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
+  fireEvent.change(await screen.findByLabelText('Proposed wording'), { target: { value: 'Built APIs.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save for this job' }));
+  expect(await screen.findByText(/This passage passed checks. The next required correction is open below/)).toBeVisible();
+  expect(screen.queryByLabelText('Proposed wording')).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Starting wording').closest('details')).toHaveAttribute('open');
+  await waitFor(() => expect(screen.getByLabelText('Starting wording')).toHaveFocus());
+});
 it('retains dirty wording across reload and failed saves', async () => {
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(data);
   vi.spyOn(apiClient, 'saveJobProposals').mockRejectedValue(new Error('Stale review'));
   const first = render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.change(await screen.findByLabelText('Proposed wording'), { target: { value: 'Keep local text' } });
   first.unmount();
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByLabelText('Proposed wording')).toHaveValue('Keep local text');
   fireEvent.click(screen.getByRole('button', { name: 'Save for this job' }));
   expect(await screen.findByText(/Stale review/)).toBeInTheDocument();
@@ -72,6 +119,7 @@ it('offers explicit one-generation recovery when output is missing', async () =>
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: true, latest_input_snapshot_id: 'input', input_snapshot_id: 'input' });
   const recover = vi.spyOn(apiClient, 'recoverJobProposals').mockRejectedValue(new Error('Stop prevents start'));
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.click(await screen.findByRole('button', { name: 'Recover proposal review' }));
   expect(await screen.findByText(/Stop prevents start/)).toBeInTheDocument();
   expect(recover).toHaveBeenCalledWith('job', expect.objectContaining({ expected_job_revision: 2, input_snapshot_id: 'input' }));
@@ -81,6 +129,7 @@ it('rejects and restores inclusion without teaching a capability', async () => {
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(data);
   const save = vi.spyOn(apiClient, 'saveJobProposals').mockResolvedValue({ result: { job, review: data.review, corpus_revision: 0, requires_refresh: false }, replayed: false });
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.click(await screen.findByLabelText('Include this change'));
   expect(screen.getByText('Rejected — original content retained.')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Save for this job' }));
@@ -93,6 +142,7 @@ it('retains an older revision draft on reload and requires explicit reconciliati
   localStorage.setItem('proposal-draft:workspace:job:generation:review:0', JSON.stringify({ savedAt: 1, draft: { patches: [{ proposal_id: 'p1', edited_after: 'Old local edit' }], groundings: [], explanation: '' } }));
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ ...data, review: { ...data.review, revision: 1 } });
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByLabelText('Proposed wording')).toHaveValue('Old local edit');
   expect(screen.getByRole('button', { name: 'Save for this job' })).toBeDisabled();
   fireEvent.click(screen.getByRole('button', { name: 'Reconcile revision (keep edits)' }));
@@ -105,6 +155,7 @@ it('refreshes without starting and exposes a separate reprepare action', async (
   const capture = vi.spyOn(apiClient, 'captureJobInputs').mockResolvedValue({ input_snapshot: { id: 'new-input' } as never });
   const prepare = vi.spyOn(apiClient, 'prepareJob').mockResolvedValue({});
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.click(await screen.findByRole('button', { name: 'Refresh inputs' }));
   await waitFor(() => expect(capture).toHaveBeenCalledWith('job', 2));
   expect(prepare).not.toHaveBeenCalled();
@@ -117,6 +168,7 @@ it('explicitly removes a saved grounding without changing remembered corpus know
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ ...data, review: { ...data.review, groundings: [grounding as never] } });
   const save = vi.spyOn(apiClient, 'saveJobProposals').mockResolvedValue({ result: { job, review: data.review, corpus_revision: 0, requires_refresh: false }, replayed: false });
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.click(await screen.findByRole('button', { name: 'Remove saved grounding backend' }));
   fireEvent.click(screen.getByRole('button', { name: 'Save for this job' }));
   await waitFor(() => expect(save).toHaveBeenCalled());
@@ -130,6 +182,7 @@ it('focuses the first blocking field after recheck releases disabled controls', 
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ ...data, review: blocked as never });
   vi.spyOn(apiClient, 'recheckJobProposals').mockResolvedValue({ review: blocked as never } as never);
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.click(await screen.findByRole('button', { name: 'Recheck saved revision' }));
   await waitFor(() => expect(screen.getByLabelText('Proposed wording')).toHaveFocus());
   vi.unstubAllGlobals();
@@ -144,6 +197,7 @@ it('sends only the displayed source-bound relationship on Save and remember with
   const start = vi.spyOn(apiClient, 'continueJobProposals');
   const prepare = vi.spyOn(apiClient, 'prepareJob');
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.click(await screen.findByRole('button', { name: 'Choose supporting evidence' }));
   fireEvent.click(screen.getByRole('checkbox', { name: 'API systems' }));
   fireEvent.click(screen.getByRole('button', { name: 'Done choosing evidence' }));
@@ -190,6 +244,7 @@ it('acknowledges only the submitted draft when a save response arrives after a l
   let resolveSave!: (value: Awaited<ReturnType<typeof apiClient.saveJobProposals>>) => void;
   const save = vi.spyOn(apiClient, 'saveJobProposals').mockImplementation(() => new Promise(resolve => { resolveSave = resolve; }));
   const first = render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.change(await screen.findByLabelText('Proposed wording'), { target: { value: 'Submitted text' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save for this job' }));
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
@@ -204,6 +259,7 @@ it('acknowledges only the submitted draft when a save response arrives after a l
   expect(JSON.parse(localStorage.getItem('proposal-draft:workspace:job:generation:review:1')!).draft.patches).toEqual([{ proposal_id: 'p1', edited_after: 'Later local text' }]);
   first.unmount();
   render(<JobProposalReview job={{ ...job, revision: 3 }} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByLabelText('Proposed wording')).toHaveValue('Later local text');
   expect(screen.getByRole('button', { name: 'Save for this job' })).toBeEnabled();
   expect(save.mock.calls[0][2].patches).toEqual([{ proposal_id: 'p1', edited_after: 'Submitted text' }]);
@@ -214,10 +270,12 @@ it('restores the authoritative refreshed target on remount without capture or au
   const capture = vi.spyOn(apiClient, 'captureJobInputs');
   const prepare = vi.spyOn(apiClient, 'prepareJob').mockResolvedValue({});
   const first = render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByRole('button', { name: 'Prepare refreshed inputs' })).toBeEnabled();
   first.unmount();
   load.mockResolvedValue({ ...data, input_stale: true, latest_input_snapshot_id: 'newer' });
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   const button = await screen.findByRole('button', { name: 'Prepare refreshed inputs' });
   expect(prepare).not.toHaveBeenCalled();
   expect(screen.getByRole('button', { name: 'Recheck saved revision' })).toBeDisabled();
@@ -230,6 +288,7 @@ it('restores the authoritative refreshed target on remount without capture or au
 it('protects stale unsaved edits from preparation and explains preservation', async () => {
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ ...data, input_stale: true, latest_input_snapshot_id: 'latest' });
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.change(await screen.findByLabelText('Proposed wording'), { target: { value: 'Keep this wording' } });
   expect(screen.getByRole('button', { name: 'Prepare refreshed inputs' })).toBeDisabled();
   expect(screen.getByText(/Preserve your unsaved text/)).toBeInTheDocument();
@@ -242,6 +301,7 @@ it('shows one affected passage at representative proposal volume and never expan
   const loaded = { ...data, generation: { ...data.generation, proposals: { proposals } }, review: { ...data.review, validation: { ...data.review.validation, issues } } };
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(loaded);
   const view = render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByLabelText('Proposed wording')).toBeVisible();
   expect(screen.getAllByLabelText('Proposed wording')).toHaveLength(1);
   expect(screen.getByRole('heading', { name: 'Experience 1, bullet 1' })).toBeVisible();
@@ -255,6 +315,7 @@ it('shows one affected passage at representative proposal volume and never expan
   view.unmount();
   vi.mocked(apiClient.getJobProposals).mockResolvedValue({ ...loaded, review: { ...loaded.review, validation: { ...loaded.review.validation, status: 'ready', issues: [] } } });
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   await screen.findByText('Optional proposals (11)');
   expect(screen.queryByLabelText('Proposed wording')).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Continue preparation' })).toBeEnabled();
@@ -271,6 +332,7 @@ it('moves keyboard focus to a starting passage when the final generated blocker 
   });
   const onSaved = () => view.rerender(<JobProposalReview job={{ ...job, revision: 3 }} onSaved={onSaved} />);
   const view = render(<JobProposalReview job={job} onSaved={onSaved} />);
+  await openWording();
   fireEvent.click(await screen.findByRole('button', { name: 'Save for this job' }));
   await waitFor(() => expect(screen.getByLabelText('Starting wording')).toHaveFocus());
 });
@@ -291,6 +353,7 @@ it('rechecks a starting-resume save in place and advances to the next blocker wi
   const capture = vi.spyOn(apiClient, 'captureJobInputs');
   // Intentionally do not synchronously bump the parent job.revision prop on onSaved, matching real async parent polling.
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByText('2 blockers')).toBeInTheDocument();
   fireEvent.change(screen.getAllByLabelText('Starting wording')[0], { target: { value: 'Improved service reliability.' } });
   fireEvent.click(screen.getAllByRole('button', { name: 'Save starting resume for this job' })[0]);
@@ -319,6 +382,7 @@ it('excludes retracted evidence from the evidence chooser', async () => {
   ]);
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ ...data, captured: { ...data.captured, evidence: store.getAll() } });
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   fireEvent.click(await screen.findByRole('button', { name: 'Choose supporting evidence' }));
   expect(screen.getByRole('checkbox', { name: 'Verified API work' })).toBeInTheDocument();
   expect(screen.queryByRole('checkbox', { name: /Retracted legacy claim/ })).not.toBeInTheDocument();
@@ -328,6 +392,7 @@ it('keeps rendering the review when a stored starting-resume correction no longe
   const mismatched = { ...data.review, base_corrections: [{ path: 'summary', before: 'Different captured wording', after: 'Corrected', recorded_by: 'local-human', recorded_at: new Date().toISOString() }] };
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ ...data, review: mismatched } as never);
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByRole('heading', { name: 'Proposal review' })).toBeInTheDocument();
   expect(screen.getByRole('alert')).toHaveTextContent('no longer matches');
 });
@@ -336,6 +401,7 @@ it('labels the correction fields in plain language without internal proposal or 
   const withCitation = { ...data, generation: { ...data.generation, proposals: { proposals: [{ ...data.generation.proposals.proposals[0], citations: ['synthetic-0'] }] } }, captured: { ...data.captured, evidence: [evidence] } } as typeof data;
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(withCitation);
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   expect(await screen.findByRole('textbox', { name: 'Proposed wording' })).toHaveValue('Built backend APIs.');
   expect(screen.getByRole('checkbox', { name: 'Include this change' })).toBeChecked();
   expect(screen.getByRole('button', { name: 'Choose supporting evidence' })).toBeInTheDocument();
@@ -352,6 +418,7 @@ it('describes request timeouts in plain sentences without API paths', async () =
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValueOnce(data).mockRejectedValueOnce(new Error('Request timed out after 15s: /api/jobs/job/proposals')).mockResolvedValue(data);
   vi.spyOn(apiClient, 'saveJobProposals').mockRejectedValue(new Error('Request timed out after 15s: /api/jobs/job/proposals/review'));
   render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
   await act(async () => { await Promise.resolve(); await Promise.resolve(); });
   await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
   const alert = screen.getByRole('alert');

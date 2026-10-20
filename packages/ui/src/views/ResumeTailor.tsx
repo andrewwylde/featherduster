@@ -59,6 +59,7 @@ interface ModularExperience {
 }
 
 interface ResumeTailorProps {
+  onReviewJobInputs?: () => void;
   onLeaveGuard?: (guard: JobLeaveGuard | null) => void;
   linkedJobDraft?: { jobId: string; draftId: string };
   /** Complete hydrated document; changes explicitly replace the current payload. */
@@ -77,7 +78,7 @@ interface ResumeTailorProps {
   onBackToRuns?: () => void;
 }
 
-export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete, linkedJobDraft, onLeaveGuard }) => {
+export const ResumeTailor: React.FC<ResumeTailorProps> = ({ onStartTailoringRun, preferredResumeId, onBackToRuns, initialPayload, onPayloadChange, onSourceSelect, initialMobilePane, onMobilePaneChange, verifyWorkspace, onComplete, linkedJobDraft, onLeaveGuard, onReviewJobInputs }) => {
   const [jobDraft, setJobDraft] = useState<JobDraft | null>(null);
   const [linkedJobLabel, setLinkedJobLabel] = useState<string | null>(null);
   const [finalizingJobDraft, setFinalizingJobDraft] = useState(false);
@@ -645,6 +646,7 @@ const inlineIssues = (path: string) => fieldIssues(path).length ? <span id={`iss
 {linkedJobDraft && <p>{linkedJobLabel ? `Editing the resume for ${linkedJobLabel}.` : "Editing this job's resume."} Finalizing does not approve or submit it.</p>}
 {linkedJobDraft && jobDraft && <JobDraftActions
   draft={jobDraft} candidate={currentSpec} checks={jobChecks} onSaved={setJobDraft}
+  onReviewInputs={onReviewJobInputs}
   onBack={() => onBackToRuns?.()} onBusy={setFinalizingJobDraft} onFocusIssue={focusJobIssue}
   onLeaveGuard={onLeaveGuard} onDiscard={candidate => {
     const next = manualFromSpec(candidate, payloadRef.current.selectedResumeId);

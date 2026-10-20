@@ -84,11 +84,11 @@ export function tailorViewForPath(pathname: string): TailorView {
   return slug ? { mode: 'run', slug, ...(TAILORING_STEPS.includes(step as TailoringStep) ? { step: step as TailoringStep } : {}) } : { mode: 'list' };
 }
 
-export const jobSections = { posting: 'Posting', fit: 'Fit', resume: 'Resume', cover_letter: 'Cover letter', interview_brief: 'Interview brief', answers: 'Answers', history: 'History' } as const;
-export type JobSection = keyof typeof jobSections;
+export const jobSections = { posting: 'Posting', inputs: 'Inputs', fit: 'Fit', resume: 'Resume', cover_letter: 'Cover letter', interview_brief: 'Interview brief', answers: 'Answers', history: 'History' } as const;
+export type JobSection = keyof typeof jobSections | 'proposals';
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
 export function jobsViewForPath(path: string): { id: string; section: JobSection } | null {
-  const match = new RegExp(`^/jobs/(${uuidPattern})(?:/(posting|fit|resume|cover_letter|interview_brief|answers|history))?$`, 'i').exec(normalize(path));
+  const match = new RegExp(`^/jobs/(${uuidPattern})(?:/(posting|inputs|proposals|fit|resume|cover_letter|interview_brief|answers|history))?$`, 'i').exec(normalize(path));
   return match ? { id: match[1], section: (match[2] ?? 'posting').toLowerCase() as JobSection } : null;
 }
 export function jobDraftForPath(path: string): { jobId: string; draftId: string } | null {

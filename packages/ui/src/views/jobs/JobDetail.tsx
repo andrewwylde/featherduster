@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
   FileText,
@@ -18,6 +18,8 @@ import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { jobSections, type JobSection } from '../../routing.js';
 import { WorkerControls } from './WorkerControls.js';
 import { JobDetailsEditor } from './JobDetailsEditor.js';
+import { JobInputReview } from './JobInputReview.js';
+import { JobProposalReview } from './JobProposalReview.js';
 import { JobIntake } from './JobIntake.js';
 import { JobAnswers } from './JobAnswers.js';
 import { JobMaterialReview } from './JobMaterialReview.js';
@@ -42,6 +44,14 @@ export function JobDetail({
   const pending = useRef(false);
   const captured = useRef<{ revision: number; id: string } | null>(null);
   const intentKey = useIntentKey();
+  const seenArtifact = useRef<{ id: string; artifact?: string }>();
+  useEffect(() => {
+    if (!data) return;
+    const artifact = data.job.artifact_version_ids.at(-1), previous = seenArtifact.current;
+    seenArtifact.current = { id, artifact };
+    if (section === 'proposals' && previous?.id === id && artifact && artifact !== previous.artifact
+      && data.job.preparation_state === 'resume_ready') navigate(`/jobs/${id}/resume`);
+  }, [data?.job.artifact_version_ids.at(-1), data?.job.preparation_state, id, section, navigate]);
 
   const prepare = async (action: 'prepare' | 'resume' | 'retry') => {
     if (!data || pending.current) return;
@@ -100,11 +110,12 @@ export function JobDetail({
   const stateReason = recoveredCapture ? null : describeStateReason(job?.state_reason);
   const hasReview = data?.proposal_review?.availability === 'available';
   const canRecover = data?.proposal_review?.availability === 'missing_output' && data.proposal_review.recoverable;
-  const focusedCorrection = section === 'resume' && hasReview && state === 'needs_input';
+  const focusedCorrection = section === 'resume' && hasReview && state === 'needs_input' && job?.recovery?.kind !== 'stale_inputs';
   const setup = job?.recovery?.kind === 'setup';
-  const recoveryAction = hasReview ? { label: 'Resolve proposals', path: `/jobs/${id}/resume` }
+  const recoveryAction = job?.recovery?.kind === 'stale_inputs' ? { label: 'Review current inputs', path: `/jobs/${id}/inputs` }
+    : hasReview ? { label: 'Resolve proposals', path: `/jobs/${id}/proposals` }
     : setup ? { label: 'Resolve setup', path: '/settings' }
-    : canRecover ? { label: 'Recover proposal review', path: `/jobs/${id}/resume` }
+    : canRecover ? { label: 'Recover proposal review', path: `/jobs/${id}/proposals` }
     : job?.recovery?.kind === 'render' ? { label: 'Inspect render failure', path: `/jobs/${id}/resume` }
     : job?.recovery && !['fact', 'stale_inputs'].includes(job.recovery.kind) ? { label: 'Resolve proposals', path: `/jobs/${id}/resume` } : null;
 
@@ -196,6 +207,11 @@ export function JobDetail({
                   {state === 'saved' ? 'Saved. Choose an optional activity below.' : state === 'resume_ready' ? 'Resume available for review.' : state === 'needs_input' ? (focusedCorrection ? 'Preparation stopped — proposal review needs your input.' : 'Preparation needs your attention.') : data.activity === 'fit' ? 'Fit assessment' : data.activity === 'cover_letter' ? 'Cover-letter preparation' : data.activity === 'interview_brief' ? 'Interview-brief preparation' : 'Resume preparation'}
                 </p>
 
+                {state === 'needs_input' && hasReview && job.recovery?.kind !== 'stale_inputs' && section !== 'proposals' &&
+                  <button className={primaryButton} onClick={() => navigate(`/jobs/${id}/proposals`)}>
+                    Review facts{data.proposal_review?.availability === 'available' && data.proposal_review.blocking_count > 0 ? ` (${data.proposal_review.blocking_count})` : ''}
+                  </button>}
+
                 {stateReason && <p className={focusedCorrection ? 'hidden' : 'text-xs font-medium text-slate-700 dark:text-slate-300'}>
                   {stateReason}
                 </p>}
@@ -216,7 +232,7 @@ export function JobDetail({
                     </button>
                   )}
 
-                  {state === 'needs_input' && !(section === 'resume' && hasReview) && (
+                  {state === 'needs_input' && !focusedCorrection && (
                     <button
                       className={`${primaryButton} text-xs font-semibold`}
                       disabled={busy}
@@ -308,6 +324,11 @@ export function JobDetail({
             })}
           </nav>
 
+          {section === 'inputs' && <JobInputReview key={`${id}:${job.revision}`} data={data} navigate={navigate} />}
+          {section === 'proposals' && <section className="space-y-4">
+            <button className={secondaryButton} onClick={() => navigate(`/jobs/${id}/resume`)}>Back to resume</button>
+            <JobProposalReview key={id} job={job} onSaved={() => void refresh()} />
+          </section>}
           {/* Section 1: Posting */}
           {section === 'posting' && (
             <section className={`${cardClass} p-6 space-y-4`}>

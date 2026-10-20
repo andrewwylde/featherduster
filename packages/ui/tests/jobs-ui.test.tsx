@@ -38,6 +38,37 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
+it('shows actual current inputs and captures a fresh selection only on explicit preparation', async () => {
+  const data = detail(job({ preparation_state: 'needs_input', recovery: { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' } }));
+  data.posting = { text: 'Current saved posting text' } as JobsDetail['posting'];
+  data.proposal_review = { availability: 'available', review_id: id, revision: 1, status: 'ready', blocking_count: 0, input_stale: false };
+  vi.mocked(apiClient.getJob).mockResolvedValue(data);
+  vi.spyOn(apiClient, 'getResumes').mockResolvedValue([{ id: 'base', name: 'Saved base resume', filePath: 'base.yaml', type: 'template', spec }]);
+  const capture = vi.spyOn(apiClient, 'captureJobInputs').mockResolvedValue({ input_snapshot: { id: version } } as never);
+  const navigate = vi.fn();
+  render(<JobDetail id={id} section="inputs" navigate={navigate} />);
+  expect(await screen.findByRole('heading', { name: 'Current resume inputs' })).toBeInTheDocument();
+  expect(screen.getByText('Current saved posting text')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getByLabelText('Starting resume')).toHaveValue('base'));
+  expect(screen.getByText(/edits in the old draft are not automatically carried over/)).toBeInTheDocument();
+  expect(capture).not.toHaveBeenCalled();
+  expect(apiClient.prepareJob).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: 'Prepare with current inputs' }));
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/jobs/${id}/resume`));
+  expect(capture).toHaveBeenCalledWith(id, 2, { base_resume_id: 'base' });
+  expect(apiClient.prepareJob).toHaveBeenCalledWith(id, 'resume', { expected_revision: 2, input_snapshot_id: version, idempotency_key: expect.any(String) });
+  expect(jobsViewForPath(`/jobs/${id}/inputs`)).toEqual({ id, section: 'inputs' });
+});
+
+it('offers input recovery ahead of an older proposal review', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue({ ...detail(job({ preparation_state: 'needs_input', recovery: { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' } })), proposal_review: { availability: 'available', review_id: id, revision: 1, status: 'ready', blocking_count: 0, input_stale: false } });
+  const navigate = vi.fn();
+  render(<JobDetail id={id} section="posting" navigate={navigate} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Review current inputs' }));
+  expect(navigate).toHaveBeenCalledWith(`/jobs/${id}/inputs`);
+  expect(screen.queryByRole('button', { name: 'Resolve proposals' })).not.toBeInTheDocument();
+});
+
 it('routes validated job sections and linked drafts without interpreting them as runs', () => {
   expect(tabForPath(`/jobs/${id}/resume`)).toBe('jobs');
   expect(jobsViewForPath(`/jobs/${id}/answers/`)).toEqual({ id, section: 'answers' });
@@ -297,7 +328,7 @@ it.each([false, true])('routes setup to Settings independently of existing revie
   expect(navigate).toHaveBeenLastCalledWith('/settings');
   if (hasReview) {
     fireEvent.click(screen.getByRole('button', { name: 'Resolve proposals' }));
-    expect(navigate).toHaveBeenLastCalledWith(`/jobs/${id}/resume`);
+    expect(navigate).toHaveBeenLastCalledWith(`/jobs/${id}/proposals`);
   }
   expect(apiClient.prepareJob).not.toHaveBeenCalled();
 });
@@ -614,9 +645,35 @@ it('announces approval in a persistent status and keeps focus off the body', asy
 it('explains what stopped in the job header during focused proposal review', async () => {
   vi.mocked(apiClient.getJob).mockResolvedValue({ ...detail(job({ preparation_state: 'needs_input', state_reason: 'Introduces terms not backed by cited evidence: C++.' })), proposal_review: { availability: 'available', review_id: 'review', revision: 0, status: 'blocked', blocking_count: 1, input_stale: false } });
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
-  render(<JobDetail id={id} section="resume" navigate={vi.fn()} />);
+  const navigate = vi.fn();
+  render(<JobDetail id={id} section="resume" navigate={navigate} />);
   const stoppedLine = await screen.findByText('Preparation stopped — proposal review needs your input.');
   expect(stoppedLine).not.toHaveClass('hidden');
+  fireEvent.click(screen.getByRole('button', { name: 'Review facts (1)' }));
+  expect(navigate).toHaveBeenCalledWith(`/jobs/${id}/proposals`);
+  expect(jobsViewForPath(`/jobs/${id}/proposals`)).toEqual({ id, section: 'proposals' });
+});
+
+it('opens the proposal review directly without requiring the Details menu', async () => {
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
+  render(<JobDetail id={id} section="proposals" navigate={vi.fn()} />);
+  expect(await screen.findByRole('heading', { name: 'Proposal review unavailable' })).toBeInTheDocument();
+  expect(apiClient.getJobProposals).toHaveBeenCalledWith(id);
+  expect(screen.queryByRole('button', { name: 'Details' })).not.toBeInTheDocument();
+});
+
+it('loads all jobs needing review from worker status and links directly to proposals', async () => {
+  vi.mocked(apiClient.getJobsControl).mockResolvedValue({ ...stopped, needs_review_count: 1 });
+  vi.mocked(apiClient.getJobs).mockResolvedValue({ jobs: [job({ preparation_state: 'needs_input', recovery: { kind: 'proposals', subject: {}, action: 'review_proposals' } })] });
+  const navigate = vi.fn();
+  render(<WorkerControls jobs={[]} navigate={navigate} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Review jobs' }));
+  const link = await screen.findByRole('link', { name: 'Review Acme — Engineer' });
+  expect(link).toHaveAttribute('href', `/jobs/${id}/proposals`);
+  fireEvent.click(link);
+  expect(navigate).toHaveBeenCalledWith(`/jobs/${id}/proposals`);
+  expect(apiClient.prepareJob).not.toHaveBeenCalled();
+  expect(apiClient.controlJobs).not.toHaveBeenCalled();
 });
 
 function openDetails(name: string) {
