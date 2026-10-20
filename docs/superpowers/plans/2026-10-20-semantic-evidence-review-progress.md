@@ -2,6 +2,10 @@
 
 ## Subsequent recovery update
 
+Recovery is complete for all seven open jobs. The user authorized narrower, source-supported wording for unresolved claims. Job-local revisions retain the user's explicit factual confirmations; all seven now have resolved factual checks and published, verified one-page PDFs. Each final download was checked and visually inspected. Private output links and artifact identities are recorded in `requests/open-jobs-completion.json`; the seven PDFs are packaged in `requests/completed-resumes.zip`.
+
+Live export verification exposed straight apostrophes rendered as typographic apostrophes by TeX. PDF text comparison now normalizes quotation typography while continuing to reject missing or changed words. The regression was reproduced before the fix; all 26 renderer/checked-render tests and the CLI build pass afterward.
+
 The earlier rollout and blanket evaluation-gate limitations below describe the initial implementation, not the current host. The backend was subsequently started with the new API. During recovery of the user's open resume jobs, automatic support changed to per-claim acceptance: current source/span/work bindings and a supported classification are required; uncertain, contradictory, or malformed results remain unresolved. Configuration evaluations remain diagnostic. No human factual confirmations are manufactured by the recovery scripts.
 
 Recovery also fixed serialized request-budget accounting, overlapping/idle fact polling, and editing the next factual answer while checks refresh. Native PDF tool probes now allow a bounded 15 seconds in the jobs runtime. Job-local cleanup removes inline internal evidence IDs from inherited resume wording while retaining the captured evidence.
