@@ -95,7 +95,8 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   }).immediate();
   const fit = new JobFit(repository);
   const materials = new JobMaterials(repository, artifacts, (id, ids) => selectFit(id, ids), deps.loadPrivacyRules);
-  const renderer = deps.renderer ?? new LatexRenderer();
+  // Native tool startup can exceed five seconds on a busy Windows host.
+  const renderer = deps.renderer ?? new LatexRenderer({ probeTimeoutMs: 15000 });
   const semantic = new SemanticService(repository, artifacts, { runner: resolveRunner,
     consent: runner => runner.locality === 'local' || !!loadTailoringConfig(workspace).runner_consent[runner.id],
     timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000, currentRules: deps.loadPrivacyRules });

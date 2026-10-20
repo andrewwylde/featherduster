@@ -41,9 +41,9 @@ Build first, then run the configured runner against synthetic data:
 node scripts/evaluate-semantic-evidence.mjs --workspace <workspace> --runner codex --output <report.json>
 ```
 
-The suite runs every case three times, including backend implementation versus API consumption, production versus prototypes, ownership, technology, scale, future work, source instructions, and composite assertions. Every required observation and source check must pass. A failed or timed-out observation fails the gate.
+The suite runs every case three times, including backend implementation versus API consumption, production versus prototypes, ownership, technology, scale, future work, source instructions, and composite assertions. Every required observation and source check must pass for a passing evaluation. Failed or timed-out observations remain visible in the report.
 
-`--record` explicitly persists the result in the selected workspace. The script refuses to record fake-runner approval. Reports from deterministic test runners exercise the harness only; they are never production authority.
+`--record` explicitly persists the result in the selected workspace. The script refuses to record fake-runner approval. Reports from deterministic test runners exercise the harness only; they do not establish real-model quality.
 
 ## Verification and rollout
 
