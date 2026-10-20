@@ -50,3 +50,5 @@ export * from './jobs/draft-validation.js';
 export * from './jobs/candidate-checks.js';
 export * from './jobs/semantic-evidence.js';
 export * from './jobs/semantic-policy.js';
+export * from './jobs/evidence-discovery.js';
+export * from './jobs/evidence-terms.js';
