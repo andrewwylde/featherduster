@@ -52,3 +52,4 @@ export * from './jobs/semantic-evidence.js';
 export * from './jobs/semantic-policy.js';
 export * from './jobs/evidence-discovery.js';
 export * from './jobs/evidence-terms.js';
+export * from './jobs/semantic-transport.js';

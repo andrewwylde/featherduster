@@ -1,4 +1,5 @@
 import { JobDraftFinalization } from './draft-finalization.js';
+import { SemanticService } from './semantic-service.js';
 import { JobExports } from './exports.js';
 import { JobMaterials } from './materials.js';
 import { JobFit } from './fit.js';
@@ -95,6 +96,9 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   const fit = new JobFit(repository);
   const materials = new JobMaterials(repository, artifacts, (id, ids) => selectFit(id, ids), deps.loadPrivacyRules);
   const renderer = deps.renderer ?? new LatexRenderer();
+  const semantic = new SemanticService(repository, artifacts, { runner: resolveRunner,
+    consent: runner => runner.locality === 'local' || !!loadTailoringConfig(workspace).runner_consent[runner.id],
+    timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000 });
   const preparation = new JobPreparation({ repository, artifacts, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer });
   const service = new JobsService({ repository, preparation: { run: (attempt, signal, previous) => repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : preparation.run(attempt, signal, previous) }, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
   const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service);
@@ -130,14 +134,14 @@ const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.l
     return receipt;
   };
   const exports = new JobExports(repository, artifacts, materials, selectFit, deps.loadPrivacyRules);
-  return { repository, artifacts, intake, service, corpus, proposals, captureInputs, assessFit, readFit, materials, exports, drafts, flushEvents,
+  return { repository, artifacts, intake, service, corpus, proposals, semantic, captureInputs, assessFit, readFit, materials, exports, drafts, flushEvents,
     subscribeCorpus(listener: (event: { revision: number; update_ids: string[] }) => void) { monitor(); corpusListeners.add(listener); return () => { corpusListeners.delete(listener); }; },
     subscribe(listener: (event: C.JobEvent) => void) { monitor(); listeners.add(listener); return () => { listeners.delete(listener); }; },
     initialize() { monitor(); service.initialize(); },
 dispose(): Promise<void> {
   if (!disposed) {
     clearInterval(timer); listeners.clear(); corpusListeners.clear();
-    disposed = Promise.allSettled([drafts.dispose(), service.dispose()]).then(results => {
+    disposed = Promise.allSettled([drafts.dispose(), service.dispose(), semantic.dispose()]).then(results => {
       database.close();
       const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (failed) throw failed.reason;

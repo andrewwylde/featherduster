@@ -1,4 +1,5 @@
 import { DraftResumeSpecSchema, CheckJobDraftRequestSchema, FinalizeJobDraftRequestSchema } from '@featherduster/core';
+import { StartSemanticCheckSchema, SaveFactClarificationSchema, SemanticTargetSchema } from '@featherduster/core';
 import { JobExportRequestSchema } from './exports.js';
 import { SaveReviewSchema, ReviewBindingSchema, ContinueReviewSchema, RecoverReviewSchema, CorrectBaseSchema } from './proposal-service.js';
 import { randomUUID } from 'node:crypto';
@@ -26,6 +27,15 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
       return c.json({ code: 'internal_error', error: 'Jobs operation failed' }, 500);
     }
   };
+  app.get('/api/jobs/:id/facts', handle((c, r) => {
+    const id = uuid.parse(c.req.param('id')), draftId = c.req.query('draft_id');
+    const draft = draftId ? r.repository.getLatestDraft(uuid.parse(draftId)) : null;
+    return r.semantic.read(id, draft ? { kind: 'draft', draft_id: draft.id, candidate: draft.candidate } : undefined);
+  }));
+  app.post('/api/jobs/:id/facts/view', handle(async (c, r) => r.semantic.read(uuid.parse(c.req.param('id')), SemanticTargetSchema.parse(await c.req.json()))));
+  app.post('/api/jobs/:id/facts/check', handle(async (c, r) => r.semantic.start(uuid.parse(c.req.param('id')), StartSemanticCheckSchema.parse(await c.req.json())), 202));
+  app.get('/api/jobs/:id/facts/checks/:operationId', handle((c, r) => r.semantic.operation(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('operationId')))));
+  app.post('/api/jobs/:id/facts/clarifications', handle(async (c, r) => r.semantic.clarify(uuid.parse(c.req.param('id')), SaveFactClarificationSchema.parse(await c.req.json()))));
   const checkFallback = (r: JobsRuntime, id?: string, rev?: number) => { if (id && r.repository.getJob(id).revision !== rev) throw new RepositoryError('revision_conflict', 'Stale fallback revision'); };
   app.get('/api/jobs', handle((c, r) => { const filters = jobFilters.parse(c.req.query()); return { jobs: r.repository.listJobs().filter(job => Object.entries(filters).every(([k, v]) => job[k as keyof typeof job] === v)) }; }));
   app.post('/api/jobs/preview', handle(async (c, r) => {

@@ -364,6 +364,11 @@ export class ApiClient {
   getJobFit(id: string) { return this.fetchJson<JobFitResult>(`/api/jobs/${id}/fit`); }
   assessJobFit(id: string, body: { expected_revision: number; idempotency_key: string; evidence_ids: string[] }) { return this.fetchJson(`/api/jobs/${id}/fit`, this.jsonRequest('POST', body)); }
   getJob(id: string) { return this.fetchJson<JobsDetail>(`/api/jobs/${id}`); }
+  getJobFacts(id: string, draftId?: string) { return this.fetchJson<import('@featherduster/core').JobFacts>(`/api/jobs/${id}/facts${draftId ? `?draft_id=${encodeURIComponent(draftId)}` : ''}`); }
+  viewJobFacts(id: string, target: import('@featherduster/core').SemanticTarget) { return this.fetchJson<import('@featherduster/core').JobFacts>(`/api/jobs/${id}/facts/view`, this.jsonRequest('POST', target)); }
+  startJobFactCheck(id: string, request: import('@featherduster/core').StartSemanticCheck) { return this.fetchJson<{ operation_id: string; state: 'checking' | 'complete' | 'unavailable' }>(`/api/jobs/${id}/facts/check`, this.jsonRequest('POST', request)); }
+  getJobFactCheck(id: string, operationId: string) { return this.fetchJson<{ operation_id: string; state: 'checking' | 'complete' | 'unavailable'; reason?: string }>(`/api/jobs/${id}/facts/checks/${operationId}`); }
+  saveJobFactClarification(id: string, request: import('@featherduster/core').SaveFactClarification) { return this.fetchJson<import('@featherduster/core').JobFacts>(`/api/jobs/${id}/facts/clarifications`, this.jsonRequest('POST', request)); }
   getJobsControl() { return this.fetchJson<JobsControl>('/api/jobs/control'); }
   controlJobs(action: 'start' | 'pause' | 'stop', idempotency_key: string) { return this.fetchJson<unknown>(`/api/jobs/control/${action}`, this.jsonRequest('POST', { idempotency_key })); }
   previewJobs(body: { mode: 'urls' | 'text'; input: string; details?: Partial<Pick<Job, 'company' | 'role' | 'notes' | 'context_url'>>; fallback_job_id?: string; expected_revision?: number }) { return this.fetchJson<IntakePreview>('/api/jobs/preview', this.jsonRequest('POST', body)); }
