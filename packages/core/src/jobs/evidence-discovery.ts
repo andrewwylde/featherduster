@@ -16,8 +16,12 @@ export function inventoryPassages(candidate: ResumeSpec, hash: (text: string) =>
   // Summary assertions remain passage-specific until a source-backed work identity is established.
   if (candidate.summary?.trim()) passages.push({ path: 'summary', text: candidate.summary, work_id: `summary:${hash(candidate.summary)}` });
   candidate.experiences.forEach((e, ei) => {
-    const work_id = hash(JSON.stringify([e.company, e.role, e.startDate, e.endDate]));
-    e.bullets.forEach((b, bi) => { if (b.text.trim()) passages.push({ path: `experiences.${ei}.bullets.${bi}.text`, text: b.text, work_id }); });
+    e.bullets.forEach((b, bi) => {
+      // Sharing an employer/role alone never establishes that two bullets describe the same project.
+      const work_id = hash(JSON.stringify([e.company, e.role, e.startDate, e.endDate,
+        b.citations?.length ? [...b.citations].sort() : b.text]));
+      if (b.text.trim()) passages.push({ path: `experiences.${ei}.bullets.${bi}.text`, text: b.text, work_id });
+    });
   });
   return passages.map(p => {
     const peers = passages.filter(q => q.work_id === p.work_id && q.text === p.text);
