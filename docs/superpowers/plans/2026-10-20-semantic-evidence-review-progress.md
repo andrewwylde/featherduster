@@ -1,5 +1,11 @@
 # Semantic evidence review execution record
 
+## Subsequent recovery update
+
+The earlier rollout and blanket evaluation-gate limitations below describe the initial implementation, not the current host. The backend was subsequently started with the new API. During recovery of the user's open resume jobs, automatic support changed to per-claim acceptance: current source/span/work bindings and a supported classification are required; uncertain, contradictory, or malformed results remain unresolved. Configuration evaluations remain diagnostic. No human factual confirmations are manufactured by the recovery scripts.
+
+Recovery also fixed serialized request-budget accounting, overlapping/idle fact polling, and editing the next factual answer while checks refresh. Native PDF tool probes now allow a bounded 15 seconds in the jobs runtime. Job-local cleanup removes inline internal evidence IDs from inherited resume wording while retaining the captured evidence.
+
 The user selected inline execution. Implementation remains on the existing `main` checkout; unrelated dirty files are preserved.
 
 ## Implemented

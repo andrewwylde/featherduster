@@ -160,12 +160,15 @@ export class SemanticService {
     const uncached = ctx.passages.filter(p => !existing.some(r => r.configuration_key === ctx.configurationKey
       && r.policy_version === C.SEMANTIC_VERSION && r.evidence_set_fingerprint === ctx.evidenceFingerprint
       && r.input_fingerprint === ctx.captured.input.fingerprint && r.passages.some(v => v.subject.id === p.subject.id && v.subject.passage_fingerprint === p.subject.passage_fingerprint)));
-    for (let offset = 0; offset < uncached.length; offset += C.SEMANTIC_LIMITS.passages) {
+    // Four passages keep real resume responses within the existing 60-second
+    // deadline; eight remains the transport maximum, not the default batch size.
+    const batchSize = Math.min(4, C.SEMANTIC_LIMITS.passages);
+    for (let offset = 0; offset < uncached.length; offset += batchSize) {
       if (signal.aborted) throw Error('Classification cancelled.');
       if (ctx.runner.locality === 'cloud' && !this.deps.consent(ctx.runner)) throw Error('Cloud runner consent changed. Review facts manually.');
       if (this.deps.currentRules && canonical(C.PrivacyRulesConfigSchema.parse(this.deps.currentRules())) !== canonical(ctx.rules))
         throw Error('Privacy rules changed. Review current inputs before checking evidence.');
-      const batch = uncached.slice(offset, offset + C.SEMANTIC_LIMITS.passages);
+      const batch = uncached.slice(offset, offset + batchSize);
       const ranked = C.discoverEvidence(batch.map(p => p.text).join('\n'), ctx.sources.map((s, i) => ({ id: String(i), fingerprint: s.evidence_fingerprint, work_id: s.work_id, text: s.text, retracted: false })));
       // Include identities, work context, JSON escaping and coverage metadata in
       // the bound, rather than counting only source text.

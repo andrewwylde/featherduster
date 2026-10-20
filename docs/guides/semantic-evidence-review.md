@@ -25,7 +25,7 @@ Checks bind exact candidate content, captured inputs, evidence, configuration, a
 
 The application uses the configured runner and its existing consent. It does not install CLEF/JEV, switch providers, or escalate models.
 
-Each batch contains at most eight passages, with a 48,000-character request budget, a 16,000-character response budget, and a timeout no longer than 60 seconds or the configured step timeout. A preparation attempt permits at most four semantic calls. Calls are reserved durably before dispatch and failures consume the allowance. There are no automatic retries or repair calls.
+The service batches four passages at a time (the transport permits at most eight), with a 48,000-character serialized request budget, a 16,000-character response budget, and a timeout no longer than 60 seconds or the configured step timeout. A preparation attempt permits at most four semantic calls. Calls are reserved durably before dispatch and failures consume the allowance. There are no automatic retries or repair calls.
 
 Terminology aliases help discover captured sources; they never prove a claim. The model returns short passage/source references, literal claim text, and source quotations. The server attaches the immutable identities, locates unique exact spans, rejects fabricated or ambiguous quotes, checks passage coverage, and persists the result immutably. Employment bullets cannot borrow source evidence from another named employer. Unknown usage and cost are displayed as unavailable.
 

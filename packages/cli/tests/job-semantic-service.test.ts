@@ -99,6 +99,25 @@ it('budgets serialized source metadata before dispatching a large evidence colle
   expect(request.prompt.length + SEMANTIC_SYSTEM.length).toBeLessThanOrEqual(C.SEMANTIC_LIMITS.inputChars);
   expect(JSON.parse(request.prompt).sources.length).toBeGreaterThan(0);
 });
+it('splits resume inventories into four-passage batches within the existing call budget', async () => {
+  const f = setup();
+  const target: C.SemanticTarget = { ...f.target, kind: 'draft', draft_id: (f.target as { draft_id: string }).draft_id,
+    candidate: { ...f.candidate, experiences: [{ company: 'Acme', role: 'Engineer', startDate: '2020',
+      bullets: Array.from({ length: 5 }, (_, i) => ({ text: `Implemented backend service ${i}.` })) }] } };
+  f.run.mockImplementation(async request => {
+    const batch = JSON.parse(request.prompt);
+    return { passages: batch.subjects.map((p: any) => ({ subject_ref: p.ref, claims: [{
+      text: p.text, fact: { predicate: 'backend', qualifiers: [] }, qualifier_text: [], state: 'needs_clarification',
+      evidence: [], explanation: 'Needs source detail.', question: 'Which service did you implement?',
+    }] })) };
+  });
+  const read = f.service.read(f.job.id, target);
+  f.service.start(f.job.id, { target, expected_job_revision: read.job_revision, expected_semantic_revision: read.semantic_revision,
+    input_fingerprint: read.input_fingerprint, reason: 'check', idempotency_key: randomUUID() });
+  await f.service.wait(f.job.id);
+  expect(f.run.mock.calls.map(([request]) => JSON.parse(request.prompt).subjects.length)).toEqual([4, 2]);
+  expect(f.service.read(f.job.id, target).facts).toHaveLength(6);
+});
 it('does not dispatch against privacy rules that changed after capture', async () => {
   const f = setup(), read = f.service.read(f.job.id, f.target);
   f.changePrivacy();
