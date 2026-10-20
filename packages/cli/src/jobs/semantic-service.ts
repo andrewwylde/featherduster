@@ -8,7 +8,7 @@ import { fingerprint } from './files.js';
 import { canonicalResumeValue as canonical } from './resume-context.js';
 import { sourceFingerprint } from '../corpus/load.js';
 import type { ModelRunner } from '../runners/types.js';
-import { classifyBatch, SEMANTIC_PROMPT_HASH } from './semantic-classifier.js';
+import { classifyBatch, semanticPrompt, SEMANTIC_SYSTEM, SEMANTIC_PROMPT_HASH } from './semantic-classifier.js';
 import { SEMANTIC_SUITE_VERSION, semanticConfigurationKey } from './semantic-evaluation.js';
 export { SEMANTIC_SUITE_VERSION } from './semantic-evaluation.js';
 export interface SemanticDependencies {
@@ -90,7 +90,9 @@ export class SemanticService {
         const valid = ctx.inputCurrent && (original === fallback || C.validClaimBinding(c, p, ctx.sources));
         const human = valid ? C.matchingClarification(c, clarifications)
           ?? (c.state !== 'contradicted' ? C.matchingClarification(fallback, clarifications) : undefined) : undefined;
-        const machine = valid && evaluated && c.state === 'supported';
+        // Evaluation measures configuration quality; each claim must independently
+        // pass the immutable source/span checks before it can grant support.
+        const machine = valid && c.state === 'supported' && c.evidence.length > 0;
         return { ...c, evidence: [...c.evidence, ...(human?.supporting_quotes ?? [])], state: valid ? c.state : 'unavailable', passage: p,
           resolution: human ? { provenance: 'human' as const, explanation: human.assertion }
             : machine ? { provenance: 'model' as const, explanation: c.explanation } : null };
@@ -165,13 +167,19 @@ export class SemanticService {
         throw Error('Privacy rules changed. Review current inputs before checking evidence.');
       const batch = uncached.slice(offset, offset + C.SEMANTIC_LIMITS.passages);
       const ranked = C.discoverEvidence(batch.map(p => p.text).join('\n'), ctx.sources.map((s, i) => ({ id: String(i), fingerprint: s.evidence_fingerprint, work_id: s.work_id, text: s.text, retracted: false })));
-      let chars = 0;
+      // Include identities, work context, JSON escaping and coverage metadata in
+      // the bound, rather than counting only source text.
+      let chars = semanticPrompt({ subjects: batch, sources: [], configuration_key: ctx.configurationKey,
+        configuredStepTimeoutMs: this.deps.timeoutMs(), coverage: { searched_source_count: ctx.captured.evidence.getAll().length,
+          omitted_source_ids: [...new Set(ctx.sources.map(s => s.evidence_id))], truncated: true } }).length + SEMANTIC_SYSTEM.length;
+      let sourceCount = 0;
       const sources = ranked.matches.flatMap(m => {
         const source = ctx.sources[Number(m.id)];
         // Whole captured fields preserve negation. Never silently truncate a source sentence.
         if (ctx.runner!.locality === 'cloud') { const redacted = C.redactText(source.text, ctx.rules); if (!redacted.isClean || redacted.redactedText !== source.text) return []; }
-        if (chars + source.text.length > 30000) return [];
-        chars += source.text.length; return [source];
+        const size = JSON.stringify({ ...source, ref: `s${sourceCount + 1}` }).length + 1;
+        if (chars + size > C.SEMANTIC_LIMITS.inputChars) return [];
+        chars += size; sourceCount++; return [source];
       });
       if (ctx.runner.locality === 'cloud' && batch.some(p => { const redacted = C.redactText(p.text, ctx.rules); return !redacted.isClean || redacted.redactedText !== p.text; }))
         throw Error('These claims contain wording that cannot be sent under the current privacy rules. Review them manually.');

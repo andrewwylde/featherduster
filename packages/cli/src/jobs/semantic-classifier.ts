@@ -21,14 +21,16 @@ const WireResponse = z.object({ passages: z.array(z.object({ subject_ref: z.stri
   explanation: z.string().min(1), question: z.string().nullable().optional(),
 }).strict()).min(1) }).strict()).min(1) }).strict();
 export type Classification = { status: 'complete'; passages: C.PassageResult[] } | { status: 'unavailable'; reason: string };
+export const semanticPrompt = (request: C.SemanticBatchRequest) => JSON.stringify({ ...request,
+  subjects: request.subjects.map((p, i) => ({ ...p, ref: `p${i + 1}` })),
+  sources: request.sources.map((s, i) => ({ ...s, ref: `s${i + 1}` })) });
 export async function classifyBatch(runner: ModelRunner, request: C.SemanticBatchRequest, signal: AbortSignal): Promise<Classification> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancel!: () => void;
   try {
     if (signal.aborted) return { status: 'unavailable', reason: 'Classification cancelled.' };
-    const prompt = JSON.stringify({ ...request, subjects: request.subjects.map((p, i) => ({ ...p, ref: `p${i + 1}` })),
-      sources: request.sources.map((s, i) => ({ ...s, ref: `s${i + 1}` })) });
+    const prompt = semanticPrompt(request);
     if (!request.subjects.length || request.subjects.length > C.SEMANTIC_LIMITS.passages || prompt.length + SEMANTIC_SYSTEM.length > C.SEMANTIC_LIMITS.inputChars)
       throw Error('Classification request exceeds its bounded input allowance. Review facts manually.');
     const abort = new Promise<never>((_, reject) => {

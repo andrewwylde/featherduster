@@ -93,7 +93,6 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
     {data && <>
       {data.execution === 'checking' && <p role="status">Checking captured evidence…</p>}
       {data.reason && <p>{data.reason}</p>}
-      {!data.configuration_evaluated && <p className="text-sm">Automatic support is not enabled for this model configuration. You can still confirm individual facts.</p>}
       <button className={secondaryButton} disabled={busy || data.execution === 'checking'} onClick={() => void check(data.execution === 'unavailable' ? 'retry' : 'check')}>{data.execution === 'unavailable' ? 'Retry evidence check' : 'Check evidence'}</button>
       {fact ? <FactEditor key={`${identity}:${fact.claim.id}`} recoveryKey={`fact-answer:${jobId}:${data.input_fingerprint}:${fact.passage.subject.id}`}
         fact={fact} related={group!.facts} sources={data.sources ?? []} inputsDisabled={savingClaim === fact.claim.id} disabled={busy || data.execution === 'checking'} onSave={async (assertion, date, correction, quotes, confirmed) => {

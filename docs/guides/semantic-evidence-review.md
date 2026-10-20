@@ -31,9 +31,9 @@ Terminology aliases help discover captured sources; they never prove a claim. Th
 
 Cached results are reused only for unchanged passages under the same inputs, evidence, prompt/schema, policy, taxonomy, runner, and model configuration. Interrupted or unavailable checks offer explicit retry and manual fact review. Human answers retain human provenance.
 
-## Automatic acceptance gate
+## Evaluation and automatic support
 
-Automatic acceptance requires a passing synthetic evaluation for the exact configuration and suite hash. A missing or failed evaluation requires human confirmation even if the model suggests that a claim is supported.
+Automatic support is decided per claim. A supported result must pass exact source, span, work-scope, and current-input checks. Unavailable, uncertain, and contradictory results remain unresolved. A failed configuration evaluation is diagnostic; it does not turn otherwise valid claims into mandatory human confirmations.
 
 Build first, then run the configured runner against synthetic data:
 

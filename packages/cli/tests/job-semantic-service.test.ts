@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import * as C from '@featherduster/core';
 import { semanticFixture } from './fixtures/semantic-fixture.js';
 import { SemanticService, SEMANTIC_SUITE_VERSION } from '../src/jobs/semantic-service.js';
+import { SEMANTIC_SYSTEM } from '../src/jobs/semantic-classifier.js';
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const f of cleanups.splice(0)) await f(); });
 function setup() {
@@ -42,7 +43,7 @@ it('retains unresolved answers, rejects forged quotes and invalidates confirmati
   expect(() => f.service.clarify(f.job.id, { ...body, expected_semantic_revision: confirmed.semantic_revision,
     idempotency_key: randomUUID(), supporting_quotes: [{ evidence_id: 'ev-1', evidence_fingerprint: 'forged', field: 'summary', start: 0, end: 6, quote: 'forged' }] })).toThrow(/quotation/);
 });
-it('requires the configuration gate, caches unchanged text, and never starts inference from support reads', async () => {
+it('accepts source-verified claims independently of evaluation, caches unchanged text, and never starts inference from reads', async () => {
   const f = setup();
   f.run.mockImplementation(async req => {
     const batch = JSON.parse(req.prompt) as C.SemanticBatchRequest, source = batch.sources[0];
@@ -60,7 +61,9 @@ it('requires the configuration gate, caches unchanged text, and never starts inf
     await f.service.wait(f.job.id);
   };
   await check();
-  expect(f.service.read(f.job.id, f.target).facts[0]).toMatchObject({ state: 'supported', resolution: null });
+  expect(f.service.read(f.job.id, f.target).facts[0]).toMatchObject({ state: 'supported', resolution: { provenance: 'model' } });
+  f.service.store.saveEvaluation({ configuration_key: f.service.configurationKey(f.runner), suite_hash: SEMANTIC_SUITE_VERSION, passed: false, observations: [], recorded_at: new Date().toISOString() });
+  expect(f.service.read(f.job.id, f.target).facts[0].resolution?.provenance).toBe('model');
   f.service.store.saveEvaluation({ configuration_key: f.service.configurationKey(f.runner), suite_hash: SEMANTIC_SUITE_VERSION, passed: true, observations: [], recorded_at: new Date().toISOString() });
   expect(f.service.read(f.job.id, f.target).facts[0].resolution?.provenance).toBe('model');
   await check(); expect(f.run).toHaveBeenCalledTimes(1);
@@ -77,6 +80,24 @@ it('records outage separately from unsupported content and does not retry on rea
   expect(f.service.read(f.job.id, f.target).facts[0].state).toBe('unavailable');
   f.service.read(f.job.id, f.target);
   expect(f.run).toHaveBeenCalledTimes(1);
+});
+it('budgets serialized source metadata before dispatching a large evidence collection', async () => {
+  const f = setup(), context = f.service.context.bind(f.service);
+  vi.spyOn(f.service, 'context').mockImplementation((...args) => {
+    const ctx = context(...args);
+    return { ...ctx, sources: Array.from({ length: 200 }, (_, i) => ({
+      evidence_id: `evidence-${i}`, evidence_fingerprint: 'a'.repeat(64), work_id: `work-${i}`,
+      field: 'summary' as const, start: 0, text: 'Built backend services. '.repeat(6),
+    })) };
+  });
+  const read = f.service.read(f.job.id, f.target);
+  f.service.start(f.job.id, { target: f.target, expected_job_revision: read.job_revision, expected_semantic_revision: read.semantic_revision,
+    input_fingerprint: read.input_fingerprint, reason: 'check', idempotency_key: randomUUID() });
+  await f.service.wait(f.job.id);
+  expect(f.run).toHaveBeenCalledOnce();
+  const request = f.run.mock.calls[0][0];
+  expect(request.prompt.length + SEMANTIC_SYSTEM.length).toBeLessThanOrEqual(C.SEMANTIC_LIMITS.inputChars);
+  expect(JSON.parse(request.prompt).sources.length).toBeGreaterThan(0);
 });
 it('does not dispatch against privacy rules that changed after capture', async () => {
   const f = setup(), read = f.service.read(f.job.id, f.target);
