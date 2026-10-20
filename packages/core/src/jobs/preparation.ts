@@ -48,7 +48,10 @@ function placeholderIssues(text: string): ValidationIssue[] {
 
 /** Deterministic evidence-bound checks, not general natural-language fact verification. */
 export function validateCandidateProposals(proposals: Proposal[], context: ProposalValidationContext): Proposal[] {
-  const originals = structuredClone(proposals);
+  const originals = structuredClone(proposals).map(p => {
+    const support = context.semanticSupport?.find(s => s.text === effectiveAfter(p) && (s.proposal_id === p.id || s.path === p.id));
+    return support ? { ...p, citations: [...new Set([...p.citations, ...support.citations])] } : p;
+  });
   const evidence = evidenceMap(context);
   // Machine classifications/confirmations must never grant human authority.
   const delegated = validateProposals(originals, { ...context, alignment: { rows: [] } });
@@ -56,6 +59,7 @@ export function validateCandidateProposals(proposals: Proposal[], context: Propo
     const original = originals[index];
     const p = { ...validated, after: original.after, edited_after: original.edited_after };
     const text = effectiveAfter(p);
+    const semantic = context.semanticSupport?.find(s => s.text === text && (s.proposal_id === p.id || s.path === p.id));
     const checks = [...original.checks, ...validated.checks.filter(c => !['metric_needed', 'metric_unverified'].includes(c.kind))];
     checks.push(...citationIssues(text, p.citations, evidence));
     if (['summary.rewrite', 'bullet.rewrite', 'bullet.add'].includes(p.type)) {
@@ -77,7 +81,8 @@ export function validateCandidateProposals(proposals: Proposal[], context: Propo
       const grounding = cited.map(r => [r.entry.title, r.entry.summary, r.entry.impact, r.entry.themes.join(' '), r.narrative].join('\n')).join('\n');
       const terms = context.analysis.requirements.flatMap(r => r.terms)
         .filter(term => containsTerm(text, term) && !containsTerm(grounding, term) && !supportsTerm(term, p.citations, cited, context.skillSupport ?? []));
-      if (terms.length) checks.push(block('unsupported_experience', `Direct experience is not supported by cited evidence: ${[...new Set(terms)].join(', ')}.`));
+      if (terms.length && !semantic?.resolved) checks.push(block('unsupported_experience', `Direct experience is not supported by cited evidence: ${[...new Set(terms)].join(', ')}.`));
+      if (semantic && !semantic.resolved) checks.push(block('fact_review', 'Review the factual claims in this wording.'));
     }
     p.checks = checks.filter((issue, i) => checks.findIndex(other => other.kind === issue.kind && other.severity === issue.severity && other.message === issue.message) === i);
     return p;

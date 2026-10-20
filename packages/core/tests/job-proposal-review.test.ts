@@ -45,6 +45,15 @@ describe('proposal review boundary', () => {
     expect(result.issues.every(i => i.subject.kind === 'candidate' && i.action === 'refresh_base')).toBe(true);
   });
   it('does not accept arbitrary review objects', () => { expect(ProposalReviewRevisionSchema.safeParse({ ready: true }).success).toBe(false); });
+  it('scans published wording for privacy without treating internal citation IDs as wording', () => {
+    const base = structuredClone(DEFAULT_STARTER_RESUME);
+    base.experiences[0].bullets[0] = { text: 'Built SECRET tooling.', citations: ['SECRET-source'] };
+    const result = validateProposalReview(base, [], { analysis: { company: '', role: '', seniority: '', mission: '', requirements: [], boilerplate: [] }, alignment: { rows: [] }, evidence: [] }, { banned_keywords: ['SECRET'], replacements: [], strip_patterns: [] });
+    const privacy = result.issues.filter(i => i.details.some(d => d.kind === 'privacy'));
+    expect(privacy.some(i => i.subject.kind === 'candidate' && i.subject.path === 'experiences.0.bullets.0.text')).toBe(true);
+    expect(privacy.some(i => i.subject.kind === 'candidate' && i.subject.path.includes('.citations'))).toBe(false);
+    expect(result.issues.some(i => i.details.some(d => d.kind === 'unsupported_citation'))).toBe(true);
+  });
 });
 
 it('invalidates a grounding only when its captured source binding changes', () => {

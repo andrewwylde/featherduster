@@ -22,7 +22,7 @@ export function checkCandidateFields(candidate: ResumeSpec, proposals: Proposal[
       target: { experience_index: f.ei, bullet_index: f.bi }, before: f.text, after: f.text, citations: f.citations });
     const checked = validateCandidateProposals([probe], { ...context, baseResume: candidate,
       skillSupport: origin && supportFor ? supportFor(origin) : context.skillSupport })[0];
-    for (const i of checked.checks.filter(i => ['unsupported_experience', 'unsupported_citation', 'metric_unverified', 'metric_needed'].includes(i.kind))) {
+    for (const i of checked.checks.filter(i => ['fact_review', 'unsupported_experience', 'unsupported_citation', 'metric_unverified', 'metric_needed'].includes(i.kind))) {
       issues.push({ path: f.path, code: i.kind, severity: i.severity, message: i.message });
     }
   }
@@ -37,7 +37,11 @@ export function checkCandidateFields(candidate: ResumeSpec, proposals: Proposal[
     } else if (Array.isArray(value)) value.forEach((v, i) => scan(v, `${path}.${i}`));
     else if (value && typeof value === 'object') Object.entries(value).forEach(([k, v]) => scan(v, path ? `${path}.${k}` : k));
   };
-  scan(candidate, '');
+  // Citation IDs bind evidence; they are not rendered resume wording. Their validity
+  // is checked above. Privacy/placeholder scans apply to the content we publish.
+  scan({ ...candidate, experiences: candidate.experiences.map(e => ({ ...e,
+    bullets: e.bullets.map(({ citations: _citations, ...bullet }) => bullet),
+  })) }, '');
   return issues;
 }
 

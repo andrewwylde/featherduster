@@ -16,6 +16,8 @@ export const ClarificationSchema = z.object({ schema_version: z.literal(1), id: 
   job_id: z.string().uuid(), input_snapshot_id: z.string().uuid(), revision: z.number().int().nonnegative(),
   kind: z.enum(['confirmation', 'correction']), fact: FactSchema, claim_ids: z.array(text).min(1),
   question: text, assertion: text, actor: text, recorded_at: z.string().datetime(), source_ids: z.array(text),
+  supporting_quotes: z.array(SourceQuoteSchema).optional(),
+  confirmed: z.boolean().optional(),
   supersedes: z.string().uuid().nullable(), corrected_assertion: text.optional(),
   effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 }).strict().superRefine((v, ctx) => {

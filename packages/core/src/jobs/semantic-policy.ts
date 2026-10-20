@@ -1,4 +1,21 @@
 import type { ClaimResult, Clarification, Fact, SemanticPassage, SemanticSource } from './semantic-evidence.js';
+import type { JobFacts } from './semantic-transport.js';
+/** Read-only projection of exact, source-checked content. Never inferred from vocabulary. */
+export interface SemanticSupport {
+  path: string;
+  proposal_id?: string;
+  text: string;
+  resolved: boolean;
+  citations: string[];
+}
+export function semanticSupport(view: JobFacts): SemanticSupport[] {
+  return [...new Set(view.facts.map(f => f.passage.subject.id))].map(id => {
+    const facts = view.facts.filter(f => f.passage.subject.id === id), p = facts[0].passage;
+    return { path: p.subject.path, proposal_id: p.subject.proposal_id, text: p.text,
+      resolved: facts.length > 0 && facts.every(f => !!f.resolution),
+      citations: [...new Set(facts.filter(f => !!f.resolution).flatMap(f => f.evidence.map(e => e.evidence_id)))] };
+  });
+}
 export function sameFact(a: Fact, b: Fact): boolean {
   return a.work_id === b.work_id && a.predicate === b.predicate
     && JSON.stringify([...a.qualifiers].sort()) === JSON.stringify([...b.qualifiers].sort());
@@ -17,7 +34,7 @@ export function validClaimBinding(result: ClaimResult, passage: SemanticPassage,
 }
 export function matchingClarification(result: ClaimResult, clarifications: Clarification[]): Clarification | undefined {
   const superseded = new Set(clarifications.flatMap(c => c.supersedes ? [c.supersedes] : []));
-  return clarifications.find(c => !superseded.has(c.id) && sameFact(c.fact, result.claim.fact)
+  return clarifications.find(c => c.confirmed !== false && !superseded.has(c.id) && sameFact(c.fact, result.claim.fact)
     && (result.state !== 'contradicted' || (c.kind === 'correction' && !!c.corrected_assertion
       && result.evidence.every(q => c.source_ids.includes(q.evidence_id))
       && result.evidence.some(q => q.quote.includes(c.corrected_assertion!)) )));

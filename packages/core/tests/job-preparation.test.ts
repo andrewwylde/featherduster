@@ -26,6 +26,18 @@ const proposal = (after = 'Built Go and RabbitMQ services with 30% lower latency
 const blocked = (text: string, ctx = context()) => validateCandidateProposals([proposal(text)], ctx)[0].checks.some(c => c.severity === 'block');
 
 describe('candidate preparation', () => {
+  it('accepts exact semantic support while retaining metrics, citations and content invalidation', () => {
+    const text = 'Built Kafka services.';
+    const ctx = { ...context(), semanticSupport: [{ path: 'experiences.0.bullets.0.text', proposal_id: 'p', text, resolved: true, citations: ['source'] }] };
+    expect(blocked(text, ctx)).toBe(false);
+    expect(blocked('Owned Kafka architecture.', ctx)).toBe(true);
+    expect(blocked(text, { ...ctx, semanticSupport: [{ ...ctx.semanticSupport[0], resolved: false }] })).toBe(true);
+    const metrics = 'Built Kafka services for 999 users.';
+    expect(validateCandidateProposals([proposal(metrics)], { ...ctx, semanticSupport: [{ ...ctx.semanticSupport[0], text: metrics }] })[0].checks.map(c => c.kind)).toContain('metric_unverified');
+    expect(validateCandidateProposals([{ ...proposal(text), citations: ['missing'] }], ctx)[0].checks.map(c => c.kind)).toContain('unsupported_citation');
+    const reordered = ProposalSchema.parse({ id: 'p', type: 'skills.reorder', target: { skill_group_index: 0 }, skills: ['Kafka'], after: text });
+    expect(validateCandidateProposals([reordered], ctx)[0].checks.map(c => c.kind)).toContain('ledger_ceiling');
+  });
   it('completes without approval and enforces mode, freshness and blocks', () => {
     const original = StepRecordSchema.parse({ status: 'running', error: 'old' });
     const done = completeCandidateStep(original, 'hash', 'now');

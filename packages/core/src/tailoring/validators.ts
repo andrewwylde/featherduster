@@ -3,6 +3,7 @@ import type { SkillSupport } from '../corpus/schemas.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
 import type { ResumeSpec } from '../schemas/resume.js';
 import { auditSlop } from '../integrity/deslop-engine.js';
+import type { SemanticSupport } from '../jobs/semantic-policy.js';
 import type {
   AlignmentMatrix,
   AlignmentRow,
@@ -167,6 +168,7 @@ export function alignmentSummary(matrix: AlignmentMatrix): Record<'backed' | 'tr
 // ---------------------------------------------------------------------------
 
 export interface ProposalValidationContext {
+  semanticSupport?: SemanticSupport[];
   /** Source-verified and scope-filtered by the caller. */
   skillSupport?: SkillSupport[];
   analysis: JobAnalysis;
@@ -295,7 +297,8 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
     .map((c) => lookup(c))
     .filter((r): r is EvidenceRecord => !!r && r.entry.confidence !== 'retracted');
   const textual = p.type === 'summary.rewrite' || p.type === 'bullet.rewrite' || p.type === 'bullet.add';
-  if (textual && cited.length === 0) {
+  const semantic = ctx.semanticSupport?.find(s => s.text === effectiveAfter(p) && (s.proposal_id === p.id || s.path === p.id));
+  if (textual && cited.length === 0 && !semantic?.resolved) {
     checks.push({ severity: 'block', kind: 'ledger_ceiling', message: 'Text edits must cite at least one non-retracted evidence entry.' });
   }
 
@@ -328,6 +331,7 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
         containsTerm(after, term) &&
         !containsTerm(before, term) &&
         !containsTerm(grounding, term) &&
+        !semantic?.resolved &&
         !supportsTerm(term, p.citations, cited, ctx.skillSupport ?? []) &&
         !baseSkills.some((s) => s.toLowerCase() === term.toLowerCase()) &&
         !confirmedTerms.has(term.toLowerCase()) &&
