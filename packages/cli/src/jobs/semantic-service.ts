@@ -15,6 +15,7 @@ export interface SemanticDependencies {
   runner(settings: { runner: string; model: string }): ModelRunner | null;
   consent(runner: ModelRunner): boolean;
   timeoutMs(): number;
+  currentRules?(): C.PrivacyRulesConfig;
 }
 export class SemanticService {
   readonly store: SemanticRepository;
@@ -154,6 +155,9 @@ export class SemanticService {
       && r.input_fingerprint === ctx.captured.input.fingerprint && r.passages.some(v => v.subject.id === p.subject.id && v.subject.passage_fingerprint === p.subject.passage_fingerprint)));
     for (let offset = 0; offset < uncached.length; offset += C.SEMANTIC_LIMITS.passages) {
       if (signal.aborted) throw Error('Classification cancelled.');
+      if (ctx.runner.locality === 'cloud' && !this.deps.consent(ctx.runner)) throw Error('Cloud runner consent changed. Review facts manually.');
+      if (this.deps.currentRules && canonical(C.PrivacyRulesConfigSchema.parse(this.deps.currentRules())) !== canonical(ctx.rules))
+        throw Error('Privacy rules changed. Review current inputs before checking evidence.');
       const batch = uncached.slice(offset, offset + C.SEMANTIC_LIMITS.passages);
       const ranked = C.discoverEvidence(batch.map(p => p.text).join('\n'), ctx.sources.map((s, i) => ({ id: String(i), fingerprint: s.evidence_fingerprint, work_id: s.work_id, text: s.text, retracted: false })));
       let chars = 0;

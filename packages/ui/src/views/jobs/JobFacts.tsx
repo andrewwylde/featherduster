@@ -26,10 +26,12 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
   const [selected, setSelected] = useState<string>();
   const current = useRef(identity); current.current = identity;
   const priorEdit = useRef(identity), lock = useRef(false);
+  const readSequence = useRef(0);
   const data = view?.identity === identity ? view.data : undefined;
   const load = useCallback(async () => {
+    const readId = ++readSequence.current;
     const next = target ? await apiClient.viewJobFacts(jobId, target) : await apiClient.getJobFacts(jobId);
-    if (current.current === identity && generation.current.value === sequence) { setView({ identity, data: next }); }
+    if (current.current === identity && generation.current.value === sequence && readId === readSequence.current) { setView({ identity, data: next }); }
     return next;
   }, [identity, sequence]);
   useEffect(() => {
@@ -95,11 +97,13 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
             supersedes: data.clarifications.find(c => sameFact(c.fact, fact.claim.fact))?.id ?? null,
             ...(fact.state === 'contradicted' ? { effective_date: date, corrected_assertion: correction } : {}) });
           if (current.current !== identity) return;
+          readSequence.current++;
           setView({ identity, data: next });
           setSelected(next.facts.find(f => !f.resolution)?.claim.id);
           if (!confirmed) setError('Answer saved. This fact still needs confirmation or revised wording.');
           try { localStorage.removeItem(`fact-answer:${jobId}:${data.input_fingerprint}:${fact.passage.subject.id}`); } catch {}
           await onResolved?.();
+          if (onResolved) await load();
         } catch (e) { setError(e instanceof Error ? e.message : 'Could not save this answer.'); }
         finally { lock.current = false; setBusy(false); }
       }} /> : <p role="status">All facts resolved. Resume checks still apply.</p>}

@@ -12,10 +12,11 @@ function setup() {
     input_snapshot_id: f.input.id, parent_artifact_version_id: null, candidate: f.candidate, proposals: { proposals: [] }, created_at: now, updated_at: now }, null);
   const run = vi.fn(async (_request: any): Promise<unknown> => { throw Error('offline'); });
   const runner = { id: 'fake' as const, model: 'test', label: 'Fake', locality: 'local' as const, run, detect: async () => ({ available: true, detail: '' }) };
-  const service = new SemanticService(f.jobs, f.artifacts, { runner: () => runner, consent: () => true, timeoutMs: () => 1000 });
+  let rules = C.PrivacyRulesConfigSchema.parse({});
+  const service = new SemanticService(f.jobs, f.artifacts, { runner: () => runner, consent: () => true, timeoutMs: () => 1000, currentRules: () => rules });
   const target: C.SemanticTarget = { kind: 'draft', draft_id: draftId, candidate: f.candidate };
   cleanups.push(async () => { await service.dispose(); f.cleanup(); });
-  return { ...f, service, target, run, runner };
+  return { ...f, service, target, run, runner, changePrivacy: () => { rules = { ...rules, banned_keywords: ['backend'] }; } };
 }
 it('reads never dispatch inference and manual confirmation works before any model inventory', () => {
   const f = setup(), read = f.service.read(f.job.id, f.target), fact = read.facts[0];
@@ -76,4 +77,13 @@ it('records outage separately from unsupported content and does not retry on rea
   expect(f.service.read(f.job.id, f.target).facts[0].state).toBe('unavailable');
   f.service.read(f.job.id, f.target);
   expect(f.run).toHaveBeenCalledTimes(1);
+});
+it('does not dispatch against privacy rules that changed after capture', async () => {
+  const f = setup(), read = f.service.read(f.job.id, f.target);
+  f.changePrivacy();
+  const op = f.service.start(f.job.id, { target: f.target, expected_job_revision: read.job_revision, expected_semantic_revision: read.semantic_revision,
+    input_fingerprint: read.input_fingerprint, reason: 'check', idempotency_key: randomUUID() });
+  await f.service.wait(f.job.id);
+  expect(f.run).not.toHaveBeenCalled();
+  expect(f.service.operation(f.job.id, op.operation_id).reason).toMatch(/Privacy rules changed/);
 });

@@ -20,10 +20,11 @@ function view(text = candidate.summary): Facts {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); localStorage.clear(); });
 it('keeps an answer after failed saving and advances only when the server resolves the fact', async () => {
   const initial = view();
-  vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(initial);
+  const read = vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(initial);
+  const resolved: Facts = { ...initial, facts: initial.facts.map(f => ({ ...f, resolution: { provenance: 'human', explanation: 'Deployed for customers.' } })) };
   const save = vi.spyOn(apiClient, 'saveJobFactClarification').mockRejectedValueOnce(Error('Offline'))
-    .mockResolvedValue({ ...initial, facts: initial.facts.map(f => ({ ...f, resolution: { provenance: 'human', explanation: 'Deployed for customers.' } })) });
-  const changed = vi.fn();
+    .mockResolvedValue(resolved);
+  const changed = vi.fn(() => { read.mockResolvedValue(resolved); });
   render(<JobFacts jobId="job" onResolved={changed} />);
   fireEvent.change(await screen.findByLabelText('Your factual answer'), { target: { value: 'Deployed for customers.' } });
   fireEvent.click(screen.getByRole('button', { name: 'Confirm for this job and continue' }));
@@ -34,6 +35,20 @@ it('keeps an answer after failed saving and advances only when the server resolv
   expect(await screen.findByText('All facts resolved. Resume checks still apply.')).toBeVisible();
   expect(save.mock.calls[1][1]).toMatchObject({ confirmed: true, claim_ids: [candidate.summary] });
   expect(changed).toHaveBeenCalledOnce();
+});
+it('refreshes the saved review binding before allowing the next answer', async () => {
+  const initial = { ...view(), target: { kind: 'review' as const, review_id: 'review', review_revision: 0 } };
+  const read = vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(initial);
+  const save = vi.spyOn(apiClient, 'saveJobFactClarification').mockResolvedValue(initial);
+  const changed = vi.fn(() => { read.mockResolvedValue({ ...initial, target: { ...initial.target, review_revision: 1 } }); });
+  render(<JobFacts jobId="job" onResolved={changed} />);
+  fireEvent.change(await screen.findByLabelText('Your factual answer'), { target: { value: 'Still checking.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save answer, keep unresolved' }));
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm for this job and continue' })).toBeEnabled());
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm for this job and continue' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][1].target).toMatchObject({ review_revision: 1 });
 });
 it('saves uncertainty explicitly without treating it as confirmation', async () => {
   const initial = view();

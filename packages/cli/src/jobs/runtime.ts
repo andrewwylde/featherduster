@@ -98,7 +98,7 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   const renderer = deps.renderer ?? new LatexRenderer();
   const semantic = new SemanticService(repository, artifacts, { runner: resolveRunner,
     consent: runner => runner.locality === 'local' || !!loadTailoringConfig(workspace).runner_consent[runner.id],
-    timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000 });
+    timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000, currentRules: deps.loadPrivacyRules });
   const preparation = new JobPreparation({ repository, artifacts, semantic, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer });
   const service = new JobsService({ repository, preparation: { run: (attempt, signal, previous) => repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : preparation.run(attempt, signal, previous) }, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
   const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service, semantic);
