@@ -29,6 +29,7 @@ export class SemanticService {
   context(jobId: string, target?: C.SemanticTarget, override?: { candidate: C.ResumeSpec; proposals: C.Proposal[] }) {
     const job = this.jobs.getJob(jobId), reviews = new ProposalRepository(this.jobs);
     let inputId: string, candidate: C.ResumeSpec, proposals: C.Proposal[] = [];
+    let loaded: ReturnType<JobArtifactsService['capturedContext']> | undefined;
     if (target?.kind === 'draft') {
       const draft = this.jobs.getLatestDraft(target.draft_id);
       if (draft.job_id !== job.id) throw new RepositoryError('invalid_relationship', 'Draft belongs to another job');
@@ -40,13 +41,14 @@ export class SemanticService {
       target = { kind: 'review', review_id: review.id, review_revision: review.revision };
       inputId = review.input_snapshot_id;
       const generation = reviews.getGeneration(review.generation_id);
-      const base = C.effectiveBaseResume(this.artifacts.capturedContext(inputId).base_resume, review);
+      loaded = this.artifacts.capturedContext(inputId);
+      const base = C.effectiveBaseResume(loaded.base_resume, review);
       proposals = C.applyProposalPatches(generation.proposals.proposals, [], review.patches).proposals;
       // Inventory intended content, including edits that literal validation currently rejects.
       candidate = C.applyProposals(base, proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
     }
     if (override) { candidate = override.candidate; proposals = override.proposals; }
-    const captured = this.artifacts.capturedContext(inputId);
+    const captured = loaded ?? this.artifacts.capturedContext(inputId);
     const latest = this.jobs.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload,'$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(jobId) as { id: string } | undefined;
     const inputCurrent = latest?.id === inputId && job.recovery?.kind !== 'stale_inputs';
     const read = (ref: C.ImmutableReference) => this.jobs.database.files.readSnapshot(ref, jobId, inputId).toString();
@@ -71,6 +73,9 @@ export class SemanticService {
     return fingerprint(canonical([p.text, p.work_id, ctx.captured.input.fingerprint, ctx.evidenceFingerprint, ctx.configurationKey, C.SEMANTIC_VERSION]));
   }
   read(jobId: string, target?: C.SemanticTarget, override?: { candidate: C.ResumeSpec; proposals: C.Proposal[] }): C.JobFacts {
+    return this.jobs.database.files.withReadScope(() => this.readVerified(jobId, target, override));
+  }
+  private readVerified(jobId: string, target?: C.SemanticTarget, override?: { candidate: C.ResumeSpec; proposals: C.Proposal[] }): C.JobFacts {
     const ctx = this.context(jobId, target, override), input = ctx.captured.input;
     const records = this.store.results(jobId, input.id).filter(r => r.evidence_set_fingerprint === ctx.evidenceFingerprint && r.configuration_key === ctx.configurationKey && r.policy_version === C.SEMANTIC_VERSION);
     const clarifications = this.store.clarifications(jobId, input.id);

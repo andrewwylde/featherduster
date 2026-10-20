@@ -18,6 +18,17 @@ function view(text = candidate.summary): Facts {
     }] };
 }
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); localStorage.clear(); });
+it('does not queue overlapping reads or keep polling idle facts', async () => {
+  vi.useFakeTimers();
+  let finish!: (value: Facts) => void;
+  const read = vi.spyOn(apiClient, 'getJobFacts').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  render(<JobFacts jobId="job" />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+  expect(read).toHaveBeenCalledTimes(1);
+  await act(async () => { finish(view()); });
+  await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+  expect(read).toHaveBeenCalledTimes(1);
+});
 it('keeps an answer after failed saving and advances only when the server resolves the fact', async () => {
   const initial = view();
   const read = vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(initial);

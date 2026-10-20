@@ -28,20 +28,29 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
   const current = useRef(identity); current.current = identity;
   const priorEdit = useRef(identity), lock = useRef(false);
   const readSequence = useRef(0);
+  const inFlight = useRef<{ sequence: number; promise: Promise<Facts> }>();
   const data = view?.identity === identity ? view.data : undefined;
   const load = useCallback(async () => {
+    if (inFlight.current?.sequence === sequence) return inFlight.current.promise;
     const readId = ++readSequence.current;
-    const next = target ? await apiClient.viewJobFacts(jobId, target) : await apiClient.getJobFacts(jobId);
-    if (current.current === identity && generation.current.value === sequence && readId === readSequence.current) { setView({ identity, data: next }); }
-    return next;
+    const promise = (target ? apiClient.viewJobFacts(jobId, target) : apiClient.getJobFacts(jobId)).then(next => {
+      if (current.current === identity && generation.current.value === sequence && readId === readSequence.current) { setView({ identity, data: next }); }
+      return next;
+    }).finally(() => { if (inFlight.current?.promise === promise) inFlight.current = undefined; });
+    inFlight.current = { sequence, promise };
+    return promise;
   }, [identity, sequence]);
   useEffect(() => {
     let alive = true;
     const read = () => load().catch(e => { if (alive) setError(e instanceof Error ? e.message : 'Facts unavailable.'); });
     void read();
-    const timer = setInterval(() => void read(), 2000);
-    return () => { alive = false; clearInterval(timer); };
+    return () => { alive = false; };
   }, [load]);
+  useEffect(() => {
+    if (data?.execution !== 'checking') return;
+    const timer = setTimeout(() => { void load().catch(e => setError(e instanceof Error ? e.message : 'Facts unavailable.')); }, 2000);
+    return () => clearTimeout(timer);
+  }, [load, data]);
   const check = useCallback(async (reason: 'edit' | 'check' | 'retry') => {
     if (lock.current) return;
     if (reason === 'edit') priorEdit.current = identity;
