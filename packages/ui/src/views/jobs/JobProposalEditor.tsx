@@ -1,3 +1,4 @@
+import { SourcePicker } from '../../components/SourcePicker.js';
 import { useCallback, useState } from 'react';
 import type { EvidenceRecord, Proposal, ProposalIssue, ProposalPatch, SkillSupport } from '@featherduster/core';
 import { cardClass, CitationChip, inputClass, IssueList, primaryButton, secondaryButton } from '../tailoring/ui.js';
@@ -52,7 +53,7 @@ export function JobProposalEditor({ proposal, issues, evidence, support, require
     </div>
     <details><summary>Ground a specific term</summary><p className="text-xs">A terminology decision is not permission to add a technology, metric or ownership claim. Select a cited passage and explain the relationship.</p>
       <label className="block">Term to ground{n}<input className={inputClass} value={grounding?.term ?? ''} onChange={e => update({ term: e.target.value })} /></label>
-      <label className="block">Supporting source{n}<select aria-label={`Supporting source${n}`} className={inputClass} value={grounding?.evidence_id ?? ''} onChange={e => update({ evidence_id: e.target.value, quote: '' })}><option value="">Select cited source</option>{p.citations.map(id => <option key={id} value={id}>{title(id)}</option>)}</select></label>
+      <label className="block">Supporting source{n}<SourcePicker label={`Supporting source${n}`} disabled={disabled} value={grounding?.evidence_id ?? ''} onSelect={value => update({ evidence_id: value, quote: '' })} options={p.citations.map(id => ({ id, name: title(id), type: '' }))} /></label>
       <label className="block">Exact passage{n}<textarea className={inputClass} value={grounding?.quote ?? ''} onChange={e => update({ quote: e.target.value })} /></label>
       <label className="block">Why this passage supports the term{n}<textarea className={inputClass} value={grounding?.explanation ?? ''} onChange={e => update({ explanation: e.target.value })} /></label>
       <button className={secondaryButton} onClick={() => onGrounding(undefined)}>Remove term grounding{n}</button>

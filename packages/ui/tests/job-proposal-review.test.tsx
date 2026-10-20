@@ -203,7 +203,9 @@ it('sends only the displayed source-bound relationship on Save and remember with
   fireEvent.click(screen.getByRole('button', { name: 'Done choosing evidence' }));
   fireEvent.click(screen.getByText('Ground a specific term'));
   fireEvent.change(screen.getByLabelText('Term to ground'), { target: { value: 'backend' } });
-  fireEvent.change(screen.getByLabelText('Supporting source'), { target: { value: 'ev-one' } });
+  fireEvent.focus(screen.getByRole('combobox', { name: 'Supporting source' }));
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Supporting source' }), { key: 'ArrowDown' });
+  fireEvent.keyDown(screen.getByRole('combobox', { name: 'Supporting source' }), { key: 'Enter' });
   fireEvent.change(screen.getByLabelText('Exact passage'), { target: { value: evidence.narrative } });
   fireEvent.change(screen.getByLabelText('Why this passage supports the term'), { target: { value: 'API/BFF work supports backend applications' } });
   fireEvent.change(screen.getByLabelText('Correction explanation'), { target: { value: 'Reviewed terminology and citation' } });

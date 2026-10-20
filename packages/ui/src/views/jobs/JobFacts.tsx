@@ -1,3 +1,4 @@
+import { SourcePicker } from '../../components/SourcePicker.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { groupReviewFacts, sameFact, type JobFact, type JobFacts as Facts, type SemanticTarget, type SourceQuote, type SemanticSource } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
@@ -145,7 +146,7 @@ function FactEditor({ fact, related, sources, recoveryKey, disabled, onSave }: {
     <label className="block">Your factual answer<textarea className={inputClass} required value={assertion} disabled={disabled} onChange={e => setAssertion(e.target.value)} /></label>
     <p className="text-xs">Saving confirms the quoted claim, including its qualifiers. If it is inaccurate, edit the wording instead.</p>
     <details><summary>Use supporting evidence</summary>
-      <label className="block">Captured source<select className={inputClass} value={sourceIndex} disabled={disabled} onChange={e => { setSourceIndex(e.target.value); setQuote(''); }}><option value="">Choose a source</option>{sources.map((s, i) => <option key={i} value={i + 1}>{sourceLabel(sources, s.evidence_id)} · {s.field}</option>)}</select></label>
+      <label className="block">Captured source<SourcePicker label="Captured source" value={sourceIndex} disabled={disabled} onSelect={value => { setSourceIndex(value); setQuote(''); }} options={sources.map((s, i) => ({ id: String(i + 1), name: sourceLabel(sources, s.evidence_id), type: s.field }))} /></label>
       {source && <><blockquote>{source.text}</blockquote><label className="block">Exact supporting quotation<textarea className={inputClass} value={quote} disabled={disabled} onChange={e => setQuote(e.target.value)} /></label>{quote && start < 0 && <p role="alert">Copy an exact passage from this source.</p>}</>}
     </details>
     {fact.state === 'contradicted' && <>
