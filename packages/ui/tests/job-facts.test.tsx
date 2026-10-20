@@ -47,7 +47,37 @@ it('keeps an answer after failed saving and advances only when the server resolv
   expect(save.mock.calls[1][1]).toMatchObject({ confirmed: true, claim_ids: [candidate.summary] });
   expect(changed).toHaveBeenCalledOnce();
 });
-it('refreshes the saved review binding before allowing the next answer', async () => {
+it('lets the next answer be typed while checks refresh, then saves with the fresh binding', async () => {
+  const initial = { ...view(), target: { kind: 'review' as const, review_id: 'review', review_revision: 0 } };
+  const second = structuredClone(initial.facts[0]);
+  second.claim.id = 'second';
+  second.claim.fact = { ...second.claim.fact, work_id: 'another-project' };
+  second.passage.subject = { ...second.passage.subject, id: 'second' };
+  second.claim.subject = second.passage.subject;
+  initial.facts.push(second);
+  const next = { ...initial, facts: initial.facts.map((f, i) => i ? f : { ...f, resolution: { provenance: 'human' as const, explanation: 'Confirmed.' } }) };
+  const read = vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(initial);
+  const save = vi.spyOn(apiClient, 'saveJobFactClarification').mockResolvedValue(next);
+  let finish!: () => void;
+  const changed = vi.fn(() => new Promise<void>(resolve => { finish = () => {
+    read.mockResolvedValue({ ...next, target: { ...initial.target, review_revision: 1 } }); resolve();
+  }; }));
+  render(<JobFacts jobId="job" onResolved={changed} />);
+  fireEvent.change(await screen.findByLabelText('Your factual answer'), { target: { value: 'First confirmed.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm for this job and continue' }));
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  const answer = screen.getByLabelText('Your factual answer');
+  expect(answer).toBeEnabled();
+  fireEvent.change(answer, { target: { value: 'Second project answer.' } });
+  expect(screen.getByRole('button', { name: 'Updating checks…' })).toBeDisabled();
+  await act(async () => { finish(); });
+  expect(screen.getByLabelText('Your factual answer')).toHaveValue('Second project answer.');
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm for this job and continue' }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][1]).toMatchObject({ target: { review_revision: 1 }, assertion: 'Second project answer.', claim_ids: ['second'] });
+  await act(async () => { finish(); });
+});
+it('refreshes the saved review binding before allowing the next confirmation', async () => {
   const initial = { ...view(), target: { kind: 'review' as const, review_id: 'review', review_revision: 0 } };
   const read = vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(initial);
   const save = vi.spyOn(apiClient, 'saveJobFactClarification').mockResolvedValue(initial);

@@ -25,6 +25,7 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
   const [view, setView] = useState<{ identity: string; data: Facts }>();
   const [error, setError] = useState(''), [busy, setBusy] = useState(false);
   const [selected, setSelected] = useState<string>();
+  const [savingClaim, setSavingClaim] = useState<string>();
   const current = useRef(identity); current.current = identity;
   const priorEdit = useRef(identity), lock = useRef(false);
   const readSequence = useRef(0);
@@ -95,9 +96,9 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
       {!data.configuration_evaluated && <p className="text-sm">Automatic support is not enabled for this model configuration. You can still confirm individual facts.</p>}
       <button className={secondaryButton} disabled={busy || data.execution === 'checking'} onClick={() => void check(data.execution === 'unavailable' ? 'retry' : 'check')}>{data.execution === 'unavailable' ? 'Retry evidence check' : 'Check evidence'}</button>
       {fact ? <FactEditor key={`${identity}:${fact.claim.id}`} recoveryKey={`fact-answer:${jobId}:${data.input_fingerprint}:${fact.passage.subject.id}`}
-        fact={fact} related={group!.facts} sources={data.sources ?? []} disabled={busy || data.execution === 'checking'} onSave={async (assertion, date, correction, quotes, confirmed) => {
+        fact={fact} related={group!.facts} sources={data.sources ?? []} inputsDisabled={savingClaim === fact.claim.id} disabled={busy || data.execution === 'checking'} onSave={async (assertion, date, correction, quotes, confirmed) => {
         if (lock.current) return;
-        lock.current = true; setBusy(true); setError('');
+        lock.current = true; setBusy(true); setSavingClaim(fact.claim.id); setError('');
         try {
           const next = await apiClient.saveJobFactClarification(jobId, { target: data.target,
             expected_job_revision: data.job_revision, expected_semantic_revision: data.semantic_revision,
@@ -115,7 +116,7 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
           await onResolved?.();
           if (onResolved) await load();
         } catch (e) { setError(e instanceof Error ? e.message : 'Could not save this answer.'); }
-        finally { lock.current = false; setBusy(false); }
+        finally { lock.current = false; setBusy(false); setSavingClaim(undefined); }
       }} /> : <p role="status">All facts resolved. Resume checks still apply.</p>}
       {fact && onRevise && <button className={secondaryButton} disabled={busy} onClick={() => onRevise(fact)}>Revise wording</button>}
       {fact?.passage.subject.proposal_id && onKeepOriginal && <button className={secondaryButton} disabled={busy} onClick={async () => {
@@ -134,7 +135,7 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
     </>}
   </section>;
 }
-function FactEditor({ fact, related, sources, recoveryKey, disabled, onSave }: { fact: JobFact; related: JobFact[]; sources: SemanticSource[]; recoveryKey: string; disabled: boolean; onSave(assertion: string, date: string, correction: string, quotes: SourceQuote[], confirmed: boolean): Promise<void> }) {
+function FactEditor({ fact, related, sources, recoveryKey, disabled, inputsDisabled, onSave }: { fact: JobFact; related: JobFact[]; sources: SemanticSource[]; recoveryKey: string; disabled: boolean; inputsDisabled: boolean; onSave(assertion: string, date: string, correction: string, quotes: SourceQuote[], confirmed: boolean): Promise<void> }) {
   const [restored] = useState(() => { try { return JSON.parse(localStorage.getItem(recoveryKey) ?? '{}'); } catch { return {}; } });
   const [assertion, setAssertion] = useState<string>(restored.assertion ?? ''), [date, setDate] = useState<string>(restored.date ?? ''), [correction, setCorrection] = useState<string>(restored.correction ?? '');
   const [sourceIndex, setSourceIndex] = useState(''), [quote, setQuote] = useState('');
@@ -152,17 +153,17 @@ function FactEditor({ fact, related, sources, recoveryKey, disabled, onSave }: {
     {restored.assertion && restored.claimText !== fact.claim.text && <p>Your earlier answer is retained. Review it against this question before confirming.</p>}
     <p className="text-sm">{fact.explanation}</p>
     {fact.evidence.map((q, i) => <blockquote key={i} className="text-sm">{sourceLabel(sources, q.evidence_id)}: {q.quote}</blockquote>)}
-    <label className="block">Your factual answer<textarea className={inputClass} required value={assertion} disabled={disabled} onChange={e => setAssertion(e.target.value)} /></label>
+    <label className="block">Your factual answer<textarea className={inputClass} required value={assertion} disabled={inputsDisabled} onChange={e => setAssertion(e.target.value)} /></label>
     <p className="text-xs">Saving confirms the quoted claim, including its qualifiers. If it is inaccurate, edit the wording instead.</p>
     <details><summary>Use supporting evidence</summary>
-      <label className="block">Captured source<SourcePicker label="Captured source" value={sourceIndex} disabled={disabled} onSelect={value => { setSourceIndex(value); setQuote(''); }} options={sources.map((s, i) => ({ id: String(i + 1), name: sourceLabel(sources, s.evidence_id), type: s.field }))} /></label>
-      {source && <><blockquote>{source.text}</blockquote><label className="block">Exact supporting quotation<textarea className={inputClass} value={quote} disabled={disabled} onChange={e => setQuote(e.target.value)} /></label>{quote && start < 0 && <p role="alert">Copy an exact passage from this source.</p>}</>}
+      <label className="block">Captured source<SourcePicker label="Captured source" value={sourceIndex} disabled={inputsDisabled} onSelect={value => { setSourceIndex(value); setQuote(''); }} options={sources.map((s, i) => ({ id: String(i + 1), name: sourceLabel(sources, s.evidence_id), type: s.field }))} /></label>
+      {source && <><blockquote>{source.text}</blockquote><label className="block">Exact supporting quotation<textarea className={inputClass} value={quote} disabled={inputsDisabled} onChange={e => setQuote(e.target.value)} /></label>{quote && start < 0 && <p role="alert">Copy an exact passage from this source.</p>}</>}
     </details>
     {fact.state === 'contradicted' && <>
-      <label className="block">Exact older assertion being corrected<input className={inputClass} required value={correction} disabled={disabled} onChange={e => setCorrection(e.target.value)} /></label>
-      <label className="block">Effective date<input className={inputClass} type="date" required value={date} disabled={disabled} onChange={e => setDate(e.target.value)} /></label>
+      <label className="block">Exact older assertion being corrected<input className={inputClass} required value={correction} disabled={inputsDisabled} onChange={e => setCorrection(e.target.value)} /></label>
+      <label className="block">Effective date<input className={inputClass} type="date" required value={date} disabled={inputsDisabled} onChange={e => setDate(e.target.value)} /></label>
     </>}
-    <button className={`${primaryButton} min-h-11`} disabled={disabled || !assertion.trim() || (!!source && !quotes.length)}>{disabled ? 'Saving…' : 'Confirm for this job and continue'}</button>
+    <button className={`${primaryButton} min-h-11`} disabled={disabled || !assertion.trim() || (!!source && !quotes.length)}>{inputsDisabled ? 'Saving…' : disabled ? 'Updating checks…' : 'Confirm for this job and continue'}</button>
     {fact.state !== 'contradicted' && <button type="button" className={`${secondaryButton} min-h-11`} disabled={disabled || !assertion.trim()} onClick={() => void onSave(assertion, date, correction, quotes, false)}>Save answer, keep unresolved</button>}
   </form>;
 }
