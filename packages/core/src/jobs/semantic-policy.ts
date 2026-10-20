@@ -36,9 +36,13 @@ export function resolveSemanticFindings<T extends { kind: string; claim_id?: str
 }
 export function validClaimBinding(result: ClaimResult, passage: SemanticPassage, sources: SemanticSource[]): boolean {
   const c = result.claim;
+  let company: string | undefined;
+  try { company = passage.work_context ? JSON.parse(passage.work_context).company : undefined; } catch { return false; }
+  const sameEmployer = (source: SemanticSource) => !company || !source.company
+    || company.trim().toLowerCase() === source.company.trim().toLowerCase();
   return c.subject.id === passage.subject.id && c.subject.passage_fingerprint === passage.subject.passage_fingerprint
     && c.subject.path === passage.subject.path && c.fact.work_id === passage.work_id
-    && passage.text.slice(c.start, c.end) === c.text && result.evidence.every(q => sources.some(s =>
+    && passage.text.slice(c.start, c.end) === c.text && result.evidence.every(q => sources.some(s => sameEmployer(s) &&
       s.evidence_id === q.evidence_id && s.evidence_fingerprint === q.evidence_fingerprint && s.field === q.field
       && q.start >= s.start && q.end <= s.start + s.text.length && s.text.slice(q.start - s.start, q.end - s.start) === q.quote));
 }
