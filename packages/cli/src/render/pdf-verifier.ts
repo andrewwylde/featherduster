@@ -18,7 +18,8 @@ export interface PdfVerifierOptions extends ToolLimits {
   tools?: Partial<Record<'pdfinfo' | 'pdftotext' | 'pdftoppm', ToolOptions>>;
   previewLimit?: number;
 }
-const normalize = (s: string) => s.normalize('NFKC').replace(/\u00ad/g, '').replace(/\s+/g, ' ').trim();
+// TeX renders straight quotes typographically; compare their textual equivalents.
+const normalize = (s: string) => s.normalize('NFKC').replace(/[\u2018\u2019]/g, "'").replace(/[\u201c\u201d]/g, '"').replace(/\u00ad/g, '').replace(/\s+/g, ' ').trim();
 function contains(text: string, fragment: string) {
   const escaped = fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escaped}(?![\\p{L}\\p{N}_])`, 'u').test(text);

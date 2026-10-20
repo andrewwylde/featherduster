@@ -68,6 +68,13 @@ describe('LaTeX independent PDF gate', () => {
     const result = await renderer.renderPdf({ templateId: 'two', spec });
     expect(result.status).toBe('passed'); expect(result.previews).toHaveLength(2);
   });
+  it('accepts typographic quotes while still rejecting changed words', async () => {
+    const pdf = path.join(root, 'quotes.pdf');
+    await fs.writeFile(pdf, JSON.stringify({ pages: 1, text: 'Bootstrapped Internet Identity’s frontend and “editor” controls.' }));
+    const { verifier } = setup();
+    expect((await verifier.verify(pdf, { expectedText: ['Bootstrapped Internet Identity\'s frontend and "editor" controls.'] })).report.passed).toBe(true);
+    expect((await verifier.verify(pdf, { expectedText: ['Bootstrapped Internet Identity\'s backend and "editor" controls.'] })).report.passed).toBe(false);
+  });
   it('rejects malformed, empty, oversized PDFs and empty expectations', async () => {
     const pdf = path.join(root, 'input.pdf');
     const { verifier } = setup();
