@@ -88,7 +88,12 @@ export class SemanticRepository {
     });
   }
   finish(operationId: string, jobId: string, reason?: string) {
-    this.tx(() => { const op = this.operation(jobId, operationId); if (op.state === 'checking') this.setOperation({ ...op, state: reason ? 'unavailable' : 'complete', ...(reason ? { reason } : {}) }); });
+    this.tx(() => {
+      const op = this.operation(jobId, operationId);
+      if (op.state !== 'checking') return;
+      if (!reason) this.assertCurrent(op);
+      this.setOperation({ ...op, state: reason ? 'unavailable' : 'complete', ...(reason ? { reason } : {}) });
+    });
   }
   private finishFailure(call: SemanticCall, reason: string, elapsedMs: number) {
     this.db.prepare('INSERT OR IGNORE INTO semantic_call_results VALUES (?,?)').run(call.id, JSON.stringify({ state: 'unavailable', reason, elapsed_ms: elapsedMs }));

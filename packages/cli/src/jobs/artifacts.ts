@@ -116,7 +116,7 @@ export class JobArtifactsService {
       return { input, job_scope: manifest.job_scope, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport };
     });
   }
-  publishCandidate(request: { draft_id: string; expected_draft_revision: number; fence: OwnershipFence; source: Bytes; pdf?: Bytes; previews?: Bytes[]; validation_report?: Bytes; validation_result: C.ArtifactVersion['validation_result'] }): C.ArtifactVersion {
+  publishCandidate(request: { draft_id: string; expected_draft_revision: number; fence: OwnershipFence; source: Bytes; pdf?: Bytes; previews?: Bytes[]; validation_report?: Bytes; validation_result: C.ArtifactVersion['validation_result']; semantic_binding?: C.ArtifactVersion['semantic_binding'] }): C.ArtifactVersion {
     return this.tx(() => {
       const r = this.repository; const draft = r.getLatestDraft(request.draft_id);
       if (draft.revision !== request.expected_draft_revision) throw new RepositoryError('revision_conflict', 'Stale draft revision');
@@ -129,6 +129,7 @@ export class JobArtifactsService {
       const add = (name: string, bytes: Bytes): C.ImmutableReference => { bundle[name] = bytes; return { id: `${parent}/${name}`, fingerprint: fingerprint(bytes) }; };
       const previews = (request.previews ?? []).map((bytes, i) => add(`preview-${i}.png`, bytes));
       const artifact = { schema_version: 1 as const, id, workspace_id: draft.workspace_id, job_id: draft.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, parent_version_id: draft.parent_artifact_version_id, created_at: this.now(), source: add('source.tex', request.source), pdf: request.pdf === undefined ? null : add('resume.pdf', request.pdf), preview: previews[0] ?? null, validation_report: request.validation_report === undefined ? null : add('validation.json', request.validation_report), validation_result: request.validation_result };
+      if (request.semantic_binding) Object.assign(artifact, { semantic_binding: request.semantic_binding });
       const bytes = canonical(artifactManifest.parse({ schema_version: 1, artifact, draft_id: draft.id, draft_revision: draft.revision, previews }));
       bundle['manifest.json'] = bytes;
       const result = C.ArtifactVersionSchema.parse({ ...artifact, version_fingerprint: fingerprint(bytes) });
@@ -151,7 +152,7 @@ export class JobArtifactsService {
   }
   /** The review an attempt continued from, or the initial review it generated; its corrections define the effective base. */
 publishManualCandidate(request: Parameters<JobsRepository['assertManualPublication']>[0] & {
-  source: Bytes; pdf: Bytes; previews: Bytes[]; validation_report: Bytes; idempotency_key: string;
+  source: Bytes; pdf: Bytes; previews: Bytes[]; validation_report: Bytes; idempotency_key: string; semantic_binding?: C.ArtifactVersion['semantic_binding'];
 }): C.ArtifactVersion {
   return this.tx(() => {
     const r = this.repository, { draft, parent } = r.assertManualPublication(request);
@@ -167,6 +168,7 @@ publishManualCandidate(request: Parameters<JobsRepository['assertManualPublicati
       parent_version_id: parent.id, created_at: this.now(), source: add('source.tex', request.source),
       pdf: add('resume.pdf', request.pdf), preview: previews[0] ?? null,
       validation_report: add('validation.json', request.validation_report), validation_result: 'passed' as const };
+    if (request.semantic_binding) Object.assign(artifact, { semantic_binding: request.semantic_binding });
     const bytes = canonical(artifactManifest.parse({ schema_version: 1, artifact, draft_id: draft.id, draft_revision: draft.revision, previews }));
     bundle['manifest.json'] = bytes;
     const result = C.ArtifactVersionSchema.parse({ ...artifact, version_fingerprint: fingerprint(bytes) });

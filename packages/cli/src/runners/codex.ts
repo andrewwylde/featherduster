@@ -115,6 +115,7 @@ export class CodexRunner implements ModelRunner {
         let settled = false;
         let buffer = '';
         let stderr = '';
+        let failure = '';
 
         const finish = (fn: () => void) => {
           if (settled) return;
@@ -133,6 +134,10 @@ export class CodexRunner implements ModelRunner {
           try {
             const evt = JSON.parse(line);
             const type = String(evt.type ?? evt.msg?.type ?? '');
+            if (/error|failed/i.test(type)) {
+              const message = evt.message ?? evt.error?.message ?? evt.msg?.message;
+              if (typeof message === 'string') failure = maskSecrets(message).slice(-4000);
+            }
             if (/task_started|turn\.started|session/i.test(type)) req.onProgress({ kind: 'status', text: 'Codex session started' });
             const text = evt.msg?.message ?? evt.item?.text ?? evt.delta ?? null;
             if (typeof text === 'string' && text) req.onProgress({ kind: 'token', text });
@@ -167,7 +172,7 @@ export class CodexRunner implements ModelRunner {
           finish(() => {
             const last = fs.existsSync(lastMessageFile) ? fs.readFileSync(lastMessageFile, 'utf-8').trim() : '';
             if (code !== 0 || !last) {
-              const detail = maskSecrets(stderr).slice(-4000);
+              const detail = failure || maskSecrets(stderr).slice(-4000);
               if (/not\s+logged\s+in|login|unauthorized|401/i.test(detail)) {
                 reject(new RunnerError('auth', 'Codex is not signed in. Sign in from Settings.', detail));
               } else {

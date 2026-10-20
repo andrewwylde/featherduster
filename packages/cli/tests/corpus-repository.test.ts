@@ -68,6 +68,7 @@ describe('corpus persistence', () => {
     const control = repo.jobs.getControl();
     // Preserve all v1 tables byte-for-byte in the migration fixture.
     const baseline = ['jobs', 'url_aliases', 'events', 'mutation_receipts', 'worker_control'].map(table => [table, db.db.prepare(`SELECT * FROM ${table}`).all()] as const);
+    db.db.exec('DROP TABLE semantic_evaluations; DROP TABLE semantic_receipts; DROP TABLE semantic_leases; DROP TABLE semantic_call_results; DROP TABLE semantic_calls; DROP TABLE semantic_operations; DROP TABLE semantic_clarifications; DROP TABLE semantic_records; DROP TABLE semantic_heads; DELETE FROM schema_migrations WHERE version=5');
     db.db.exec('DROP TABLE material_heads; DROP TABLE material_revisions; DELETE FROM schema_migrations WHERE version=4; DROP TABLE attempt_proposal_reviews; DROP TABLE job_proposal_reviews; DROP TABLE proposal_review_revisions; DROP TABLE proposal_generations; DELETE FROM schema_migrations WHERE version=3; DROP TABLE corpus_feedback_updates; DROP TABLE corpus_updates; DROP TABLE corpus_feedback; DROP TABLE corpus_heads; DELETE FROM schema_migrations WHERE version=2');
     db.close();
     expect(loadCorpusSnapshot(dir).updates).toEqual([]);

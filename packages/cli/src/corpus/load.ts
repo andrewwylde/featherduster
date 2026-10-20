@@ -23,7 +23,7 @@ export function loadCorpusSnapshot(workspace: string): C.CorpusSnapshot {
   try {
     return db.transaction(() => {
       const versions = db.prepare('SELECT version FROM schema_migrations ORDER BY version').all() as {version: number}[];
-      if (!versions.length || versions.some((r, i) => r.version !== i + 1 || r.version > 4)) throw new Error('Unsupported corpus database schema');
+      if (!versions.length || versions.some((r, i) => r.version !== i + 1 || r.version > 5)) throw new Error('Unsupported corpus database schema');
       const identity = db.prepare('SELECT workspace_id FROM workspace_metadata WHERE id=1').get() as {workspace_id: string} | undefined;
       if (!identity || !/^[0-9a-f-]{36}$/i.test(identity.workspace_id)) throw new Error('Corrupt workspace identity');
       if (versions.length === 1) return emptyCorpus();

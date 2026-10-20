@@ -99,14 +99,14 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   const semantic = new SemanticService(repository, artifacts, { runner: resolveRunner,
     consent: runner => runner.locality === 'local' || !!loadTailoringConfig(workspace).runner_consent[runner.id],
     timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000 });
-  const preparation = new JobPreparation({ repository, artifacts, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer });
+  const preparation = new JobPreparation({ repository, artifacts, semantic, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer });
   const service = new JobsService({ repository, preparation: { run: (attempt, signal, previous) => repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : preparation.run(attempt, signal, previous) }, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
-  const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service);
+  const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service, semantic);
   const selectFit = (id: string, ids?: string[]) => {
     const job = repository.getJob(id);
     return selectJobSkillset(corpus.read({ job_id: id, employer: job.employer_id ?? undefined, role: job.role ?? undefined }), ids);
   };
-const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.loadPrivacyRules, renderer);
+const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.loadPrivacyRules, renderer, semantic);
 
   const readFit = (id: string) => fit.read(id, ids => selectFit(id, ids), deps.loadPrivacyRules());
   const assessFit = (id: string, request: { expected_revision: number; idempotency_key: string; evidence_ids?: string[]; runner?: RunnerId }, materialKind?: C.MaterialContent['kind']) => {
@@ -133,7 +133,7 @@ const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.l
     }
     return receipt;
   };
-  const exports = new JobExports(repository, artifacts, materials, selectFit, deps.loadPrivacyRules);
+  const exports = new JobExports(repository, artifacts, materials, selectFit, deps.loadPrivacyRules, semantic);
   return { repository, artifacts, intake, service, corpus, proposals, semantic, captureInputs, assessFit, readFit, materials, exports, drafts, flushEvents,
     subscribeCorpus(listener: (event: { revision: number; update_ids: string[] }) => void) { monitor(); corpusListeners.add(listener); return () => { corpusListeners.delete(listener); }; },
     subscribe(listener: (event: C.JobEvent) => void) { monitor(); listeners.add(listener); return () => { listeners.delete(listener); }; },

@@ -9,6 +9,7 @@ import { EvidenceStore, queryCorpus, serializeEvidenceMarkdown } from '@featherd
 import { createApp } from '../src/server.js';
 import { createJobsRuntime, type JobsRuntime } from '../src/jobs/runtime.js';
 import { type RunnerFactory } from '../src/runners/registry.js';
+import { confirmJobFacts } from './fixtures/confirm-job-facts.js';
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); vi.useRealTimers(); });
@@ -54,11 +55,13 @@ it('learns a source-bound correction across A/B, withdraws before C, and keeps h
   const source = f.evidence.get('ev-one')!;
   const sources = [{ evidence_id: source.id, evidence_fingerprint: sourceFingerprint(source), quote: 'Built APIs and fixed BFF authentication.' }];
   const save = await f.request(`/api/jobs/${a.id}/proposals/${a.view.review.id}`, {
-    expected_job_revision: f.runtime().repository.getJob(a.id).revision, expected_review_revision: 0, input_fingerprint: a.input.fingerprint,
+    expected_job_revision: f.runtime().repository.getJob(a.id).revision, expected_review_revision: a.view.review.revision, input_fingerprint: a.input.fingerprint,
     patches: [], groundings: [{ proposal_id: 'p', claim_fingerprint: claimFingerprint(a.view.generation.proposals.proposals[0]), term: 'backend', sources, explanation: 'API/BFF application development' }], feedback_kind: 'grounding', explanation: 'Broader terminology supported by this passage',
     remember: { expected_corpus_revision: 0, change: { kind: 'skill_support', value: { skill: 'backend', facet: 'applications', permitted_terms: ['backend'], support: 'direct', scope: { kind: 'workspace' }, sources, explanation: 'API/BFF application development' } } }, idempotency_key: 'learn-A',
   }, 'PUT');
-  expect(save.status).toBe(200); const saved = (await save.json()).result;
+  expect(save.status).toBe(200); const remembered = (await save.json()).result;
+  expect(remembered.review.validation.status).toBe('blocked');
+  const saved = { ...confirmJobFacts(f.runtime(), a.id), update: remembered.update };
   expect(saved.review.validation.status).toBe('ready'); expect(f.run).not.toHaveBeenCalled();
   f.run.mockResolvedValue({} as any);
   expect((await f.request(`/api/jobs/${a.id}/proposals/${saved.review.id}/continue`, { expected_job_revision: saved.job.revision, expected_review_revision: saved.review.revision, input_fingerprint: a.input.fingerprint, validation_fingerprint: saved.review.validation.fingerprint, idempotency_key: 'continue-A' })).status).toBe(202);
@@ -67,8 +70,9 @@ it('learns a source-bound correction across A/B, withdraws before C, and keeps h
   const matches = queryCorpus(f.runtime().corpus.read(), { search: 'backend' });
   expect(matches.map(m => m.record.id)).toEqual(['ev-one']); expect(matches[0].literal).toBe(false);
   f.run.mockClear(); const b = await start();
-  expect(b.view.review.validation.status).toBe('ready');
-  expect(f.runtime().repository.getJob(b.id).preparation_state).toBe('resume_ready');
+  expect(b.view.review.validation.status).toBe('blocked');
+  const bConfirmed = confirmJobFacts(f.runtime(), b.id);
+  expect(bConfirmed.review.validation.status).toBe('ready');
   expect(JSON.stringify(f.run.mock.calls)).toContain('API/BFF application development');
   expect(b.input.fingerprint).not.toBe(a.input.fingerprint);
   expect(serializeEvidenceMarkdown(f.runtime().artifacts.capturedContext(a.input.id).evidence.get('ev-one')!.entry, original.evidence.get('ev-one')!.narrative)).toBe(serializeEvidenceMarkdown(source.entry, source.narrative));

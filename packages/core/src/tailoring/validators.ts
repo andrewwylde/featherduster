@@ -3,7 +3,7 @@ import type { SkillSupport } from '../corpus/schemas.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
 import type { ResumeSpec } from '../schemas/resume.js';
 import { auditSlop } from '../integrity/deslop-engine.js';
-import type { SemanticSupport } from '../jobs/semantic-policy.js';
+import { semanticSupportsTerm, type SemanticSupport } from '../jobs/semantic-policy.js';
 import type {
   AlignmentMatrix,
   AlignmentRow,
@@ -331,7 +331,7 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
         containsTerm(after, term) &&
         !containsTerm(before, term) &&
         !containsTerm(grounding, term) &&
-        !semantic?.resolved &&
+        !semanticSupportsTerm(semantic, term) &&
         !supportsTerm(term, p.citations, cited, ctx.skillSupport ?? []) &&
         !baseSkills.some((s) => s.toLowerCase() === term.toLowerCase()) &&
         !confirmedTerms.has(term.toLowerCase()) &&

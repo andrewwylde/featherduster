@@ -9,7 +9,8 @@ import { canonicalResumeValue as canonical } from './resume-context.js';
 import { sourceFingerprint } from '../corpus/load.js';
 import type { ModelRunner } from '../runners/types.js';
 import { classifyBatch, SEMANTIC_PROMPT_HASH } from './semantic-classifier.js';
-export const SEMANTIC_SUITE_VERSION = 'semantic-evidence-v1';
+import { SEMANTIC_SUITE_VERSION, semanticConfigurationKey } from './semantic-evaluation.js';
+export { SEMANTIC_SUITE_VERSION } from './semantic-evaluation.js';
 export interface SemanticDependencies {
   runner(settings: { runner: string; model: string }): ModelRunner | null;
   consent(runner: ModelRunner): boolean;
@@ -23,8 +24,8 @@ export class SemanticService {
     this.store = new SemanticRepository(jobs);
   }
   private fail(message: string): never { throw new RepositoryError('revision_conflict', message); }
-  configurationKey(runner: ModelRunner) { return fingerprint(canonical([runner.id, runner.model, SEMANTIC_PROMPT_HASH, C.SEMANTIC_VERSION, C.TERM_VERSION])); }
-  context(jobId: string, target?: C.SemanticTarget) {
+  configurationKey(runner: ModelRunner) { return semanticConfigurationKey(runner); }
+  context(jobId: string, target?: C.SemanticTarget, override?: { candidate: C.ResumeSpec; proposals: C.Proposal[] }) {
     const job = this.jobs.getJob(jobId), reviews = new ProposalRepository(this.jobs);
     let inputId: string, candidate: C.ResumeSpec, proposals: C.Proposal[] = [];
     if (target?.kind === 'draft') {
@@ -43,6 +44,7 @@ export class SemanticService {
       // Inventory intended content, including edits that literal validation currently rejects.
       candidate = C.applyProposals(base, proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
     }
+    if (override) { candidate = override.candidate; proposals = override.proposals; }
     const captured = this.artifacts.capturedContext(inputId);
     const latest = this.jobs.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload,'$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(jobId) as { id: string } | undefined;
     const inputCurrent = latest?.id === inputId && job.recovery?.kind !== 'stale_inputs';
@@ -59,7 +61,7 @@ export class SemanticService {
     });
     const sources: C.SemanticSource[] = evidence.filter(e => e.confidence !== 'retracted').flatMap(e =>
       (['title', 'summary', 'impact', 'narrative'] as const).filter(field => !!e[field]?.trim()).map(field => ({
-        evidence_id: e.id, evidence_fingerprint: sourceFingerprint(e), work_id: e.id, field, start: 0, text: e[field],
+        evidence_id: e.id, evidence_fingerprint: sourceFingerprint(e), work_id: e.id, company: e.company, field, start: 0, text: e[field],
       })));
     return { job, target: target!, captured, candidate, candidateFingerprint: fingerprint(canonical(candidate)), inputCurrent,
       runner, rules, configurationKey, evidenceFingerprint, passages, sources, proposals };
@@ -67,8 +69,8 @@ export class SemanticService {
   private cacheKey(ctx: ReturnType<SemanticService['context']>, p: C.SemanticPassage) {
     return fingerprint(canonical([p.text, p.work_id, ctx.captured.input.fingerprint, ctx.evidenceFingerprint, ctx.configurationKey, C.SEMANTIC_VERSION]));
   }
-  read(jobId: string, target?: C.SemanticTarget): C.JobFacts {
-    const ctx = this.context(jobId, target), input = ctx.captured.input;
+  read(jobId: string, target?: C.SemanticTarget, override?: { candidate: C.ResumeSpec; proposals: C.Proposal[] }): C.JobFacts {
+    const ctx = this.context(jobId, target, override), input = ctx.captured.input;
     const records = this.store.results(jobId, input.id).filter(r => r.evidence_set_fingerprint === ctx.evidenceFingerprint && r.configuration_key === ctx.configurationKey && r.policy_version === C.SEMANTIC_VERSION);
     const clarifications = this.store.clarifications(jobId, input.id);
     const evaluated = this.store.evaluation(ctx.configurationKey, SEMANTIC_SUITE_VERSION)?.passed === true;
@@ -80,20 +82,33 @@ export class SemanticService {
       return (result?.claims ?? [fallback]).map(original => {
         const c: C.ClaimResult = { ...original, claim: { ...original.claim, subject: p.subject } };
         const valid = ctx.inputCurrent && (original === fallback || C.validClaimBinding(c, p, ctx.sources));
-        const human = valid ? C.matchingClarification(c, clarifications) : undefined;
+        const human = valid ? C.matchingClarification(c, clarifications)
+          ?? (c.state !== 'contradicted' ? C.matchingClarification(fallback, clarifications) : undefined) : undefined;
         const machine = valid && evaluated && c.state === 'supported';
-        return { ...c, state: valid ? c.state : 'unavailable', passage: p,
+        return { ...c, evidence: [...c.evidence, ...(human?.supporting_quotes ?? [])], state: valid ? c.state : 'unavailable', passage: p,
           resolution: human ? { provenance: 'human' as const, explanation: human.assertion }
             : machine ? { provenance: 'model' as const, explanation: c.explanation } : null };
       });
     });
     const latest = this.jobs.database.db.prepare('SELECT payload FROM semantic_operations WHERE job_id=? AND target_fingerprint=? ORDER BY sequence DESC LIMIT 1').get(jobId, ctx.candidateFingerprint) as { payload: string } | undefined;
-    const operation = latest ? JSON.parse(latest.payload) as SemanticOperation : undefined;
+    const storedOperation = latest ? JSON.parse(latest.payload) as SemanticOperation : undefined;
+    const operation = storedOperation ? this.operation(jobId, storedOperation.id) : undefined;
     return { job_id: jobId, job_revision: ctx.job.revision, input_fingerprint: input.fingerprint, semantic_revision: this.store.head(jobId),
-      target: ctx.target, candidate_fingerprint: ctx.candidateFingerprint, facts, clarifications,
+      target: ctx.target, candidate_fingerprint: ctx.candidateFingerprint, facts, clarifications, sources: ctx.sources,
       support_fingerprint: fingerprint(canonical({ facts: facts.map(f => [f.claim, f.evidence, f.resolution]), input: input.fingerprint, evidence: ctx.evidenceFingerprint, configuration: ctx.configurationKey, policy: C.SEMANTIC_VERSION })),
       execution: facts.every(f => f.resolution) ? 'complete' : operation?.state ?? 'unchecked', ...(operation?.reason ? { reason: operation.reason } : {}),
       configuration_evaluated: evaluated, usage: this.store.usage(jobId) };
+  }
+  support(jobId: string, inputId: string, candidate: C.ResumeSpec, proposals: C.Proposal[], target?: C.SemanticTarget) {
+    const ctx = this.context(jobId, target, { candidate, proposals });
+    if (ctx.captured.input.id !== inputId) this.fail('Evidence decisions belong to different inputs.');
+    const view = this.read(jobId, target, { candidate, proposals });
+    return { support: C.semanticSupport(view), fingerprint: view.support_fingerprint };
+  }
+  binding(jobId: string, target?: C.SemanticTarget): NonNullable<C.ArtifactVersion['semantic_binding']> {
+    const ctx = this.context(jobId, target);
+    return { revision: this.store.head(jobId), configuration_key: ctx.configurationKey,
+      evaluated: this.store.evaluation(ctx.configurationKey, SEMANTIC_SUITE_VERSION)?.passed === true };
   }
   start(jobId: string, request: C.StartSemanticCheck, cycleId?: string, signal?: AbortSignal) {
     if (this.disposed) throw new RepositoryError('ineligible', 'Checker is shutting down.');
@@ -104,6 +119,9 @@ export class SemanticService {
       target_fingerprint: ctx.candidateFingerprint, idempotency_key: request.idempotency_key, automatic: !!cycleId });
     if (this.running.get(jobId)?.promise && this.activeId.get(jobId) === op.id) return { operation_id: op.id, state: op.state };
     if (op.state !== 'checking') return { operation_id: op.id, state: op.state };
+    // Replaying an interrupted dispatch must not spend another model call.
+    const dispatched = this.jobs.database.db.prepare('SELECT 1 FROM semantic_calls WHERE json_extract(payload,\'$.operation_id\')=? LIMIT 1').get(op.id);
+    if (dispatched) return this.operation(jobId, op.id);
     const prior = this.running.get(jobId); prior?.controller.abort();
     const controller = new AbortController(), abort = () => controller.abort();
     signal?.addEventListener('abort', abort, { once: true }); if (signal?.aborted) abort();
@@ -119,7 +137,14 @@ export class SemanticService {
   }
   private activeId = new Map<string, string>();
   async wait(jobId: string) { await this.running.get(jobId)?.promise; }
-  operation(jobId: string, id: string) { const op = this.store.operation(jobId, id); return { operation_id: op.id, state: op.state, reason: op.reason }; }
+  operation(jobId: string, id: string) {
+    const op = this.store.operation(jobId, id);
+    if (op.state === 'checking' && this.activeId.get(jobId) !== id) {
+      const lease = this.jobs.database.db.prepare('SELECT expires_at FROM semantic_leases WHERE job_id=?').get(jobId) as { expires_at: string } | undefined;
+      if (!lease || lease.expires_at <= new Date().toISOString()) return { operation_id: op.id, state: 'unavailable' as const, reason: 'The previous check was interrupted. Retry explicitly or review facts manually.' };
+    }
+    return { operation_id: op.id, state: op.state, reason: op.reason };
+  }
   private async execute(op: SemanticOperation, ctx: ReturnType<SemanticService['context']>, signal: AbortSignal) {
     if (!ctx.runner) throw Error('Configured runner is unavailable. Review facts manually.');
     if (ctx.runner.locality === 'cloud' && !this.deps.consent(ctx.runner)) throw Error('Cloud runner consent is required. Review facts manually or configure consent.');
@@ -151,7 +176,9 @@ export class SemanticService {
         this.store.complete(call, { schema_version: 1, id: randomUUID(), job_id: op.job_id, input_snapshot_id: op.input_snapshot_id,
           input_fingerprint: ctx.captured.input.fingerprint, candidate_fingerprint: ctx.candidateFingerprint,
           cache_key: batch.length === 1 ? this.cacheKey(ctx, batch[0]) : fingerprint(canonical(batch.map(p => this.cacheKey(ctx, p)))),
-          head_revision: 0, passages: outcome.passages, configuration_key: ctx.configurationKey, policy_version: C.SEMANTIC_VERSION,
+          head_revision: 0, passages: outcome.passages.map(p => ({ ...p, claims: p.claims.map(c => ({ ...c,
+            claim: { ...c.claim, id: fingerprint(canonical([p.subject.id, c.claim.start, c.claim.end, c.claim.fact])) } })) })),
+          configuration_key: ctx.configurationKey, policy_version: C.SEMANTIC_VERSION,
           evidence_set_fingerprint: ctx.evidenceFingerprint, clarification_fingerprints: [], provenance: 'model', recorded_at: new Date().toISOString() }, Date.now() - started);
       } catch (e) { this.store.failCall(call, e instanceof Error ? e.message : 'Result superseded', Date.now() - started); return; }
     }
@@ -164,12 +191,17 @@ export class SemanticService {
     if (selected.length !== new Set(request.claim_ids).size || !selected.every(f => C.sameFact(f.claim.fact, request.fact))) throw new RepositoryError('invalid_relationship', 'Select facts about the same work and exact claim scope.');
     if (selected.some(f => f.state === 'contradicted') && request.kind !== 'correction') throw new RepositoryError('ineligible', 'Record a dated correction to resolve contradictory evidence.');
     if (request.source_ids.some(id => !ctx.sources.some(s => s.evidence_id === id))) throw new RepositoryError('invalid_relationship', 'Use captured sources for this job.');
+    if (request.supporting_quotes?.some(q => !request.source_ids.includes(q.evidence_id) || !ctx.sources.some(s =>
+      s.evidence_id === q.evidence_id && s.evidence_fingerprint === q.evidence_fingerprint && s.field === q.field
+      && q.start >= s.start && q.end <= s.start + s.text.length && s.text.slice(q.start - s.start, q.end - s.start) === q.quote)))
+      throw new RepositoryError('invalid_relationship', 'The selected quotation must match captured evidence exactly.');
     if (request.kind === 'correction' && !selected.every(f => f.state !== 'contradicted' || (f.evidence.every(q => request.source_ids.includes(q.evidence_id)) && f.evidence.some(q => q.quote.includes(request.corrected_assertion ?? '\0')))))
       throw new RepositoryError('invalid_relationship', 'Identify the contradictory source assertion being corrected.');
     this.store.clarify(C.ClarificationSchema.parse({ schema_version: 1, id: randomUUID(), job_id: jobId, input_snapshot_id: ctx.captured.input.id,
       revision: 0, kind: request.kind, fact: request.fact, claim_ids: request.claim_ids, question: selected.map(f => f.question ?? f.claim.text).join('\n'),
       assertion: request.assertion, actor: 'local-human', recorded_at: new Date().toISOString(), source_ids: request.source_ids,
-      supersedes: request.supersedes, corrected_assertion: request.corrected_assertion, effective_date: request.effective_date }),
+      supersedes: request.supersedes, corrected_assertion: request.corrected_assertion, effective_date: request.effective_date,
+      supporting_quotes: request.supporting_quotes, confirmed: request.confirmed }),
       request.expected_semantic_revision, request.expected_job_revision, request.idempotency_key);
     return this.read(jobId, request.target);
   }

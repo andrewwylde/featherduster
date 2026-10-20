@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { EvidenceStore, type ResumeSpec } from '@featherduster/core';
 import { createApp } from '../src/server.js';
 import { createJobsRuntime, type JobsRuntime } from '../src/jobs/runtime.js';
+import { confirmJobFacts } from './fixtures/confirm-job-facts.js';
 
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanup.splice(0)) await fn(); });
@@ -61,7 +62,7 @@ function fixture() {
   };
   return { root, request, run, rendered, blocked, correct, writeBase, refreshAndPrepare, runtime: () => runtime };
 }
-const baseBlockers = (review: { validation: { issues: { subject: { kind: string; path?: string }; details: { severity: string; message: string }[] }[] } }) => review.validation.issues.filter(i => i.subject.kind === 'candidate' && i.details.some(d => d.severity === 'block'));
+const baseBlockers = (review: { validation: { issues: { subject: { kind: string; path?: string }; details: { severity: string; message: string; kind?: string }[] }[] } }) => review.validation.issues.filter(i => i.subject.kind === 'candidate' && i.details.some(d => d.severity === 'block' && d.kind !== 'fact_review'));
 
 it('rechecks a saved starting-resume correction in the active review without capturing inputs or invoking models', async () => {
   const f = fixture(); const { id, input, view } = await f.blocked();
@@ -72,7 +73,8 @@ it('rechecks a saved starting-resume correction in the active review without cap
   const { result } = await response.json();
   expect(result.review).toMatchObject({ id: view.review.id, revision: view.review.revision + 1, input_snapshot_id: input.id, base_corrections: [{ path: 'experiences.0.bullets.0.text', before: 'Reduced latency by 91%.', after: 'Improved service reliability for internal teams.', recorded_by: 'local-human' }] });
   expect(baseBlockers(result.review)).toEqual([]);
-  expect(result.review.validation.status).toBe('ready');
+  expect(result.review.validation.status).toBe('blocked');
+  expect(result.review.validation.issues.some((i: any) => i.details.some((d: any) => d.kind === 'fact_review'))).toBe(true);
   expect(result.review.validation.fingerprint).not.toBe(view.review.validation.fingerprint);
   expect(result.job.revision).toBe(before.revision + 1);
   expect(result.job.recovery).toMatchObject({ kind: 'proposals' });
@@ -101,7 +103,8 @@ it('keeps an unsupported corrected passage blocked', async () => {
 
 it('continues with the effective starting resume so the corrected passage reaches the rendered resume', async () => {
   const f = fixture(); const { id, input, view } = await f.blocked();
-  const { result } = await (await f.correct(id, view, 'Improved service reliability for internal teams.')).json();
+  await f.correct(id, view, 'Improved service reliability for internal teams.');
+  const result = confirmJobFacts(f.runtime(), id);
   f.run.mockResolvedValue({ summary: 'Brief', items: [] });
   const started = await f.request(`/api/jobs/${id}/proposals/${view.review.id}/continue`, { expected_job_revision: result.job.revision, expected_review_revision: result.review.revision, input_fingerprint: input.fingerprint, validation_fingerprint: result.review.validation.fingerprint, idempotency_key: randomUUID() });
   expect(started.status).toBe(202);
@@ -199,10 +202,17 @@ it('reports a stored overlay that no longer matches its captured wording as a cl
   expect((await f.request(`/api/jobs/${id}/proposals`)).status).toBe(200);
 });
 
-it('publishes a fresh, immediately ready preparation with the carried correction in its resume and review base', async () => {
+it('publishes a fresh preparation after confirming facts about the carried correction', async () => {
   const f = fixture(); const { id, view } = await f.blocked();
   await f.correct(id, view, 'Improved service reliability for internal teams.');
   await f.refreshAndPrepare(id, true);
+  expect(f.runtime().repository.getJob(id).preparation_state).toBe('needs_input');
+  const result = confirmJobFacts(f.runtime(), id);
+  f.run.mockResolvedValue({ summary: 'Brief', items: [] });
+  f.runtime().proposals.continue({ job_id: id, review_id: result.review.id, expected_job_revision: result.job.revision,
+    expected_review_revision: result.review.revision, input_fingerprint: result.review.input_fingerprint,
+    validation_fingerprint: result.review.validation.fingerprint, idempotency_key: randomUUID() });
+  await f.runtime().service.worker.whenIdle();
   const job = f.runtime().repository.getJob(id);
   expect(job.preparation_state).toBe('resume_ready');
   expect(f.rendered.at(-1)!.experiences[0].bullets[0].text).toBe('Improved service reliability for internal teams.');

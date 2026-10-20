@@ -273,8 +273,9 @@ it('captures applicable selected-source support once, independent of later withd
     .mockResolvedValueOnce({ proposals: [{ id: 'p', type: 'summary.rewrite', target: {}, after: 'Built backend', citations: ['ev-one'] }] } as any);
   expect((await f.request(`/api/jobs/${id}/prepare`, { expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: 'captured' })).status).toBe(202);
   await runtime.service.worker.whenIdle();
-  expect(runtime.repository.getJob(id).preparation_state).toBe('resume_ready');
-  expect(f.run).toHaveBeenCalledTimes(4);
+  expect(runtime.repository.getJob(id).preparation_state).toBe('needs_input');
+  expect(runtime.repository.getJob(id).recovery?.kind).toBe('stale_inputs');
+  expect(f.run).toHaveBeenCalledTimes(3);
   expect(JSON.stringify(f.run.mock.calls)).toContain('backend');
 });
 

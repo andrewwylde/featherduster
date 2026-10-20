@@ -93,7 +93,9 @@ export class ProposalRepository {
         if (active && (active.id !== expectedActive?.id || active.revision !== expectedActive.revision)) this.fail('revision_conflict', 'Explicit current review selection required to activate a new version');
       }
       const activeAttempt = this.jobs.database.db.prepare("SELECT id FROM attempts WHERE job_id=? AND status='active'").get(r.job_id) as { id: string } | undefined;
-      if (activeAttempt && (expectedRevision !== null || !fence || fence.attempt_id !== activeAttempt.id || g.attempt_id !== fence.attempt_id || !this.jobs.isAttemptCurrent(fence))) this.fail('invalid_ownership', 'Cannot edit during active execution');
+      if (activeAttempt && (!fence || fence.attempt_id !== activeAttempt.id || g.attempt_id !== fence.attempt_id || !this.jobs.isAttemptCurrent(fence))) this.fail('invalid_ownership', 'Cannot edit during active execution');
+      if (activeAttempt && expectedRevision !== null && this.jobs.database.db.prepare('SELECT 1 FROM attempt_proposal_reviews WHERE attempt_id=?').get(activeAttempt.id))
+        this.fail('invalid_ownership', 'Cannot edit a bound review during active execution');
       const latest = this.jobs.database.db.prepare('SELECT MAX(revision) AS revision FROM proposal_review_revisions WHERE id=?').get(r.id) as { revision: number | null };
       if (latest.revision !== expectedRevision || r.revision !== (expectedRevision === null ? 0 : expectedRevision + 1)) this.fail('revision_conflict', 'Stale review revision');
       if (expectedRevision !== null) {

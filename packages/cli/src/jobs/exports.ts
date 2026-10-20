@@ -7,6 +7,7 @@ import { JobMaterials } from './materials.js';
 import { JobsRepository, RepositoryError } from './repository.js';
 import { fingerprint } from './files.js';
 import type { selectJobSkillset } from './skillset.js';
+import type { SemanticService } from './semantic-service.js';
 
 const canonical = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
 export const JobExportRequestSchema = z.object({
@@ -24,7 +25,7 @@ type File = { name: string; type: string; confidential: boolean; bytes: string |
 export class JobExports {
   constructor(private readonly r: JobsRepository, private readonly artifacts: JobArtifactsService,
     private readonly materials: JobMaterials, private readonly select: (id: string, ids: string[]) => ReturnType<typeof selectJobSkillset>,
-    private readonly rules: () => C.PrivacyRulesConfig) {}
+    private readonly rules: () => C.PrivacyRulesConfig, private readonly semantic?: SemanticService) {}
 
   private resolve(jobId: string, request: JobExportRequest) {
     const job = this.r.getJob(jobId), view = this.artifacts.review(jobId, request.artifact_id);
@@ -36,6 +37,9 @@ export class JobExports {
     if (view.working_draft && canonical(view.working_draft.candidate) !== canonical(draft.candidate)) blocked('Working resume has pending edits. Save and check it before exporting; saved releases remain available.');
 const { context, rules } = currentResumeContext(this.r, this.artifacts, jobId, artifact.id, this.select, this.rules);
 const input = context.input;
+    if (artifact.semantic_binding && (!this.semantic || canonical(artifact.semantic_binding) !== canonical(this.semantic.binding(jobId,
+      { kind: 'draft', draft_id: draft.id, candidate: draft.candidate }))))
+      blocked('Evidence decisions changed. Check and finalize the current resume before creating a new release; saved PDFs remain available.');
 
     if (artifact.validation_result !== 'passed' || !artifact.pdf || !view.validation_report || view.validation_report.passed !== true || view.validation_report.pageCount !== 1 || view.validation_report.pageBudget !== 1 || input.policy.page_budget !== 1) blocked('A verified one-page PDF is required. Return to resume checks; exports never render a replacement.');
     const scan = C.redactText(C.compileMarkdownResume(draft.candidate), rules);

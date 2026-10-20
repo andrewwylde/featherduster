@@ -12,7 +12,7 @@ export function discoverEvidence(query: string, sources: DiscoverySource[]) {
   return { matches, searched: sources.length };
 }
 export function inventoryPassages(candidate: ResumeSpec, hash: (text: string) => string, previous: SemanticPassage[] = []): SemanticPassage[] {
-  const passages: { path: string; text: string; work_id: string }[] = [];
+  const passages: { path: string; text: string; work_id: string; work_context?: string }[] = [];
   // Summary assertions remain passage-specific until a source-backed work identity is established.
   if (candidate.summary?.trim()) passages.push({ path: 'summary', text: candidate.summary, work_id: `summary:${hash(candidate.summary)}` });
   candidate.experiences.forEach((e, ei) => {
@@ -20,7 +20,8 @@ export function inventoryPassages(candidate: ResumeSpec, hash: (text: string) =>
       // Sharing an employer/role alone never establishes that two bullets describe the same project.
       const work_id = hash(JSON.stringify([e.company, e.role, e.startDate, e.endDate,
         b.citations?.length ? [...b.citations].sort() : b.text]));
-      if (b.text.trim()) passages.push({ path: `experiences.${ei}.bullets.${bi}.text`, text: b.text, work_id });
+      if (b.text.trim()) passages.push({ path: `experiences.${ei}.bullets.${bi}.text`, text: b.text, work_id,
+        work_context: JSON.stringify({ company: e.company, role: e.role, start: e.startDate, end: e.endDate, cited_work: b.citations ?? [] }) });
     });
   });
   return passages.map(p => {

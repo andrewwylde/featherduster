@@ -8,6 +8,7 @@ import { fingerprint } from './files.js';
 import { JobsRepository, RepositoryError, type OwnershipFence } from './repository.js';
 import { ProposalRepository } from './proposal-repository.js';
 import type { JobsService } from './service.js';
+import type { SemanticService } from './semantic-service.js';
 
 const uuid = z.string().uuid();
 const revision = z.number().int().nonnegative();
@@ -31,7 +32,7 @@ export const claimFingerprint = (p: C.Proposal) => fingerprint(canonical({ propo
 
 /** No runners or renderer dependencies: editing and rechecking cannot execute models. */
 export class ProposalService {
-  constructor(readonly jobs: JobsRepository, readonly proposals: ProposalRepository, readonly artifacts: JobArtifactsService, readonly corpus: CorpusService, private readonly lifecycle?: JobsService) {}
+  constructor(readonly jobs: JobsRepository, readonly proposals: ProposalRepository, readonly artifacts: JobArtifactsService, readonly corpus: CorpusService, private readonly lifecycle?: JobsService, private readonly semantic?: SemanticService) {}
   private fail(message: string): never { throw new RepositoryError('invalid_relationship', message); }
   private context(g: C.ProposalGeneration) {
     const context = this.artifacts.preparationContext(g.attempt_id);
@@ -73,7 +74,7 @@ export class ProposalService {
   private effectiveBase(base: C.ResumeSpec, review: Pick<C.ProposalReviewRevision, 'base_corrections'>) {
     try { return C.effectiveBaseResume(base, review); } catch (error) { return this.fail(error instanceof Error ? error.message : 'Starting-resume correction mismatch'); }
   }
-  evaluate(g: C.ProposalGeneration, review: Pick<C.ProposalReviewRevision, 'id' | 'revision' | 'patches' | 'groundings' | 'base_corrections'>) {
+  evaluate(g: C.ProposalGeneration, review: Pick<C.ProposalReviewRevision, 'id' | 'revision' | 'patches' | 'groundings' | 'base_corrections'> & Partial<Pick<C.ProposalReviewRevision, 'validation'>>, semanticEnabled = review.validation?.version === '2') {
     const ctx = this.context(g);
     const corrections = review.base_corrections ?? [];
     const base = this.effectiveBase(ctx.captured.base_resume, review);
@@ -87,8 +88,10 @@ export class ProposalService {
       }
     }
     const supportFor = (p: C.Proposal): C.SkillSupport[] => [...ctx.captured.skillSupport, ...review.groundings.filter(x => x.proposal_id === p.id).map(x => ({ skill: x.term, facet: x.term, permitted_terms: [x.term], support: 'direct' as const, scope: { kind: 'job' as const, key: g.job_id }, sources: x.sources, explanation: x.explanation }))];
-    const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport }, ctx.rules, supportFor);
-    const validation: C.ProposalReviewRevision['validation'] = { authority: 'server', version: '1', fingerprint: fingerprint(canonical({ generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, proposals: overlay.proposals, groundings: review.groundings, validator_version: 1, ...(corrections.length ? { base_corrections: corrections } : {}) })), generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, status: result.valid ? 'ready' : 'blocked', issues: result.issues };
+    const intended = C.applyProposals(base, overlay.proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
+    const semantic = semanticEnabled && this.semantic ? this.semantic.support(g.job_id, g.input_snapshot_id, intended, overlay.proposals) : undefined;
+    const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport, semanticSupport: semantic?.support }, ctx.rules, supportFor);
+    const validation: C.ProposalReviewRevision['validation'] = { authority: 'server', version: semantic ? '2' : '1', fingerprint: fingerprint(canonical({ generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, proposals: overlay.proposals, groundings: review.groundings, validator_version: semantic ? 2 : 1, ...(semantic ? { semantic_fingerprint: semantic.fingerprint } : {}), ...(corrections.length ? { base_corrections: corrections } : {}) })), generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, status: result.valid ? 'ready' : 'blocked', issues: result.issues };
     return { candidate_preview: result.candidate, validation, proposals: result.proposals, appliedProposalIds: result.appliedProposalIds };
   }
   initial(g: C.ProposalGeneration, fence: OwnershipFence) {
@@ -100,6 +103,13 @@ export class ProposalService {
       const saved = this.proposals.appendReview({ ...value, candidate_preview, validation }, null, fence, active ?? undefined);
       this.event(saved, fence); return saved;
     }).immediate();
+  }
+  refreshFacts(review: C.ProposalReviewRevision, fence: OwnershipFence) {
+    const draft = { ...review, revision: review.revision + 1, groundings: review.groundings.map(g => ({ ...g, review_revision: review.revision + 1 })), created_at: new Date().toISOString() };
+    const result = this.evaluate(this.proposals.getGeneration(review.generation_id), draft, true);
+    const saved = this.proposals.appendReview({ ...draft, candidate_preview: result.candidate_preview, validation: result.validation }, review.revision, fence);
+    this.event(saved, fence);
+    return saved;
   }
   private event(review: C.ProposalReviewRevision, fence?: OwnershipFence) {
     this.jobs.appendEvent({ schema_version: 1, id: randomUUID(), workspace_id: review.workspace_id, job_id: review.job_id, created_at: new Date().toISOString(), actor: fence ? { kind: 'worker', id: 'proposal-preparation' } : { kind: 'user', id: 'local-human' }, attempt_id: fence?.attempt_id ?? null, idempotency_key: null, payload: { kind: 'proposal_review', review_id: review.id, revision: review.revision, generation_id: review.generation_id, input_fingerprint: review.input_fingerprint } });
@@ -114,7 +124,7 @@ export class ProposalService {
       if (request.removed_grounding_ids?.some(id => !review.groundings.some(g => g.id === id))) this.fail('Unknown grounding removal');
       const groundings = [...overlay.groundings.filter(g => !request.removed_grounding_ids?.includes(g.id) && !request.groundings.some(n => n.proposal_id === g.proposal_id && n.term === g.term)), ...request.groundings.map(g => ({ ...g, id: randomUUID(), recorded_by: 'local-human', recorded_at: new Date().toISOString() }))].map(g => ({ ...g, review_id, review_revision: nextRevision }));
       const draft = { ...review, revision: nextRevision, patches: overlay.patches, groundings, created_at: new Date().toISOString() };
-      const { candidate_preview, validation } = this.evaluate(generation, draft);
+      const { candidate_preview, validation } = this.evaluate(generation, draft, !!this.semantic);
       const feedback: C.FeedbackEvent = { schema_version: 1, id: randomUUID(), workspace_id: job.workspace_id, job_id, proposal_id: null, review_revision: nextRevision, kind: request.feedback_kind, before: canonical(review.patches), after: canonical(overlay.patches), explanation: request.explanation, scope: { kind: 'job', key: job_id }, recorded_by: 'local-human', recorded_at: draft.created_at };
       if (!request.remember) this.corpus.repository.saveFeedback(feedback);
       let update: C.CorpusUpdate | undefined;

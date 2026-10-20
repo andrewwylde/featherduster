@@ -159,6 +159,7 @@ export const CheckpointSchema = z.object({
 export type Checkpoint = z.infer<typeof CheckpointSchema>;
 export const ArtifactVersionSchema = z.object({
   origin: z.enum(['automatic', 'manual']).optional(),
+  semantic_binding: z.object({ revision: z.number().int().nonnegative(), configuration_key: text, evaluated: z.boolean() }).strict().optional(),
   ...jobEntity, attempt_id: uuid, input_snapshot_id: uuid, input_fingerprint: text, version_fingerprint: text,
   parent_version_id: uuid.nullable(), created_at: timestamp, source: ImmutableReferenceSchema,
   pdf: ImmutableReferenceSchema.nullable(), preview: ImmutableReferenceSchema.nullable(), validation_report: ImmutableReferenceSchema.nullable(),

@@ -3,6 +3,7 @@ import { CorpusRepository } from '../corpus/repository.js';
 import { CorpusService } from '../corpus/service.js';
 import { ProposalRepository } from './proposal-repository.js';
 import { ProposalService } from './proposal-service.js';
+import type { SemanticService } from './semantic-service.js';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import * as C from '@featherduster/core';
@@ -34,6 +35,7 @@ const renderedSchema = z.object({
 });
 const deslopSchema = z.object({ candidate: C.ResumeSpecSchema, edits: z.array(z.object({ path: z.string(), before: z.string(), after: z.string(), fixes: z.array(z.string()) })), issues: z.array(C.ValidationIssueSchema) });
 export interface PreparationDependencies {
+  semantic?: SemanticService;
   repository: JobsRepository;
   artifacts: JobArtifactsService;
   resolveRunner(settings: { runner: string; model: string }): ModelRunner | null;
@@ -46,7 +48,7 @@ export class JobPreparation {
     const { repository: r, artifacts, renderer } = this.deps;
     const fence = attemptFence(attempt);
     const proposalsRepository = new ProposalRepository(r);
-    const reviews = new ProposalService(r, proposalsRepository, artifacts, new CorpusService(new CorpusRepository(r), () => new C.EvidenceStore()));
+    const reviews = new ProposalService(r, proposalsRepository, artifacts, new CorpusService(new CorpusRepository(r), () => new C.EvidenceStore()), undefined, this.deps.semantic);
     const selection = proposalsRepository.getAttemptReview(attempt.id);
     let activeReview: C.ProposalReviewRevision | null = selection;
     const recovery = (kind: 'proposals' | 'candidate' | 'render'): C.JobRecovery => ({ kind, subject: {}, action: kind === 'render' ? 'retry_render' : 'review_proposals', ...(activeReview ? { review_id: activeReview.id, generation_id: activeReview.generation_id } : {}) });
@@ -137,15 +139,36 @@ export class JobPreparation {
       const raw = JSON.stringify(value); const id = randomUUID();
       const generation = proposalsRepository.saveGeneration({ schema_version: 1, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, raw_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/raw-output.json`, fingerprint: fingerprint(raw) }, proposals: { proposals: C.normalizeGenerationProposals(value.proposals) }, created_at: new Date().toISOString() }, fence, raw);
       activeReview = reviews.initial(generation, fence);
+      if (this.deps.semantic && C.inventoryPassages(C.applyProposals(base, generation.proposals.proposals.map(p => ({ ...p, decision: 'accepted' as const }))), fingerprint).length) {
+        if (!this.deps.semantic.context(attempt.job_id).inputCurrent)
+          throw new PreparationBlocked('Review current inputs before checking evidence.', { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' });
+        const facts = this.deps.semantic.read(attempt.job_id);
+        this.deps.semantic.start(attempt.job_id, { target: facts.target, input_fingerprint: facts.input_fingerprint,
+          expected_job_revision: facts.job_revision, expected_semantic_revision: facts.semantic_revision,
+          reason: 'check', idempotency_key: `preparation:${attempt.id}` }, attempt.id, signal);
+        await this.deps.semantic.wait(attempt.job_id); guard();
+        activeReview = reviews.refreshFacts(activeReview, fence);
+      }
       reviewed = reviews.evaluate(generation, activeReview);
       if (r.getJob(attempt.job_id).recovery?.recovery_attempt_id === attempt.id) throw new PreparationBlocked('Recovered output saved; inspect and explicitly continue', recovery('proposals'));
       if (reviewed.validation.status !== 'ready') throw new PreparationBlocked('Resolve saved proposal or candidate issues', recovery('proposals'));
       return { proposals: reviewed.proposals };
     });
+    if (!reviewed && this.deps.semantic) {
+      const cachedReview = proposalsRepository.getActive(attempt.job_id);
+      if (cachedReview?.validation.version === '2' && cachedReview.input_snapshot_id === input.id) {
+        activeReview = cachedReview;
+        reviewed = reviews.evaluate(proposalsRepository.getGeneration(cachedReview.generation_id), cachedReview);
+        if (reviewed.validation.fingerprint !== cachedReview.validation.fingerprint)
+          throw new PreparationBlocked('Facts changed since this saved preparation. Review current facts.', recovery('proposals'));
+      }
+    }
     const applied = reviewed ? { candidate: reviewed.candidate_preview, proposals: reviewed.proposals, appliedProposalIds: reviewed.appliedProposalIds, valid: reviewed.validation.status === 'ready' } : C.applyCandidateProposals(base, proposals.proposals, { analysis, alignment, evidence: all, skillSupport });
     if (!applied.valid) throw new PreparationBlocked('Resolve candidate issues', recovery('candidate'));
     await stage('brief', C.DefensibilityBriefSchema, () => model('brief', C.buildBriefPrompt(analysis, alignment, applied.proposals.filter(p => applied.appliedProposalIds.includes(p.id)), all, opts), C.DefensibilityBriefSchema));
-    const cleaned = await stage('deslop', deslopSchema, async () => C.deslopCandidate(applied.candidate));
+    // Once factual wording is approved, editorial cleanup must not silently broaden it.
+    const cleaned = await stage('deslop', deslopSchema, async () => activeReview?.validation.version === '2'
+      ? { candidate: applied.candidate, edits: [], issues: [] } : C.deslopCandidate(applied.candidate));
     if (cleaned.issues.some(i => i.severity === 'block')) throw new PreparationBlocked('Candidate editorial checks blocked publication', recovery('candidate'));
     const compiled = await stage('compile', renderedSchema, async () => {
       const retainFailure = (result: unknown, message: string): never => {
@@ -168,8 +191,14 @@ return renderedSchema.parse(checked.output);
     guard();
     r.database.db.transaction(() => {
       guard(); const now = new Date().toISOString();
+      if (activeReview?.validation.version === '2') {
+        const current = reviews.evaluate(proposalsRepository.getGeneration(activeReview.generation_id), activeReview);
+        if (current.validation.fingerprint !== activeReview.validation.fingerprint || current.validation.status !== 'ready')
+          throw new PreparationBlocked('Facts changed during preparation. Review the current facts.', recovery('proposals'));
+      }
       const draft = new JobDraftRepository(r).create({ schema_version: 1, id: randomUUID(), workspace_id: attempt.workspace_id, job_id: attempt.job_id, revision: 0, input_snapshot_id: input.id, parent_artifact_version_id: null, candidate: cleaned.candidate, proposals: { proposals: applied.proposals }, created_at: now, updated_at: now });
-      artifacts.publishCandidate({ draft_id: draft.id, expected_draft_revision: draft.revision, fence, source: compiled.source, pdf: Buffer.from(compiled.pdf, 'base64'), previews: compiled.previews.map(p => Buffer.from(p, 'base64')), validation_report: JSON.stringify(compiled.report), validation_result: 'passed' });
+      artifacts.publishCandidate({ draft_id: draft.id, expected_draft_revision: draft.revision, fence, source: compiled.source, pdf: Buffer.from(compiled.pdf, 'base64'), previews: compiled.previews.map(p => Buffer.from(p, 'base64')), validation_report: JSON.stringify(compiled.report), validation_result: 'passed',
+        semantic_binding: activeReview?.validation.version === '2' ? this.deps.semantic?.binding(attempt.job_id) : undefined });
     }).immediate();
   }
 }

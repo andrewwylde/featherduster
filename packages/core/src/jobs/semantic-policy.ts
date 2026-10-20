@@ -7,12 +7,22 @@ export interface SemanticSupport {
   text: string;
   resolved: boolean;
   citations: string[];
+  resolved_spans?: { start: number; end: number }[];
+}
+export function semanticSupportsTerm(support: SemanticSupport | undefined, term: string): boolean {
+  if (!support) return false;
+  if (support.resolved) return true;
+  const escaped = term.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  if (!escaped) return false;
+  const occurrences = [...support.text.matchAll(new RegExp(`(?<![A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, 'gi'))];
+  return occurrences.length > 0 && occurrences.every(m => support.resolved_spans?.some(s => s.start <= m.index && s.end >= m.index + m[0].length));
 }
 export function semanticSupport(view: JobFacts): SemanticSupport[] {
   return [...new Set(view.facts.map(f => f.passage.subject.id))].map(id => {
     const facts = view.facts.filter(f => f.passage.subject.id === id), p = facts[0].passage;
     return { path: p.subject.path, proposal_id: p.subject.proposal_id, text: p.text,
       resolved: facts.length > 0 && facts.every(f => !!f.resolution),
+      resolved_spans: facts.filter(f => !!f.resolution).map(f => ({ start: f.claim.start, end: f.claim.end })),
       citations: [...new Set(facts.filter(f => !!f.resolution).flatMap(f => f.evidence.map(e => e.evidence_id)))] };
   });
 }

@@ -18,6 +18,15 @@ it('accepts exact source-bound support with one non-retrying call', async () => 
   expect(model.run).toHaveBeenCalledOnce();
   expect(model.run).toHaveBeenCalledWith(expect.objectContaining({ transportRetryCount: 0 }));
 });
+it('computes exact positions from unique literal quotations without trusting model counting', async () => {
+  const value = response() as any;
+  delete value.passages[0].claims[0].claim.start; delete value.passages[0].claims[0].claim.end;
+  delete value.passages[0].claims[0].evidence[0].start; delete value.passages[0].claims[0].evidence[0].end;
+  const result = await classifyBatch(runner(value), request, new AbortController().signal);
+  expect(result.status).toBe('complete');
+  if (result.status === 'complete') expect(result.passages[0].claims[0].evidence[0]).toMatchObject({ start: 0, end: quote.length });
+  expect((await classifyBatch(runner(value), { ...request, sources: [{ ...request.sources[0], text: `${quote} ${quote}` }] }, new AbortController().signal)).status).toBe('unavailable');
+});
 it('rejects fabricated quotes, missing passages, duplicate claims, unknown work and oversized output', async () => {
   const badQuote = response(); badQuote.passages[0].claims[0].evidence[0].quote = 'invented';
   const badWork = response(); badWork.passages[0].claims[0].claim.fact.work_id = 'other';

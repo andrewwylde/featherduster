@@ -1,4 +1,5 @@
 import { supportsTerm } from '../corpus/knowledge.js';
+import { semanticSupportsTerm } from './semantic-policy.js';
 import type { z } from 'zod';
 import type { ResumeSpec } from '../schemas/resume.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
@@ -80,7 +81,7 @@ export function validateCandidateProposals(proposals: Proposal[], context: Propo
       // Check all posting vocabulary, including omitted requirement_ids and terms already on the base.
       const grounding = cited.map(r => [r.entry.title, r.entry.summary, r.entry.impact, r.entry.themes.join(' '), r.narrative].join('\n')).join('\n');
       const terms = context.analysis.requirements.flatMap(r => r.terms)
-        .filter(term => containsTerm(text, term) && !containsTerm(grounding, term) && !supportsTerm(term, p.citations, cited, context.skillSupport ?? []));
+        .filter(term => containsTerm(text, term) && !semanticSupportsTerm(semantic, term) && !containsTerm(grounding, term) && !supportsTerm(term, p.citations, cited, context.skillSupport ?? []));
       if (terms.length && !semantic?.resolved) checks.push(block('unsupported_experience', `Direct experience is not supported by cited evidence: ${[...new Set(terms)].join(', ')}.`));
       if (semantic && !semantic.resolved) checks.push(block('fact_review', 'Review the factual claims in this wording.'));
     }

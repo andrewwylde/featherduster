@@ -55,13 +55,13 @@ export type Clarification = z.infer<typeof ClarificationSchema>;
 export type ClaimResult = z.infer<typeof ClaimResultSchema>;
 export type PassageResult = z.infer<typeof PassageResultSchema>;
 export type SemanticResult = z.infer<typeof SemanticResultSchema>;
-export interface SemanticPassage { subject: Subject; text: string; work_id: string; inherited: boolean }
+export interface SemanticPassage { subject: Subject; text: string; work_id: string; inherited: boolean; work_context?: string }
 export interface SemanticSource { evidence_id: string; evidence_fingerprint: string; work_id: string;
-  field: SourceQuote['field']; start: number; text: string }
+  field: SourceQuote['field']; start: number; text: string; company?: string }
 export interface SemanticBatchRequest {
   subjects: SemanticPassage[]; sources: SemanticSource[]; configuration_key: string;
   configuredStepTimeoutMs: number;
   coverage: { searched_source_count: number; omitted_source_ids: string[]; truncated: boolean };
 }
 export interface EvaluationRecord { configuration_key: string; suite_hash: string; passed: boolean; recorded_at: string;
-  observations: { case_id: string; repetition: number; expected: string; actual: string; quotes_valid: boolean; elapsed_ms: number }[] }
+  observations: { case_id: string; repetition: number; expected: string; actual: string; quotes_valid: boolean; elapsed_ms: number; reason?: string }[] }

@@ -7,6 +7,7 @@ import { claimFingerprint } from './proposal-service.js';
 import { currentResumeContext, canonicalResumeValue as canonical, type SelectResumeEvidence } from './resume-context.js';
 import { checkedRender, type CheckedPdf } from './checked-render.js';
 import type { LatexRenderer } from '../render/latex-renderer.js';
+import type { SemanticService } from './semantic-service.js';
 type Cached = { result: C.JobDraftCheck; output?: CheckedPdf; expires: number; bytes: number };
 export class JobDraftFinalization {
   private cache = new Map<string, Cached>();
@@ -16,17 +17,18 @@ export class JobDraftFinalization {
   private closed = false;
   constructor(private r: JobsRepository, private artifacts: JobArtifactsService,
     private select: SelectResumeEvidence, private rules: () => C.PrivacyRulesConfig,
-    private renderer: Pick<LatexRenderer, 'renderPdf'>) {}
+    private renderer: Pick<LatexRenderer, 'renderPdf'>, private semantic?: SemanticService) {}
   private context(jobId: string, draftId: string, candidate: C.ResumeSpec) {
     const draft = this.r.getLatestDraft(draftId);
     if (draft.job_id !== jobId || !draft.parent_artifact_version_id) throw new RepositoryError('invalid_relationship', 'Select a job-linked draft.');
     const ctx = currentResumeContext(this.r, this.artifacts, jobId, draft.parent_artifact_version_id, this.select, this.rules);
     if (draft.input_snapshot_id !== ctx.context.input.id) throw new RepositoryError('invalid_relationship', 'Draft inputs changed.');
+    const semantic = this.semantic?.support(jobId, draft.input_snapshot_id, candidate, draft.proposals.proposals, { kind: 'draft', draft_id: draftId, candidate });
     const binding: C.DraftBinding = { candidate_fingerprint: fingerprint(canonical(candidate)),
-      context_fingerprint: ctx.contextFingerprint, input_snapshot_id: ctx.context.input.id,
+      context_fingerprint: semantic ? fingerprint(canonical([ctx.contextFingerprint, semantic.fingerprint])) : ctx.contextFingerprint, input_snapshot_id: ctx.context.input.id,
       input_fingerprint: ctx.context.input.fingerprint, parent_artifact_id: ctx.artifact.id,
       parent_artifact_fingerprint: ctx.artifact.version_fingerprint };
-    return { ...ctx, draft, binding };
+    return { ...ctx, draft, binding, semantic };
   }
   private key(jobId: string, draftId: string, binding: C.DraftBinding) { return canonical({ jobId, draftId, binding }); }
   private prune() {
@@ -80,7 +82,7 @@ export class JobDraftFinalization {
       const parent = this.artifacts.review(jobId, ctx.artifact.id), { proposals, supportFor } = this.supports(ctx);
       if (!parent.analysis || !parent.alignment) throw new RepositoryError('ineligible', 'The preparation context is unavailable. Review job inputs.');
       const issues = C.checkCandidateFields(candidate, proposals, { baseResume: parent.base_resume,
-        analysis: parent.analysis, alignment: parent.alignment, evidence: ctx.context.evidence.getAll(), skillSupport: ctx.context.skillSupport }, ctx.rules, supportFor);
+        analysis: parent.analysis, alignment: parent.alignment, evidence: ctx.context.evidence.getAll(), skillSupport: ctx.context.skillSupport, semanticSupport: ctx.semantic?.support }, ctx.rules, supportFor);
       let output: CheckedPdf | undefined;
       let status: C.JobDraftCheck['status'] = issues.some(i => i.severity === 'block') ? 'blocked' : 'ready';
       if (status === 'ready') {
@@ -129,7 +131,8 @@ export class JobDraftFinalization {
         expected_draft_revision: request.expected_draft_revision, expected_job_revision: request.expected_job_revision,
         parent_artifact_id: request.binding.parent_artifact_id, parent_artifact_fingerprint: request.binding.parent_artifact_fingerprint,
         source: verified.source, pdf: Buffer.from(verified.pdf, 'base64'), previews: verified.previews.map(p => Buffer.from(p, 'base64')),
-        validation_report: JSON.stringify(verified.report), idempotency_key });
+        validation_report: JSON.stringify(verified.report), idempotency_key,
+        semantic_binding: this.semantic?.binding(jobId, { kind: 'draft', draft_id: draftId, candidate: saved.candidate }) });
       return { artifact };
     }).result;
   }
