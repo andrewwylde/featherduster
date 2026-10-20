@@ -1,7 +1,7 @@
 # Semantic evidence validation and factual review
 
 Date: 2026-10-19
-Status: Architecture and behavior approved in conversation; written specification awaiting user review.
+Status: Written specification approved by the user on 2026-10-20. Implementation plan: `docs/superpowers/plans/2026-10-20-semantic-evidence-review.md`.
 Planning task: Taskmaster 30.
 
 ## Outcome
