@@ -1,5 +1,5 @@
-import { useCallback, useState } from 'react';
-import { Briefcase, ChevronRight, FileCheck, AlertCircle, RefreshCw, ArrowUpDown, XCircle } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { Briefcase, ChevronRight, FileCheck, AlertCircle, RefreshCw, ArrowUpDown, XCircle, CheckCircle, X } from 'lucide-react';
 import type { Job } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
@@ -38,6 +38,11 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [trackingError, setTrackingError] = useState('');
   const [trackingNotice, setTrackingNotice] = useState('');
+  useEffect(() => {
+    if (!trackingNotice) return;
+    const timeout = window.setTimeout(() => setTrackingNotice(''), 6000);
+    return () => window.clearTimeout(timeout);
+  }, [trackingNotice]);
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [busyCancelId, setBusyCancelId] = useState<string | null>(null);
@@ -202,7 +207,15 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
         {filter === 'Applied' && <p className="text-sm text-slate-500">Applications you recorded as submitted. Mark applied only updates tracking.</p>}
       </section>
       {trackingError && <p role="alert">{trackingError}</p>}
-      {trackingNotice && <p role="status">{trackingNotice}</p>}
+      {trackingNotice && (
+        <div className="fixed bottom-6 right-4 z-50 flex max-w-[calc(100vw-2rem)] items-center gap-3 rounded-xl border border-emerald-200 bg-white p-4 text-sm text-slate-900 shadow-lg dark:border-emerald-800 dark:bg-slate-900 dark:text-white sm:right-6 sm:max-w-md">
+          <CheckCircle className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden="true" />
+          <p role="status" aria-atomic="true">{trackingNotice}</p>
+          <button type="button" aria-label="Dismiss notification" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-vermilion-500 dark:hover:bg-slate-800" onClick={() => setTrackingNotice('')}>
+            <X className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       {/* Status Messages */}
       {error && (
