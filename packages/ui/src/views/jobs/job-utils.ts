@@ -18,7 +18,7 @@ export function formatDateTime(iso: string): string {
   return Number.isNaN(date.getTime()) ? iso : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export const jobFilters = ['All', 'Queued', 'Preparing', 'Needs input', 'Resume ready', 'Archived'] as const;
+export const jobFilters = ['Needs work', 'Applied', 'Archived', 'All', 'Queued', 'Preparing', 'Needs input', 'Resume ready'] as const;
 export type JobFilter = typeof jobFilters[number];
 
 /** Reason codes the posting capture writes as `code: message`; see posting-fetcher and intake. */
@@ -121,6 +121,11 @@ export function compareJobs(a: Job, b: Job, order: 'desc' | 'asc' = 'desc'): num
 
 export function matchesJobFilter(job: Job, filter: JobFilter | string): boolean {
   switch (filter) {
+    case 'Needs work':
+      return !job.archived_at && !['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle)
+        && !['skipped', 'cancelled'].includes(job.preparation_state);
+    case 'Applied':
+      return ['submitted', 'outcome_recorded'].includes(job.application_lifecycle);
     case 'Queued':
       return isQueued(job);
     case 'Preparing':
@@ -130,7 +135,7 @@ export function matchesJobFilter(job: Job, filter: JobFilter | string): boolean 
     case 'Resume ready':
       return job.preparation_state === 'resume_ready';
     case 'Archived':
-      return job.preparation_state === 'skipped' || job.preparation_state === 'cancelled';
+      return Boolean(job.archived_at) || job.preparation_state === 'skipped' || job.preparation_state === 'cancelled';
     default:
       return true;
   }
@@ -167,6 +172,7 @@ export const actorLabel = (kind: string) => kind === 'user' ? 'You' : kind === '
 /** A short human description of a history event; raw fields belong in a "Details" disclosure. */
 export function describeJobEvent(payload: JobEvent['payload']): string {
   switch (payload.kind) {
+    case 'archive_change': return payload.archived ? 'Job archived' : 'Job restored from archive';
     case 'preparation_transition': return preparationEvents[payload.to] ?? 'Preparation status changed';
     case 'application_transition': return `Application marked as ${applicationStates[payload.to] ?? 'changed'}`;
     case 'proposal_review': return `Proposal review saved (revision ${payload.revision})`;

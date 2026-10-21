@@ -56,7 +56,7 @@ export class PreparationBatchRepository {
       const members = request.members.map((selection, position) => {
         const job = this.jobs.getJob(selection.job_id);
         if (job.revision !== selection.expected_revision) throw new RepositoryError('revision_conflict', 'Selected job changed; reload before preparing.');
-        if (job.kind !== 'job' || ['queued', 'preparing'].includes(job.preparation_state) || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle)
+        if (job.archived_at || job.kind !== 'job' || ['queued', 'preparing'].includes(job.preparation_state) || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle)
           || this.members().some(m => m.job_id === job.id && ['pending', 'running'].includes(m.state))) throw new RepositoryError('ineligible', 'Selected job is not available for preparation.');
         const input = capture(job.id, job.revision), cycle = this.newCycle(job.id, input.id);
         batch.members.push({ job_id: job.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, position });

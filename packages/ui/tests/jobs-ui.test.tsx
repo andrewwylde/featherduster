@@ -79,7 +79,7 @@ it('routes validated job sections and linked drafts without interpreting them as
   expect(jobDraftForPath(`/tailor/canvas/jobs/${id}/${version}`)).toEqual({ jobId: id, draftId: version });
 });
 it('keeps application and preparation filters independent and retains archived records', async () => {
-  expect(filters).not.toContain('Applied');
+  expect(filters).toContain('Applied');
   expect(matchesJobFilter(job({ application_lifecycle: 'needs_input' }), 'Needs input')).toBe(true);
   for (const [filter, state] of [['Queued', 'queued'], ['Preparing', 'preparing'], ['Needs input', 'needs_input'], ['Resume ready', 'resume_ready'], ['Archived', 'cancelled']] as const) expect(matchesJobFilter(job({ preparation_state: state }), filter)).toBe(true);
   expect(matchesJobFilter(job({ preparation_state: 'resume_ready', application_lifecycle: 'submitted' }), 'Resume ready')).toBe(true);
@@ -88,9 +88,8 @@ it('keeps application and preparation filters independent and retains archived r
   const heading = await screen.findByRole('heading', { level: 2, name: 'Acme — Engineer' });
   expect(within(heading).getByRole('link')).toHaveAttribute('href', `/jobs/${id}`);
   expect(screen.queryByText(/Application: not_started/)).not.toBeInTheDocument();
-  fireEvent.click(screen.getByText('Filter saved jobs and retained history'));
   fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'Archived' } });
-  expect(screen.getByText('Skipped and cancelled jobs; records are retained.')).toBeInTheDocument();
+  expect(screen.getByText('Archived, skipped and cancelled jobs; resumes and history are retained.')).toBeInTheDocument();
   expect(screen.getByText('No jobs match this filter.')).toBeInTheDocument();
   expect(apiClient.prepareJob).not.toHaveBeenCalled(); expect(apiClient.controlJobs).not.toHaveBeenCalled();
 });
@@ -281,6 +280,7 @@ it('sorts jobs by needs_input, queued, then others, sub-sorted by created date',
   vi.spyOn(apiClient, 'getJobs').mockResolvedValue({ jobs: unsorted });
   render(<JobsView navigate={vi.fn()} />);
 
+  fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'All' } });
   await screen.findByText(/Epsilon Tech — Engineer 5/);
   const headings = screen
     .getAllByRole('heading', { level: 2 })
@@ -715,4 +715,53 @@ it('opens automatic questions from saved-job and worker review links instead of 
   expect(navigate).toHaveBeenLastCalledWith(questionPath);
   fireEvent.click(screen.getByRole('button', { name: 'Review jobs' }));
   expect(await screen.findByRole('link', { name: 'Review Acme — Engineer' })).toHaveAttribute('href', questionPath);
+});
+
+
+it('defaults to unfinished work and lets users mark applied, archive and restore with visible controls', async () => {
+  let jobs = [job({ preparation_state: 'resume_ready' }), job({ id: version, company: 'Done', preparation_state: 'resume_ready', application_lifecycle: 'submitted' })];
+  vi.mocked(apiClient.getJobs).mockImplementation(async () => ({ jobs }));
+  const track = vi.spyOn(apiClient, 'trackJob').mockImplementation(async (jobId, request) => {
+    jobs = jobs.map(j => j.id !== jobId ? j : { ...j, revision: j.revision + 1,
+      application_lifecycle: request.action === 'applied' ? 'submitted' : request.action === 'unapply' ? 'not_started' : j.application_lifecycle,
+      archived_at: request.action === 'archive' ? time : request.action === 'restore' ? null : j.archived_at });
+    return {};
+  });
+  render(<JobsView navigate={vi.fn()} />);
+  await screen.findByRole('heading', { name: 'Acme — Engineer' });
+  expect(screen.queryByRole('heading', { name: 'Done — Engineer' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Mark applied' }));
+  await screen.findByText(/All caught up/);
+  expect(track).toHaveBeenCalledWith(id, expect.objectContaining({ action: 'applied', expected_revision: 2 }));
+  fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'Applied' } });
+  const card = screen.getByRole('heading', { name: 'Acme — Engineer' }).closest('li')!;
+  fireEvent.click(within(card).getByRole('button', { name: 'Mark not applied' }));
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'Acme — Engineer' })).not.toBeInTheDocument());
+  fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'Needs work' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Archive job' }));
+  await screen.findByText(/All caught up/);
+  fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'Archived' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Restore from archive' }));
+  await screen.findByText('No jobs match this filter.');
+  fireEvent.change(screen.getByLabelText('Filter jobs'), { target: { value: 'Needs work' } });
+  expect(screen.getByRole('heading', { name: 'Acme — Engineer' })).toBeInTheDocument();
+});
+
+it('retains a job and surfaces tracking failures', async () => {
+  vi.mocked(apiClient.getJobs).mockResolvedValue({ jobs: [job({ preparation_state: 'saved' })] });
+  vi.spyOn(apiClient, 'trackJob').mockRejectedValue(new Error('Stale revision. Reload jobs.'));
+  render(<JobsView navigate={vi.fn()} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Archive job' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Stale revision');
+  expect(screen.getByRole('heading', { name: 'Acme — Engineer' })).toBeInTheDocument();
+});
+
+it('keeps terminal history out of Needs work while retaining ready resumes and recoverable failures', () => {
+  for (const preparation_state of ['saved', 'queued', 'preparing', 'needs_input', 'resume_ready', 'failed', 'interrupted'] as const)
+    expect(matchesJobFilter(job({ preparation_state }), 'Needs work')).toBe(true);
+  for (const application_lifecycle of ['submitted', 'outcome_recorded', 'unknown'] as const)
+    expect(matchesJobFilter(job({ application_lifecycle }), 'Needs work')).toBe(false);
+  expect(matchesJobFilter(job({ archived_at: time }), 'Needs work')).toBe(false);
+  for (const preparation_state of ['cancelled', 'skipped'] as const)
+    expect(matchesJobFilter(job({ preparation_state }), 'Needs work')).toBe(false);
 });

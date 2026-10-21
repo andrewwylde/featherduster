@@ -24,11 +24,15 @@ export class PreparationCoordinator {
   }
   async whenIdle() { await this.running; await this.service.worker.whenIdle(); }
   private get r(): JobsRepository { return this.store.jobs; }
+  private inactive(jobId: string) {
+    const job = this.r.getJob(jobId);
+    return Boolean(job.archived_at) || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle);
+  }
   private async tick() {
     const control = this.r.getControl();
     if (control.stopped_at || control.pause_after_current) return;
     for (const member of this.store.members()) {
-      if (member.state !== 'running') continue;
+      if (member.state !== 'running' || this.inactive(member.job_id)) continue;
       const job = this.r.getJob(member.job_id);
       if (job.preparation_state === 'preparing') continue;
       if (job.preparation_state === 'interrupted' && member.attempt_id && this.r.getAttempt(member.attempt_id).stop_generation === control.stop_generation) {
@@ -47,7 +51,7 @@ export class PreparationCoordinator {
       this.store.save({ ...member, state: job.preparation_state === 'resume_ready' ? 'ready' : factual ? 'question' : 'technical', questions_visible: factual, diagnostic: job.state_reason ?? undefined });
     }
     if (this.service.worker.busy || this.r.active().length) return;
-    const member = this.store.members().find(m => m.state === 'pending');
+    const member = this.store.members().find(m => m.state === 'pending' && !this.inactive(m.job_id));
     if (!member) return;
     try {
       if (member.draft_id) { await this.refreshDraft(member); return; }
@@ -68,7 +72,7 @@ export class PreparationCoordinator {
             input_fingerprint: facts.input_fingerprint, reason: 'retry', idempotency_key: `batch-resolve:${member.cycle_id}:${active.revision}` }, member.cycle_id);
           await this.semantic.wait(job.id);
         }
-        if (this.store.enrolled(job.id)?.cycle_id !== member.cycle_id || this.r.getControl().stop_generation !== control.stop_generation || this.r.getControl().stopped_at) return;
+        if (this.inactive(job.id) || this.store.enrolled(job.id)?.cycle_id !== member.cycle_id || this.r.getControl().stop_generation !== control.stop_generation || this.r.getControl().stopped_at) return;
         const fresh = this.proposals.refreshFacts(active);
         if (fresh.validation.status !== 'ready') {
           const failed = this.semantic.read(job.id).execution === 'unavailable';
@@ -120,7 +124,7 @@ export class PreparationCoordinator {
     const stopGeneration = this.r.getControl().stop_generation;
     const guard = () => {
       const control = this.r.getControl();
-      if (this.disposed || control.stopped_at || control.stop_generation !== stopGeneration || this.store.enrolled(member.job_id)?.cycle_id !== member.cycle_id)
+      if (this.inactive(member.job_id) || this.disposed || control.stopped_at || control.stop_generation !== stopGeneration || this.store.enrolled(member.job_id)?.cycle_id !== member.cycle_id)
         throw new RepositoryError('invalid_ownership', 'Automatic draft refresh was stopped or superseded. Saved edits are retained.');
     };
     guard();

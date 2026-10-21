@@ -63,7 +63,7 @@ export class JobWorker {
       while (!this.disposed && this.deps.automaticDrain !== false) {
         const control = r.getControl();
         if (!control.automatic_preparation_enabled || control.pause_after_current || control.stopped_at || r.active().length) break;
-        const job = r.listJobs().find(j => j.kind === 'job' && j.preparation_state === 'queued' && !j.missing_inputs.length && !['submitted', 'outcome_recorded', 'unknown'].includes(j.application_lifecycle));
+        const job = r.listJobs().find(j => !j.archived_at && j.kind === 'job' && j.preparation_state === 'queued' && !j.missing_inputs.length && !['submitted', 'outcome_recorded', 'unknown'].includes(j.application_lifecycle));
         if (!job) break;
         const prior = job.current_attempt_id ?? undefined;
         const events = new Set(r.listEvents(job.id).map(e => e.id));

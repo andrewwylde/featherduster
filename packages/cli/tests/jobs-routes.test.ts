@@ -432,3 +432,39 @@ it('binds starting-resume corrections to an active proposal review without captu
   expect(f.runtime().artifacts.capturedContext(fresh.input_snapshot.id).base_resume).toEqual(f.runtime().artifacts.capturedContext(input.id).base_resume);
   expect(fresh.unapplied_base_corrections).toEqual([]);
 });
+
+
+it('tracks applied and archive independently, preserves content, and supports safe retries and undo', async () => {
+  const f = fixture(); const id = await f.add(); const r = f.runtime().repository;
+  const original = r.getJob(id);
+  const body = { action: 'archive', expected_revision: original.revision, idempotency_key: 'archive-once' };
+  expect((await f.request(`/api/jobs/${id}/tracking`, body)).status).toBe(200);
+  const archived = r.getJob(id);
+  expect(archived.archived_at).toBeTruthy();
+  expect(archived.posting_snapshot_id).toBe(original.posting_snapshot_id);
+  expect(archived.artifact_version_ids).toEqual(original.artifact_version_ids);
+  expect(archived.application_lifecycle).toBe('not_started');
+  expect((await f.request(`/api/jobs/${id}/tracking`, body)).status).toBe(200);
+  expect(r.getJob(id).revision).toBe(archived.revision);
+  expect((await f.request(`/api/jobs/${id}/tracking`, { ...body, action: 'restore', idempotency_key: 'stale' })).status).toBe(409);
+  for (const action of ['applied', 'restore', 'unapply']) {
+    expect((await f.request(`/api/jobs/${id}/tracking`, { action, expected_revision: r.getJob(id).revision, idempotency_key: action })).status).toBe(200);
+    if (action === 'applied') expect(r.getJob(id).application_lifecycle).toBe('submitted');
+    if (action === 'restore') { expect(r.getJob(id).archived_at).toBeNull(); expect(r.getJob(id).application_lifecycle).toBe('submitted'); }
+  }
+  expect(r.getJob(id).application_lifecycle).toBe('not_started');
+  expect(r.listEvents(id).filter(e => e.payload.kind === 'archive_change')).toHaveLength(2);
+  expect(f.run).not.toHaveBeenCalled();
+});
+
+it('rejects tracking changes while preparation is active and archived jobs cannot be prepared', async () => {
+  const f = fixture(); const id = await f.add(); const r = f.runtime().repository;
+  r.transitionPreparation(id, 'prepare', r.getJob(id).revision, 'queue');
+  expect((await f.request(`/api/jobs/${id}/tracking`, { action: 'archive', expected_revision: r.getJob(id).revision, idempotency_key: 'busy' })).status).toBe(409);
+  r.cancelJob(id, r.getJob(id).revision, 'cancel');
+  await f.request(`/api/jobs/${id}/tracking`, { action: 'archive', expected_revision: r.getJob(id).revision, idempotency_key: 'archive' });
+  const input = await (await f.request(`/api/jobs/${id}/inputs`, { expected_revision: r.getJob(id).revision })).json();
+  const response = await f.request(`/api/jobs/${id}/retry`, { expected_revision: r.getJob(id).revision, input_snapshot_id: input.input_snapshot.id, idempotency_key: 'retry' });
+  expect(response.status).toBe(409);
+  expect(f.run).not.toHaveBeenCalled();
+});

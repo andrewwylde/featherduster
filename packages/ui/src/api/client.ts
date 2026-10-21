@@ -378,6 +378,7 @@ export class ApiClient {
   retryAutomaticPreparation(jobId: string, body: { expected_revision: number; idempotency_key: string }) { return this.fetchJson(`/api/jobs/${jobId}/automatic-retry`, { method: 'POST', body: JSON.stringify(body) }); }
   undoPreparationRepair(jobId: string, repairId: string, body: { expected_revision: number; idempotency_key: string }) { return this.fetchJson(`/api/jobs/${jobId}/preparation-repairs/${repairId}/undo`, { method: 'POST', body: JSON.stringify(body) }); }
   getJobs() { return this.fetchJson<{ jobs: Job[]; preparation_links?: Record<string, { batch_id: string; state: string }> }>('/api/jobs'); }
+  trackJob(id: string, body: { action: 'applied' | 'unapply' | 'archive' | 'restore'; expected_revision: number; idempotency_key: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/tracking`, this.jsonRequest('POST', body)); }
   getJobMaterial(id: string, kind: import('@featherduster/core').MaterialContent['kind']) {
     return this.fetchJson<{ current: import('@featherduster/core').MaterialRevision | null; history: import('@featherduster/core').MaterialRevision[]; stale_reasons: string[] }>(`/api/jobs/${id}/materials/${kind}`);
   }

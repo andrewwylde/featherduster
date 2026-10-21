@@ -118,7 +118,8 @@ export class JobsRepository {
   updateJob(value: C.Job, expectedRevision: number): C.Job {
     return this.tx(() => {
       const next = C.JobSchema.parse(value); this.workspace(next); const old = this.getJob(next.id); this.revision(old.revision, expectedRevision);
-      for (const field of ['id', 'workspace_id', 'revision', 'created_at', 'kind', 'canonical_url', 'original_url', 'preparation_state', 'application_lifecycle', 'preparation_stage', 'current_attempt_id', 'artifact_version_ids'] as const) if (stable(next[field]) !== stable(old[field])) this.error('invalid_relationship', `Cannot edit ${field} directly`);
+      if (next.archived_at !== old.archived_at) this.error('invalid_relationship', 'Use job tracking to archive or restore a job');
+      for (const field of ['id', 'workspace_id', 'revision', 'created_at', 'kind', 'canonical_url', 'original_url', 'archived_at', 'preparation_state', 'application_lifecycle', 'preparation_stage', 'current_attempt_id', 'artifact_version_ids'] as const) if (stable(next[field]) !== stable(old[field])) this.error('invalid_relationship', `Cannot edit ${field} directly`);
       this.jobLinks(next); return this.putJob(next);
     });
   }
@@ -295,6 +296,22 @@ export class JobsRepository {
       const next = this.putJob(C.transitionApplication(job, target)); this.event(next, { kind: 'application_transition', from: job.application_lifecycle, to: target, reason: 'Explicit application update' }); return next;
     });
   }
+  trackJob(jobId: string, action: 'applied' | 'unapply' | 'archive' | 'restore', expectedRevision: number, key: string) {
+    return this.receipt('job_tracking', key, { jobId, action, expectedRevision }, () => {
+      const job = this.getJob(jobId); this.revision(job.revision, expectedRevision);
+      if (['queued', 'preparing'].includes(job.preparation_state)) this.error('ineligible', 'Cancel active preparation before changing job tracking.');
+      if (action === 'archive' || action === 'restore') {
+        const next = this.putJob({ ...job, archived_at: action === 'archive' ? this.now() : null });
+        this.event(next, { kind: 'archive_change', archived: action === 'archive' });
+        return next;
+      }
+      if (action === 'unapply' && job.application_lifecycle !== 'submitted') this.error('ineligible', 'Only applied jobs can be marked not applied.');
+      const target = action === 'applied' ? 'submitted' : 'not_started';
+      const next = this.putJob(C.transitionApplication(job, target));
+      this.event(next, { kind: 'application_transition', from: job.application_lifecycle, to: target, reason: 'Manually updated job tracking' });
+      return next;
+    });
+  }
   transitionPreparation(jobId: string, action: C.PreparationAction, expectedRevision: number, key: string, fence?: OwnershipFence, metadata: { recovery?: C.JobRecovery; reason?: string; error?: C.Attempt['error']; elapsed_ms?: number; missing_inputs?: C.Job['missing_inputs'] } = {}) {
     return this.receipt('preparation', key, { jobId, action, expectedRevision, fence, metadata }, () => {
       const job = this.getJob(jobId); this.revision(job.revision, expectedRevision);
@@ -380,7 +397,7 @@ export class JobsRepository {
       this.expiry(request.lease_ms); this.recoverExpiredAttempts();
       if (control.stopped_at !== null || control.pause_after_current || this.active().length) return null;
       const job = this.getJob(request.job_id); const input = this.getExecutionInput(request.input_snapshot_id); this.sameJob(input, job.id);
-      if (job.kind !== 'job' || job.preparation_state !== 'queued' || job.missing_inputs.length || (request.mode === 'automatic' && (!control.automatic_preparation_enabled || control.pause_after_current || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle)))) return null;
+      if (job.archived_at || job.kind !== 'job' || job.preparation_state !== 'queued' || job.missing_inputs.length || (request.mode === 'automatic' && (!control.automatic_preparation_enabled || control.pause_after_current || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle)))) return null;
       const attempt = C.AttemptSchema.parse({ schema_version: 1, id: this.uuid(), workspace_id: job.workspace_id, job_id: job.id, input_snapshot_id: input.id, status: 'active', owner_token: randomUUID(), lease_expires_at: this.expiry(request.lease_ms), stop_generation: control.stop_generation, current_stage: null, checkpoint_ids: [], started_at: this.now(), finished_at: null, cancelled_at: null, error: null, resource_usage: { model_calls: 0, repair_attempts: 0, elapsed_ms: 0 } });
       this.insert('attempts', attempt, { id: attempt.id, workspace_id: attempt.workspace_id, job_id: job.id, input_snapshot_id: input.id, status: attempt.status, owner_token: attempt.owner_token, lease_expires_at: attempt.lease_expires_at, stop_generation: attempt.stop_generation });
       this.preparation({ ...job, current_attempt_id: attempt.id }, 'claim', 'Preparation claimed'); return attempt;
@@ -391,6 +408,7 @@ export class JobsRepository {
     return this.receipt('request_preparation', idempotency_key, data, () => {
       admission?.();
       let job = this.getJob(data.job_id); this.revision(job.revision, data.expected_revision);
+      if (job.archived_at) this.error('ineligible', 'Restore this job from archive before preparing.');
       const input = this.getExecutionInput(data.input_snapshot_id);
       this.sameJob(input, job.id);
       if ((job.posting_snapshot_id && input.posting.id !== job.posting_snapshot_id) || (job.recovery?.kind === 'stale_inputs' && job.current_attempt_id && this.getAttempt(job.current_attempt_id).input_snapshot_id === input.id)) this.error('ineligible', 'Capture current inputs before preparing changed job context');

@@ -5,7 +5,7 @@ import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { WorkerControls } from './WorkerControls.js';
 import { JobIntake } from './JobIntake.js';
-import { cardClass, primaryButton } from '../tailoring/ui.js';
+import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 
 import {
   jobFilters as filters,
@@ -34,13 +34,27 @@ const jobListStatus = (state: Job['preparation_state']) => state === 'saved' ? '
 export function JobsView({ navigate }: { navigate: (path: string) => void }) {
   const load = useCallback(() => apiClient.getJobs(), []);
   const { data, error, refresh } = useJobsData(load);
-  const [filter, setFilter] = useState<typeof filters[number]>('All');
+  const [filter, setFilter] = useState<typeof filters[number]>('Needs work');
+  const [trackingId, setTrackingId] = useState<string | null>(null);
+  const [trackingError, setTrackingError] = useState('');
+  const [trackingNotice, setTrackingNotice] = useState('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [busyCancelId, setBusyCancelId] = useState<string | null>(null);
   const key = useIntentKey();
   const [selection, setSelection] = useState<string[]>([]);
   const [preparing, setPreparing] = useState(false), [prepareError, setPrepareError] = useState('');
+  const track = async (job: Job, action: 'applied' | 'unapply' | 'archive' | 'restore') => {
+    if (trackingId) return;
+    setTrackingId(job.id); setTrackingError(''); setTrackingNotice('');
+    try {
+      await apiClient.trackJob(job.id, { action, expected_revision: job.revision, idempotency_key: key({ job: job.id, action, revision: job.revision }) });
+      setSelection(previous => previous.filter(id => id !== job.id));
+      setTrackingNotice(`${job.company ?? 'Job'}: ${action === 'applied' ? 'marked applied. Find it in Applied.' : action === 'archive' ? 'archived. Find it in Archived.' : action === 'unapply' ? 'marked not applied.' : 'restored from archive.'}`);
+      await refresh();
+    } catch (e) { setTrackingError(e instanceof Error ? e.message : 'Could not update job.'); }
+    finally { setTrackingId(null); }
+  };
   const prepareSelected = async () => {
     setPreparing(true); setPrepareError('');
     try {
@@ -90,11 +104,11 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
               <Briefcase className="h-6 w-6 text-vermilion-500" />
-              Saved jobs
+              Jobs
             </h1>
             {data && (
               <span className="rounded-full bg-slate-100 dark:bg-slate-800 px-2.5 py-0.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                {pluralize(allJobs.length, 'record')}
+                {pluralize(filterCounts['Needs work'], 'job needs', 'jobs need')} work
               </span>
             )}
           </div>
@@ -105,7 +119,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
       </div>
 
       <JobIntake onSaved={() => void refresh()} />
-      <WorkerControls jobs={allJobs} onJobMutated={() => void refresh()} navigate={navigate} />
+      <WorkerControls jobs={allJobs.filter(job => matchesJobFilter(job, 'Needs work'))} onJobMutated={() => void refresh()} navigate={navigate} />
       {sessionStorage.getItem('resume-preparation-recent-batch') && <button className={primaryButton} onClick={() => navigate(`/jobs/preparation-batches/${sessionStorage.getItem('resume-preparation-recent-batch')}/review`)}>Return to resume preparation</button>}
 
       <section className={`${cardClass} p-4 space-y-2`}><h2>Prepare selected resumes</h2><p>Jobs prepare in selection order. Only necessary questions pause their own jobs. Each PDF needs your separate approval.</p>
@@ -113,7 +127,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
         {prepareError && <p role="alert">{prepareError}</p>}
       </section>
       {/* Filter Tabs Bar */}
-      <details><summary>Filter saved jobs and retained history</summary><div className="space-y-2">
+      <section aria-label="Filter saved jobs and retained history"><div className="space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           {/* Visual Pills for Human Users */}
           <div className="flex flex-wrap items-center gap-1.5 p-1 rounded-xl bg-slate-100/80 dark:bg-slate-900/60 border border-slate-200/60 dark:border-slate-800">
@@ -121,12 +135,13 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
               <button
                 key={f}
                 type="button"
+                aria-pressed={filter === f}
                 className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-all ${
                   filter === f
                     ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white font-semibold'
                     : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                 }`}
-                onClick={() => setFilter(f)}
+                onClick={() => { setFilter(f); setSelection([]); }}
               >
                 <span>{f}</span>
                 {allJobs.length > 0 && (
@@ -164,7 +179,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
                 className="min-h-[44px] sm:min-h-0 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5 text-xs text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-vermilion-500"
                 value={filter}
                 aria-label="Filter jobs"
-                onChange={(e) => setFilter(e.target.value as typeof filter)}
+                onChange={(e) => { setFilter(e.target.value as typeof filter); setSelection([]); }}
               >
                 {filters.map((f) => (
                   <option key={f} value={f}>
@@ -178,12 +193,16 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
         {filter === 'Archived' && (
           <p className="text-xs text-slate-500 dark:text-slate-400 italic">
-            Skipped and cancelled jobs; records are retained.
+            Archived, skipped and cancelled jobs; resumes and history are retained.
           </p>
         )}
       </div>
 
-      </details>
+        {filter === 'Needs work' && <p className="text-sm text-slate-500">Jobs still to prepare, review or apply to. Mark applied or archive to clear them from this view.</p>}
+        {filter === 'Applied' && <p className="text-sm text-slate-500">Applications you recorded as submitted. Mark applied only updates tracking.</p>}
+      </section>
+      {trackingError && <p role="alert">{trackingError}</p>}
+      {trackingNotice && <p role="status">{trackingNotice}</p>}
 
       {/* Status Messages */}
       {error && (
@@ -230,14 +249,14 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
       {Boolean(data?.jobs.length && !jobs?.length) && (
         <div className={`${cardClass} p-8 text-center text-xs text-slate-500 dark:text-slate-400`}>
-          No jobs match this filter.
+          {filter === 'Needs work' ? 'All caught up. Applied and archived jobs are available in the filters above.' : 'No jobs match this filter.'}
         </div>
       )}
 
       {/* Jobs Cards List */}
       <ul className="space-y-3">
         {jobs?.map((job) => {
-          const preparationHref = preparationDestination(job, data?.preparation_links?.[job.id]);
+          const preparationHref = matchesJobFilter(job, 'Needs work') ? preparationDestination(job, data?.preparation_links?.[job.id]) : null;
           const initials = (job.company || 'Job')
             .split(' ')
             .map((w) => w[0])
@@ -252,7 +271,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
             >
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Select ${job.company ?? 'job'} ${job.role ?? ''}`} checked={selection.includes(job.id)}
-                  disabled={preparing || job.kind !== 'job' || ['queued', 'preparing'].includes(job.preparation_state)}
+                  disabled={preparing || Boolean(trackingId) || Boolean(job.archived_at) || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle) || job.kind !== 'job' || ['queued', 'preparing'].includes(job.preparation_state)}
                   onChange={event => setSelection(previous => event.target.checked ? [...previous, job.id] : previous.filter(id => id !== job.id))} />Prepare{selection.includes(job.id) ? ` · ${selection.indexOf(job.id) + 1}` : ''}</label>
                 {/* Left: Avatar + Title */}
                 <div className="flex items-start gap-3.5 min-w-0">
@@ -279,7 +298,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
                     {/* Preserves test assertion text while styled cleanly */}
                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {jobListStatus(displayPreparationState(job))}
+                      {job.archived_at ? 'Archived' : ['submitted', 'outcome_recorded'].includes(job.application_lifecycle) ? 'Applied' : jobListStatus(displayPreparationState(job))}
                     </p>
                   </div>
                 </div>
@@ -288,6 +307,11 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
               {/* Action row */}
               <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
+                {!hasCancellableWork(job) && <>
+                  {job.application_lifecycle !== 'outcome_recorded' && <button className={secondaryButton} disabled={Boolean(trackingId) || preparing} onClick={() => void track(job, job.application_lifecycle === 'submitted' ? 'unapply' : 'applied')}>{job.application_lifecycle === 'submitted' ? 'Mark not applied' : 'Mark applied'}</button>}
+                  <button className={secondaryButton} disabled={Boolean(trackingId) || preparing} onClick={() => void track(job, job.archived_at ? 'restore' : 'archive')}>{trackingId === job.id ? 'Saving…' : job.archived_at ? 'Restore from archive' : 'Archive job'}</button>
+                </>}
+                {hasCancellableWork(job) && <p className="text-xs text-slate-500">Cancel preparation first to mark applied or archive.</p>}
                 {preparationHref && <button className={primaryButton} onClick={() => navigate(preparationHref)}>{preparationHref.endsWith('/questions') ? 'Answer preparation questions' : preparationHref.endsWith('/inputs') ? 'Review current inputs' : 'Preparation progress'}</button>}
                 {hasCancellableWork(job) && (
                   confirmCancelId === job.id ? (

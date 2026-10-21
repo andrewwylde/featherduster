@@ -5,7 +5,7 @@ import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 import { QueueVisualization } from './QueueVisualization.js';
-import { isNeedsInput, pluralize, preparationDestination } from './job-utils.js';
+import { isNeedsInput, matchesJobFilter, pluralize, preparationDestination } from './job-utils.js';
 
 export interface WorkerControlsProps {
   jobs?: Job[];
@@ -28,7 +28,7 @@ export function WorkerControls({
   const [loadingReviews, setLoadingReviews] = useState(false);
   const openReviews = async () => {
     setLoadingReviews(true); setFailure(null);
-    try { const result = await apiClient.getJobs(); setReviewJobs(result.jobs.filter(isNeedsInput)); setReviewLinks(result.preparation_links ?? {}); }
+    try { const result = await apiClient.getJobs(); setReviewJobs(result.jobs.filter(j => matchesJobFilter(j, 'Needs work') && isNeedsInput(j))); setReviewLinks(result.preparation_links ?? {}); }
     catch (e) { setFailure(e instanceof Error ? e.message : 'Could not load jobs needing review.'); }
     finally { setLoadingReviews(false); }
   };

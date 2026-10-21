@@ -192,6 +192,10 @@ app.post('/api/jobs/:id/drafts/:draftId/finalize', handle(async (c, r) => {
   app.get('/api/jobs/:id/fit', handle((c, r) => r.readFit(uuid.parse(c.req.param('id')))));
   app.post('/api/jobs/:id/fit', handle(async (c, r) => r.assessFit(uuid.parse(c.req.param('id')), z.object({ expected_revision: revision, idempotency_key: key, evidence_ids: z.array(key).optional(), runner: z.enum(['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake']).optional() }).strict().parse(await c.req.json())), 202));
   app.get('/api/jobs/:id', handle((c, r) => jobDetail(r, uuid.parse(c.req.param('id')))));
+  app.post('/api/jobs/:id/tracking', handle(async (c, r) => {
+    const body = z.object({ action: z.enum(['applied', 'unapply', 'archive', 'restore']), expected_revision: revision, idempotency_key: key }).strict().parse(await c.req.json());
+    return r.repository.trackJob(uuid.parse(c.req.param('id')), body.action, body.expected_revision, body.idempotency_key);
+  }));
   app.put('/api/jobs/:id/details', handle(async (c, r) => {
     const body = z.object({ expected_revision: revision, idempotency_key: key, changes: manualDetails, posting_text: z.string().trim().min(1).max(1000000).optional() }).strict().parse(await c.req.json());
     return r.repository.saveDetails(uuid.parse(c.req.param('id')), body);

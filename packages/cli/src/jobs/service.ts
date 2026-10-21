@@ -91,6 +91,6 @@ export class JobsService {
     return receipt;
   }
   durableEnqueue(): void { this.worker.wake(); }
-  status() { const jobs = this.deps.repository.listJobs(); return { control: this.deps.repository.getControl(), active: this.deps.repository.active(), queued_count: jobs.filter(j => j.preparation_state === 'queued').length, needs_review_count: jobs.filter(j => j.preparation_state === 'needs_input' && ['proposals', 'candidate', 'render'].includes(j.recovery?.kind ?? '')).length }; }
+  status() { const jobs = this.deps.repository.listJobs().filter(j => !j.archived_at && !['submitted', 'outcome_recorded', 'unknown'].includes(j.application_lifecycle)); return { control: this.deps.repository.getControl(), active: this.deps.repository.active(), queued_count: jobs.filter(j => j.preparation_state === 'queued').length, needs_review_count: jobs.filter(j => j.preparation_state === 'needs_input' && ['proposals', 'candidate', 'render'].includes(j.recovery?.kind ?? '')).length }; }
   dispose(): Promise<void> { this.disposed = true; return this.worker.dispose(); }
 }

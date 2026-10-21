@@ -32,7 +32,7 @@ const applicationEdges: Record<ApplicationLifecycle, ApplicationLifecycle[]> = {
   not_started: ['draft', 'needs_input', 'submitted', 'outcome_recorded', 'unknown'],
   draft: ['needs_input', 'submitted', 'outcome_recorded', 'unknown'],
   needs_input: ['draft', 'submitted', 'outcome_recorded', 'unknown'],
-  submitted: ['outcome_recorded', 'unknown'],
+  submitted: ['not_started', 'outcome_recorded', 'unknown'],
   outcome_recorded: ['unknown'],
   unknown: ['not_started', 'draft', 'needs_input', 'submitted', 'outcome_recorded'],
 };
