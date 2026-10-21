@@ -90,6 +90,17 @@ export function loadTailoringConfig(workspaceDir: string): TailoringConfig {
   };
 }
 
+/** Explicit lower limits for newly captured automatic cycles; historical policies remain immutable. */
+export function loadAutomaticPreparationLimits(workspaceDir: string) {
+  const raw = readRawConfig(workspaceDir).automatic_preparation ?? {};
+  const bounded = (key: string, fallback: number, minimum: number) => {
+    const value = raw[key] ?? fallback;
+    if (!Number.isSafeInteger(value) || value < minimum || value > fallback) throw new Error(`Configure automatic_preparation.${key} between ${minimum} and ${fallback}.`);
+    return value as number;
+  };
+  return { max_model_calls: bounded('max_model_calls', 12, 1), max_repair_attempts: bounded('max_repair_attempts', 2, 0) };
+}
+
 /** Records consent for a cloud runner, preserving all other config keys. */
 export function recordRunnerConsent(workspaceDir: string, runnerId: RunnerId, date: string): void {
   const raw = readRawConfig(workspaceDir);

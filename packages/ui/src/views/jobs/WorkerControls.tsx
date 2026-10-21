@@ -5,7 +5,7 @@ import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 import { QueueVisualization } from './QueueVisualization.js';
-import { isNeedsInput, pluralize } from './job-utils.js';
+import { isNeedsInput, pluralize, preparationDestination } from './job-utils.js';
 
 export interface WorkerControlsProps {
   jobs?: Job[];
@@ -24,10 +24,11 @@ export function WorkerControls({
   const [pending, setPending] = useState<string[]>([]);
   const [showQueue, setShowQueue] = useState(false);
   const [reviewJobs, setReviewJobs] = useState<Job[] | null>(null);
+  const [reviewLinks, setReviewLinks] = useState<Record<string, { batch_id: string; state: string }>>({});
   const [loadingReviews, setLoadingReviews] = useState(false);
   const openReviews = async () => {
     setLoadingReviews(true); setFailure(null);
-    try { setReviewJobs((await apiClient.getJobs()).jobs.filter(isNeedsInput)); }
+    try { const result = await apiClient.getJobs(); setReviewJobs(result.jobs.filter(isNeedsInput)); setReviewLinks(result.preparation_links ?? {}); }
     catch (e) { setFailure(e instanceof Error ? e.message : 'Could not load jobs needing review.'); }
     finally { setLoadingReviews(false); }
   };
@@ -199,7 +200,7 @@ export function WorkerControls({
         {!reviewJobs.length && <p>No jobs currently need review.</p>}
         {reviewJobs.map(job => {
           const section = job.recovery?.kind === 'stale_inputs' ? 'inputs' : job.recovery?.kind === 'proposals' ? 'proposals' : 'resume';
-          const href = `/jobs/${job.id}/${section}`;
+          const href = preparationDestination(job, reviewLinks[job.id]) ?? `/jobs/${job.id}/${section}`;
           return <a key={job.id} className={`${secondaryButton} block`} href={href} onClick={e => {
             if (navigate && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey) { e.preventDefault(); navigate(href); }
           }}>Review {job.company ?? 'Unknown company'} — {job.role ?? 'Untitled role'}</a>;

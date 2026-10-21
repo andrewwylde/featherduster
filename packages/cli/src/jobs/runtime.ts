@@ -1,3 +1,8 @@
+import { PreparationBatchRepository } from './preparation-batch-repository.js';
+import { PreparationCoordinator } from './preparation-coordinator.js';
+import { JobDraftRepository } from '../tailoring/drafts/repository.js';
+import type { AutomaticRepairRecord } from './automatic-repair.js';
+import { PreparationQuestions } from './preparation-questions.js';
 import { JobDraftFinalization } from './draft-finalization.js';
 import { SemanticService } from './semantic-service.js';
 import { JobExports } from './exports.js';
@@ -22,7 +27,7 @@ import { getLatexTemplate } from './templates.js';
 import { LatexRenderer } from '../render/latex-renderer.js';
 import { defaultRunnerFactory, type RunnerFactory } from '../runners/registry.js';
 import type { RunnerId } from '../runners/types.js';
-import { loadTailoringConfig } from '../tailoring/config.js';
+import { loadTailoringConfig, loadAutomaticPreparationLimits } from '../tailoring/config.js';
 
 export interface JobsRuntimeDependencies {
   loadResumes(): { id: string; type: string; filePath: string; spec: C.ResumeSpec }[];
@@ -33,11 +38,12 @@ export interface JobsRuntimeDependencies {
   fetcher?: NonNullable<ConstructorParameters<typeof PostingIntakeService>[1]>['fetcher'];
   automaticDrain?: boolean;
 }
-export interface InputSelection { base_resume_id?: string; template_id?: string; runner?: RunnerId; evidence_ids?: string[] }
+export interface InputSelection { base_resume_id?: string; template_id?: string; runner?: RunnerId; evidence_ids?: string[]; automatic?: boolean }
 export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependencies) {
   const database = openJobsDatabase(workspace);
   const repository = new JobsRepository(database);
   const artifacts = new JobArtifactsService(repository);
+  const batches = new PreparationBatchRepository(repository);
   const intake = new PostingIntakeService(repository, { fetcher: deps.fetcher });
   const corpusListeners = new Set<(event: { revision: number; update_ids: string[] }) => void>();
   const corpusRepository = new CorpusRepository(repository);
@@ -91,7 +97,8 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
     if (!runner || !JobRunnerConfigurationSchema.safeParse({ runner: runner.id, model: runner.model }).success) return invalid('Configure a runner and model first');
     const view = corpus.read({ job_id: job.id, employer: job.employer_id ?? undefined, role: job.role ?? undefined });
     const { evidence, knowledge } = selectJobSkillset(view, selection.evidence_ids);
-    return artifacts.captureInputs({ corpus_knowledge: knowledge, job_id: job.id, posting_id: job.posting_snapshot_id, base_resume: yaml.dump(base.spec), selected_evidence: evidence.map(e => ({ source_id: e.id, bytes: C.serializeEvidenceMarkdown(e, e.narrative) })), privacy_rules: deps.loadPrivacyRules(), template, runner_configuration: { runner: runner.id, model: runner.model }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: template.page_budget, max_model_calls: 4, max_repair_attempts: 0, model_retry_count: 0, timeout_ms: config.step_timeout_seconds * 4000 } });
+    const limits = selection.automatic ? loadAutomaticPreparationLimits(workspace) : { max_model_calls: 4, max_repair_attempts: 0 };
+    return artifacts.captureInputs({ corpus_knowledge: knowledge, job_id: job.id, posting_id: job.posting_snapshot_id, base_resume: yaml.dump(base.spec), selected_evidence: evidence.map(e => ({ source_id: e.id, bytes: C.serializeEvidenceMarkdown(e, e.narrative) })), privacy_rules: deps.loadPrivacyRules(), template, runner_configuration: { runner: runner.id, model: runner.model }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: template.page_budget, max_model_calls: limits.max_model_calls, max_repair_attempts: limits.max_repair_attempts, model_retry_count: 0, timeout_ms: config.step_timeout_seconds * 4000 } });
   }).immediate();
   const fit = new JobFit(repository);
   const materials = new JobMaterials(repository, artifacts, (id, ids) => selectFit(id, ids), deps.loadPrivacyRules);
@@ -99,7 +106,8 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   const renderer = deps.renderer ?? new LatexRenderer({ probeTimeoutMs: 15000 });
   const semantic = new SemanticService(repository, artifacts, { runner: resolveRunner,
     consent: runner => runner.locality === 'local' || !!loadTailoringConfig(workspace).runner_consent[runner.id],
-    timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000, currentRules: deps.loadPrivacyRules });
+    timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000, currentRules: deps.loadPrivacyRules,
+    beforeDispatch: (jobId, key, kind, inputSnapshotId) => { const member = batches.enrolled(jobId); if (member?.input_snapshot_id === inputSnapshotId) { batches.reserve(member, `semantic:${key}`, kind); return true; } return false; } });
   const preparation = new JobPreparation({ repository, artifacts, semantic, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer });
   const service = new JobsService({ repository, preparation: { run: (attempt, signal, previous) => repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : preparation.run(attempt, signal, previous) }, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
   const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service, semantic);
@@ -135,14 +143,66 @@ const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.l
     return receipt;
   };
   const exports = new JobExports(repository, artifacts, materials, selectFit, deps.loadPrivacyRules, semantic);
-  return { repository, artifacts, intake, service, corpus, proposals, semantic, captureInputs, assessFit, readFit, materials, exports, drafts, flushEvents,
+  const coordinator = new PreparationCoordinator(batches, service, proposals, drafts, semantic, flushEvents);
+  const questions = new PreparationQuestions(batches, semantic, coordinator, proposals);
+  const prepareBatch = (request: unknown) => { const result = batches.create(request, (id, revision) => captureInputs(id, revision, { automatic: true })); coordinator.initialize(); coordinator.wake(); return result; };
+  const readBatch = (id: string) => {
+    const batch = batches.get(id), members = batches.members(id).map(member => {
+      const job = repository.getJob(member.job_id);
+      return { ...member, company: job.company, role: job.role, recovery_action: job.recovery?.action, ...(job.recovery?.kind === 'stale_inputs' ? { state: 'technical' as const, diagnostic: 'Starting inputs changed. Review current inputs before preparing this job again.' } : {}) };
+    });
+    const queue = members.flatMap(member => {
+      const job = repository.getJob(member.job_id), artifactId = job.artifact_version_ids.at(-1);
+      if (!artifactId || !['ready'].includes(member.state)) return [];
+      const artifact = artifacts.getArtifact(artifactId);
+      try { exports.files(job.id, { artifact_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint, dossier: false }); }
+      catch { return []; }
+      const approved = repository.listEvents(job.id).some(e => e.payload.kind === 'resume_review' && e.payload.artifact_version_id === artifact.id && e.payload.artifact_fingerprint === artifact.version_fingerprint);
+      return [{ job_id: job.id, artifact_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint, approved, company: job.company, role: job.role, posting_url: job.canonical_url ?? job.original_url ?? job.context_url }];
+    });
+    const undone = (database.db.prepare("SELECT result FROM mutation_receipts WHERE operation='automatic_repair_undo'").all() as { result: string }[]).map(row => JSON.parse(row.result).repair_id);
+    const repairs = (database.db.prepare('SELECT payload FROM preparation_repairs ORDER BY rowid').all() as { payload: string }[]).map(row => JSON.parse(row.payload) as AutomaticRepairRecord).filter(repair => batch.members.some(m => m.job_id === repair.job_id && m.input_snapshot_id === repair.input_snapshot_id)).map(repair => ({ ...repair, undone: undone.includes(repair.id) }));
+    const decisions = (database.db.prepare('SELECT payload FROM preparation_decisions ORDER BY rowid').all() as { payload: string }[]).map(row => JSON.parse(row.payload)).filter(value => batch.members.some(m => m.job_id === value.job_id));
+    return { batch, members, queue, repairs, decisions, counts: { preparing: members.filter(m => ['pending', 'running'].includes(m.state)).length,
+      questions: members.filter(m => ['question', 'later'].includes(m.state)).length, technical: members.filter(m => m.state === 'technical').length,
+      ready: queue.filter(q => !q.approved).length, approved: queue.filter(q => q.approved).length } };
+  };
+  const undoRepair = (jobId: string, repairId: string, request: { expected_revision: number; idempotency_key: string }) => {
+    const result = repository.withReceipt('automatic_repair_undo', request.idempotency_key, { jobId, repairId, ...request }, () => {
+      const job = repository.getJob(jobId);
+      if (job.revision !== request.expected_revision || repository.active().some(a => a.job_id === jobId)) throw new RepositoryError('revision_conflict', 'Job changed. Reload before undoing this wording.');
+      const row = database.db.prepare('SELECT payload FROM preparation_repairs WHERE id=? AND job_id=?').get(repairId, jobId) as { payload: string } | undefined;
+      if (!row) throw new RepositoryError('not_found', 'Repair not found.');
+      const repair = JSON.parse(row.payload) as AutomaticRepairRecord, artifactId = job.artifact_version_ids.at(-1);
+      if (!artifactId) throw new RepositoryError('ineligible', 'Finish preparing before undoing a review change.');
+      const view = artifacts.review(jobId, artifactId);
+      if (view.artifact.input_snapshot_id !== repair.input_snapshot_id) throw new RepositoryError('revision_conflict', 'This repair belongs to different starting inputs.');
+      const draft = view.working_draft ?? artifacts.continueEditing({ job_id: jobId, artifact_version_id: artifactId, artifact_fingerprint: view.artifact.version_fingerprint,
+        expected_job_revision: job.revision, idempotency_key: `undo-fork:${request.idempotency_key}` });
+      const candidate = structuredClone(draft.candidate);
+      if (repair.original_target.experience_index >= 0) {
+        const original = view.base_resume.experiences[repair.original_target.experience_index];
+        const experiences = candidate.experiences.filter(e => e.company === original?.company && e.role === original.role && e.startDate === original.startDate);
+        const bullets = experiences.flatMap(e => e.bullets.filter(b => b.text === repair.after));
+        if (bullets.length !== 1) throw new RepositoryError('revision_conflict', 'The repaired wording changed or is ambiguous. Edit the current draft instead.');
+        bullets[0].text = repair.before;
+      } else if (candidate.summary === repair.after) candidate.summary = repair.before;
+      else throw new RepositoryError('revision_conflict', 'The repaired summary changed. Edit the current draft instead.');
+      const saved = new JobDraftRepository(repository).save({ ...draft, candidate }, draft.revision);
+      return { draft: saved, repair_id: repairId };
+    });
+    if (!result.replayed) coordinator.edited(jobId, result.result.draft);
+    return result;
+  };
+  return { repository, artifacts, intake, service, corpus, proposals, semantic, batches, coordinator, questions, prepareBatch, readBatch, undoRepair, captureInputs, assessFit, readFit, materials, exports, drafts, flushEvents,
     subscribeCorpus(listener: (event: { revision: number; update_ids: string[] }) => void) { monitor(); corpusListeners.add(listener); return () => { corpusListeners.delete(listener); }; },
     subscribe(listener: (event: C.JobEvent) => void) { monitor(); listeners.add(listener); return () => { listeners.delete(listener); }; },
-    initialize() { monitor(); service.initialize(); },
+    initialize() { monitor(); service.initialize(); coordinator.initialize(); },
 dispose(): Promise<void> {
   if (!disposed) {
     clearInterval(timer); listeners.clear(); corpusListeners.clear();
-    disposed = Promise.allSettled([drafts.dispose(), service.dispose(), semantic.dispose()]).then(results => {
+    const stoppingCoordinator = coordinator.dispose();
+    disposed = Promise.allSettled([stoppingCoordinator, drafts.dispose(), service.dispose(), semantic.dispose()]).then(results => {
       database.close();
       const failed = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
       if (failed) throw failed.reason;

@@ -87,6 +87,10 @@ export function tailorViewForPath(pathname: string): TailorView {
 export const jobSections = { posting: 'Posting', inputs: 'Inputs', fit: 'Fit', resume: 'Resume', cover_letter: 'Cover letter', interview_brief: 'Interview brief', answers: 'Answers', history: 'History' } as const;
 export type JobSection = keyof typeof jobSections | 'proposals';
 const uuidPattern = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
+export function preparationBatchForPath(path: string): { batchId: string; section: 'review' | 'questions' } | null {
+  const match = new RegExp(`^/jobs/preparation-batches/(${uuidPattern})/(review|questions)$`, 'i').exec(normalize(path));
+  return match ? { batchId: match[1], section: match[2] as 'review' | 'questions' } : null;
+}
 export function jobsViewForPath(path: string): { id: string; section: JobSection } | null {
   const match = new RegExp(`^/jobs/(${uuidPattern})(?:/(posting|inputs|proposals|fit|resume|cover_letter|interview_brief|answers|history))?$`, 'i').exec(normalize(path));
   return match ? { id: match[1], section: (match[2] ?? 'posting').toLowerCase() as JobSection } : null;

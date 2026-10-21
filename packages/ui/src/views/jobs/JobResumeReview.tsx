@@ -23,12 +23,15 @@ export function JobResumeReview({
   events,
   onSaved,
   navigate,
+  queue,
 }: {
   job: Job;
   artifacts: ArtifactVersion[];
   events: JobEvent[];
   onSaved: () => void;
   navigate: (path: string) => void;
+  queue?: { artifactId: string | null; onApproved: (artifact: ArtifactVersion) => void; onLater: () => void;
+    repairHistory?: { id: string; before: string; after: string; reason: string; meaningful: boolean }[] };
 }) {
   const [selected, setSelected] = useState(artifacts.at(-1)?.id ?? '');
   const [review, setReview] = useState<JobReview | null>(null);
@@ -49,6 +52,29 @@ export function JobResumeReview({
     previousLatest.current = latestArtifact;
   }, [latestArtifact, selected]);
   const displayedReview = review?.artifact.id === selected ? review : null;
+  const [previewReload, setPreviewReload] = useState(0);
+  const [previewPages, setPreviewPages] = useState<{ identity: string; loaded: number[]; failed: number[] }>({ identity: '', loaded: [], failed: [] });
+  const previewIdentity = displayedReview ? `${job.id}:${selected}:${displayedReview.artifact.version_fingerprint}:${previewReload}` : '';
+  const currentPreview = useRef(previewIdentity); currentPreview.current = previewIdentity;
+  useEffect(() => () => { currentPreview.current = ''; }, []);
+  const previewReady = !!displayedReview && (!displayedReview.preview_count || (previewPages.identity === previewIdentity
+    && previewPages.failed.length === 0 && previewPages.loaded.length === displayedReview.preview_count));
+  const previewFailed = previewPages.identity === previewIdentity && previewPages.failed.length > 0;
+  const markPreview = (identity: string, page: number, loaded: boolean) => {
+    if (!identity || currentPreview.current !== identity) return;
+    setPreviewPages(previous => {
+      const state = previous.identity === identity ? previous : { identity, loaded: [], failed: [] };
+      return { identity, loaded: loaded ? [...new Set([...state.loaded, page])] : state.loaded.filter(value => value !== page),
+        failed: loaded ? state.failed.filter(value => value !== page) : [...new Set([...state.failed, page])] };
+    });
+  };
+  const decodePreview = async (image: HTMLImageElement, identity: string, page: number) => {
+    try {
+      if (typeof image.decode === 'function') await image.decode();
+      if (!image.isConnected) return;
+      markPreview(identity, page, image.complete && image.naturalWidth > 0 && image.naturalHeight > 0);
+    } catch { markPreview(identity, page, false); }
+  };
 
   const workingDraft = displayedReview?.working_draft;
   const pendingEdits = !!workingDraft && JSON.stringify(workingDraft.candidate) !== JSON.stringify(displayedReview?.draft.candidate);
@@ -78,7 +104,7 @@ export function JobResumeReview({
   }, [job.id, job.revision, selected, reload]);
 
   const act = async (editing: boolean) => {
-    if (!displayedReview || pending.current) return;
+    if (!displayedReview || pending.current || (!editing && !previewReady)) return;
     pending.current = true;
     setBusy(true);
     setError('');
@@ -100,6 +126,7 @@ export function JobResumeReview({
         });
         setApprovedHere(a.id);
         onSaved();
+        queue?.onApproved(a);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Review action failed');
@@ -162,11 +189,18 @@ const preview = displayedReview && (<>
             {/* The validated page images render everywhere; an embedded PDF needs a browser PDF viewer
                 (headless and some mobile browsers have none), so it is only a fallback. */}
             {displayedReview.preview_count ? (
-              <div className="space-y-3">
+              <div className="space-y-3 min-h-48" aria-busy={!previewReady}>
+                {!previewReady && !previewFailed && <p role="status">Loading current PDF preview…</p>}
+                {previewFailed && <div role="alert"><p>Current PDF preview could not load. Approval is unavailable until its pages are visible.</p>
+                  <button className={secondaryButton} onClick={() => setPreviewReload(value => value + 1)}>Retry preview</button></div>}
                 {Array.from({ length: displayedReview.preview_count }, (_, i) => (
                   <img
                     className="w-full max-w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-white shadow-sm"
-                    key={i}
+                    key={`${previewIdentity}:${i}`}
+                    data-artifact-id={displayedReview.artifact.id}
+                    data-preview-state={previewReady ? 'ready' : previewFailed ? 'failed' : 'loading'}
+                    onLoad={event => { void decodePreview(event.currentTarget, previewIdentity, i); }}
+                    onError={() => markPreview(previewIdentity, i, false)}
                     alt={`Resume page ${i + 1}`}
                     src={apiClient.jobPreviewUrl(job.id, selected, i + 1)}
                   />
@@ -282,16 +316,12 @@ const unavailable = !displayedReview;
 const checksContent = displayedReview ? <section className="space-y-3">
   <p>Validation: {displayedReview.artifact.validation_result}. Human approval: {isApproved ? 'Approved for this version' : 'Not approved for this version'}.</p>
   <span ref={approvalStatus} tabIndex={-1} role="status" aria-label="Approval">{isApproved ? 'Approved for this version' : ''}</span>
-  {!isApproved && <button disabled={busy || conflict || pendingEdits || job.recovery?.kind === 'stale_inputs'
+  {!isApproved && !queue && <button disabled={busy || conflict || !previewReady || pendingEdits || job.recovery?.kind === 'stale_inputs'
     || historical || job.revision !== revision || displayedReview.artifact.validation_result !== 'passed' || !displayedReview.artifact.pdf}
     onClick={() => void act(false)}>Approve Resume</button>}
   <pre className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(displayedReview.validation_report, null, 2)}</pre>
 </section> : <p>No generated resume checks yet.</p>;
-return <section className="space-y-4 min-w-0">
-  <div><h2 className="text-lg font-semibold">{historical ? 'Historical resume' : previous ? 'Previous finalized resume' : 'Resume'}</h2></div>
-  <button disabled={busy} onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button>
-  {error && <div role="alert"><p>{error}</p><button onClick={() => { onSaved(); setReload(n => n + 1); }}>Retry</button></div>}
-  <JobResumeDetails actions={<>
+const editActions = <>
     {displayedReview && <button className={primaryButton} disabled={busy || conflict || job.revision !== revision || historical}
       onClick={() => workingDraft ? navigate(`/tailor/canvas/jobs/${job.id}/${workingDraft.id}`) : void act(true)}>
       {workingDraft ? 'Continue editing' : 'Edit resume'}
@@ -299,7 +329,22 @@ return <section className="space-y-4 min-w-0">
     {displayedReview?.artifact.pdf && (previous || historical ?
       <a href={`${apiClient.jobPdfUrl(job.id, selected)}?download=1`}>{historical ? 'Download historical PDF' : 'Download previous PDF'}</a>
       : <button className={secondaryButton} disabled={busy} onClick={() => void downloadCurrent()}>Download PDF</button>)}
-  </>} notice={open => <>
+</>;
+const reloadControl = <button disabled={busy} onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button>;
+return <section className="space-y-4 min-w-0">
+  {!queue && <div><h2 className="text-lg font-semibold">{historical ? 'Historical resume' : previous ? 'Previous finalized resume' : 'Resume'}</h2></div>}
+  {!queue && reloadControl}
+  {error && <div role="alert"><p>{error}</p><button onClick={() => { onSaved(); setReload(n => n + 1); }}>Retry</button></div>}
+  <JobResumeDetails actions={<>
+    {queue && <>
+      <button className={primaryButton} disabled={!displayedReview || busy || conflict || !previewReady || pendingEdits || historical || job.revision !== revision
+        || job.recovery?.kind === 'stale_inputs' || queue.artifactId !== selected || displayedReview.artifact.validation_result !== 'passed'}
+        onClick={() => void act(false)}>Approve &amp; next</button>
+      <button className={secondaryButton} disabled={busy || queue.artifactId !== selected} onClick={queue.onLater}>Review later</button>
+      <span className="basis-full text-xs" role="status">{pendingEdits || queue.artifactId !== selected ? 'PDF refreshing — approval is unavailable until current checks finish.' : isApproved ? 'Approved for this version' : 'Not approved for this version'}</span>
+    </>}
+    {!queue && editActions}
+  </>} secondaryActions={queue ? <>{editActions}{reloadControl}</> : undefined} notice={open => <>
     {pendingEdits && <p role="status">You have draft changes — continue editing to include them in a new PDF.</p>}
     {job.recovery?.kind === 'stale_inputs' && <p role="status">Starting inputs changed. This is the previous PDF. <button onClick={() => navigate(`/jobs/${job.id}`)}>Review posting and inputs</button></p>}
     {artifacts.length > 0 && job.preparation_state === 'needs_input' && job.recovery?.kind !== 'stale_inputs' &&
@@ -323,6 +368,10 @@ return <section className="space-y-4 min-w-0">
           aria-label="Artifact version" value={selected} onChange={e => setSelected(e.target.value)} disabled={busy}>
           {artifacts.map(a => <option key={a.id} value={a.id}>{new Date(a.created_at).toLocaleString()} · {a.id.slice(0, 8)}</option>)}
         </select></label>
+        {queue?.repairHistory?.length ? <details><summary>Automatic repair history</summary><ol>{queue.repairHistory.map(repair => <li key={repair.id} className="space-y-2 py-2">
+          <p>{repair.meaningful ? 'Wording' : 'Mechanical'}: {repair.reason}</p><p><del>{repair.before}</del> → {repair.after}</p>
+          <details><summary>Source bindings and version details</summary><pre className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(repair, null, 2)}</pre></details>
+        </li>)}</ol></details> : null}
         <ol>{events.map(event => <li key={event.id}>{event.created_at} · {describeJobEvent(event.payload)}</li>)}</ol>
       </section>;
     }} />

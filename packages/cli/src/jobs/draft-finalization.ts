@@ -100,10 +100,10 @@ export class JobDraftFinalization {
       return result;
     } finally { clearTimeout(timeout); this.running.delete(draftId); }
   }
-  finalize(jobId: string, draftId: string, raw: C.FinalizeJobDraftRequest): Promise<{ artifact: C.ArtifactVersion }> {
-    return this.track(() => this.finalizeNow(jobId, draftId, raw));
+  finalize(jobId: string, draftId: string, raw: C.FinalizeJobDraftRequest, publicationGuard?: () => void): Promise<{ artifact: C.ArtifactVersion }> {
+    return this.track(() => this.finalizeNow(jobId, draftId, raw, publicationGuard));
   }
-  private async finalizeNow(jobId: string, draftId: string, raw: C.FinalizeJobDraftRequest): Promise<{ artifact: C.ArtifactVersion }> {
+  private async finalizeNow(jobId: string, draftId: string, raw: C.FinalizeJobDraftRequest, publicationGuard?: () => void): Promise<{ artifact: C.ArtifactVersion }> {
     const request = C.FinalizeJobDraftRequestSchema.parse(raw);
     const { idempotency_key, ...body } = request, receiptInput = { jobId, draftId, ...body };
     // Probe the durable receipt before requiring a still-current parent. A replay is allowed after publication.
@@ -125,6 +125,7 @@ export class JobDraftFinalization {
     if (this.closed) throw new RepositoryError('ineligible', 'Resume checker is shutting down.');
     const verified = output;
     return this.r.withReceipt('finalize_job_draft', idempotency_key, receiptInput, () => {
+      publicationGuard?.();
       const fresh = this.context(jobId, draftId, this.r.getLatestDraft(draftId).candidate);
       if (canonical(fresh.binding) !== canonical(request.binding)) throw new RepositoryError('revision_conflict', 'The checked content changed. Check again.');
       const artifact = this.artifacts.publishManualCandidate({ draft_id: draftId,

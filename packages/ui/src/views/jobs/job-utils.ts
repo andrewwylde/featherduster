@@ -1,5 +1,12 @@
 import type { Job, JobEvent } from '@featherduster/core';
 
+/** Automatic work links to its actual question or recovery context, never the Posting tab. */
+export function preparationDestination(job: Job, link?: { batch_id: string; state: string }): string | null {
+  if (!link || link.state === 'ready') return null;
+  if (job.recovery?.kind === 'stale_inputs') return `/jobs/${job.id}/inputs`;
+  return `/jobs/preparation-batches/${link.batch_id}/${['question', 'later'].includes(link.state) ? 'questions' : 'review'}`;
+}
+
 /** "1 job", "2 jobs"; pass the plural when it is not the singular plus "s" (e.g. "job needs" / "jobs need"). */
 export function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return `${count} ${count === 1 ? singular : plural}`;

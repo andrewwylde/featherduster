@@ -20,7 +20,8 @@ export const ProposalGenerationSchema = z.object({
 export type ProposalGeneration = z.infer<typeof ProposalGenerationSchema>;
 export const ProposalPatchSchema = z.object({
   proposal_id: text, edited_after: z.string().optional(), citations: z.array(text).optional(), decision: z.enum(['pending', 'rejected']).optional(),
-}).strict().refine(p => p.edited_after !== undefined || p.citations !== undefined || p.decision !== undefined, 'Empty patch');
+  order: z.array(z.number().int()).optional(), skills: z.array(text).optional(),
+}).strict().refine(p => p.edited_after !== undefined || p.citations !== undefined || p.decision !== undefined || p.order !== undefined || p.skills !== undefined, 'Empty patch');
 export type ProposalPatch = z.infer<typeof ProposalPatchSchema>;
 export const ClaimGroundingSchema = z.object({
   id: uuid, review_id: uuid, review_revision: revision, proposal_id: text, claim_fingerprint: text,
@@ -123,6 +124,7 @@ export function applyProposalPatches(generation: Proposal[], current: ProposalPa
       if (!ids.has(patch.proposal_id) || seen.has(patch.proposal_id)) throw new Error('Unknown or duplicate proposal ID');
       seen.add(patch.proposal_id);
       const original = generation.find(p => p.id === patch.proposal_id)!;
+      if ((patch.order && original.type !== 'bullet.reorder') || (patch.skills && original.type !== 'skills.reorder')) throw new Error('Structural overlay does not match the original proposal type');
       const previous = overlay.get(patch.proposal_id);
       if (isIncoming && ((patch.edited_after !== undefined && patch.edited_after !== (previous?.edited_after ?? original.after)) || (patch.citations !== undefined && JSON.stringify(patch.citations) !== JSON.stringify(previous?.citations ?? original.citations)))) changed.add(patch.proposal_id);
       overlay.set(patch.proposal_id, { ...previous, ...patch });

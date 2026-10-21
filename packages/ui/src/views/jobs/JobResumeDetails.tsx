@@ -3,8 +3,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 export const resumeViews = { checks: 'Checks', corrections: 'Corrections', comparison: 'Comparison & evidence',
   history: 'Version history', exports: 'More export options' } as const;
 export type ResumeDetailView = keyof typeof resumeViews;
-export function JobResumeDetails({ preview, renderView, actions, notice }: {
+export function JobResumeDetails({ preview, renderView, actions, secondaryActions, notice }: {
   preview: ReactNode; renderView(view: ResumeDetailView): ReactNode; actions?: ReactNode;
+  secondaryActions?: ReactNode;
   notice?: (open: (view: ResumeDetailView) => void) => ReactNode;
 }) {
   const [view, setView] = useState<ResumeDetailView | null>(null), [open, setOpen] = useState(false);
@@ -19,9 +20,9 @@ export function JobResumeDetails({ preview, renderView, actions, notice }: {
   return <section className="space-y-4 min-w-0">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="flex flex-wrap gap-2">{actions}</div>
-      <div className="relative" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false); }}>
+      <div className="relative w-full sm:w-auto" onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOpen(false); }}>
         <button className={secondaryButton} ref={trigger} type="button" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(o => !o)}>Details</button>
-        {open && <div ref={menu} role="menu" aria-label="Resume details" className="absolute right-0 z-20 mt-2 w-64 rounded-lg border bg-white p-1 text-slate-900 shadow-lg dark:bg-slate-900 dark:text-white"
+        {open && <div ref={menu} role="menu" aria-label="Resume details" className="absolute left-0 sm:left-auto sm:right-0 z-20 mt-2 w-64 max-w-full rounded-lg border bg-white p-1 text-slate-900 shadow-lg dark:bg-slate-900 dark:text-white"
           onKeyDown={e => {
             const buttons = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>('button') ?? []);
             const index = buttons.indexOf(document.activeElement as HTMLButtonElement);
@@ -43,6 +44,7 @@ export function JobResumeDetails({ preview, renderView, actions, notice }: {
       <h2 ref={heading} tabIndex={-1} className="text-lg font-semibold">{resumeViews[view]}</h2>
       {renderView(view)}
     </section> : preview}
+    {secondaryActions && <div className="flex flex-wrap items-center gap-3">{secondaryActions}</div>}
   </section>;
 }
 

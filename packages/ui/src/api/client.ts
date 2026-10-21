@@ -18,6 +18,22 @@ import type {
   ConfidentialityLeak,
 } from '@featherduster/core';
 
+export interface PreparationBatchProgress {
+  batch: import('@featherduster/core').PreparationBatch;
+  members: { job_id: string; company?: string | null; role?: string | null; recovery_action?: string; state: 'pending' | 'running' | 'question' | 'technical' | 'ready' | 'later'; diagnostic?: string }[];
+  queue: import('@featherduster/core').PreparationQueueItem[];
+  counts: { preparing: number; questions: number; technical: number; ready: number; approved: number };
+  decisions: { id: string; job_id: string; before: string; after?: string; reason: string; decision: string }[];
+  repairs: { id: string; job_id: string; before: string; after: string; reason: string; meaningful: boolean; undone?: boolean }[];
+}
+export interface PreparationMaterialQuestion {
+  job_id: string; company: string | null; role: string | null; job_revision: number; review_id: string; review_revision: number;
+  input_fingerprint: string; generation_id: string; proposal_id: string; before: string; reason: string; question: string;
+}
+export interface PreparationQuestionGroup {
+  id: string; members: import('@featherduster/core').PreparationQuestionMember[];
+  details: { job_id: string; company: string | null; role: string | null; sources?: import('@featherduster/core').SemanticSource[]; facts: import('@featherduster/core').JobFact[] }[];
+}
 export interface JobFitResult {
   current: JobFitEntry | null; history: JobFitEntry[];
 }
@@ -354,7 +370,14 @@ export class ApiClient {
   previewCorpusChange(body: CorpusWriteRequest) { return this.fetchJson<CorpusPreviewResponse>('/api/corpus/preview', this.jsonRequest('POST', body)); }
   rememberCorpusChange(body: CorpusWriteRequest) { return this.fetchJson<MutationReceipt<CorpusUpdate>>('/api/corpus/updates', this.jsonRequest('POST', body)); }
   withdrawCorpusChange(id: string, body: CorpusWriteRequest) { return this.fetchJson<MutationReceipt<CorpusUpdate>>(`/api/corpus/updates/${id}/withdraw`, this.jsonRequest('POST', body)); }
-  getJobs() { return this.fetchJson<{ jobs: Job[] }>('/api/jobs'); }
+  prepareJobBatch(body: import('zod').z.infer<typeof import('@featherduster/core').CreatePreparationBatchSchema>) { return this.fetchJson<{ result: import('@featherduster/core').PreparationBatch; replayed: boolean }>('/api/jobs/preparation-batches', { method: 'POST', body: JSON.stringify(body) }); }
+  getPreparationBatch(id: string) { return this.fetchJson<PreparationBatchProgress>(`/api/jobs/preparation-batches/${id}`); }
+  getPreparationQuestions(id: string) { return this.fetchJson<{ groups: PreparationQuestionGroup[]; materials: PreparationMaterialQuestion[] }>(`/api/jobs/preparation-batches/${id}/questions`); }
+  decidePreparationMaterial(batchId: string, body: unknown) { return this.fetchJson(`/api/jobs/preparation-batches/${batchId}/material-decisions`, { method: 'POST', body: JSON.stringify(body) }); }
+  answerPreparationQuestion(batchId: string, groupId: string, body: unknown) { return this.fetchJson<{ result: { job_id: string; status: string; error?: string }[] }>(`/api/jobs/preparation-batches/${batchId}/questions/${groupId}/answers`, { method: 'POST', body: JSON.stringify(body) }); }
+  retryAutomaticPreparation(jobId: string, body: { expected_revision: number; idempotency_key: string }) { return this.fetchJson(`/api/jobs/${jobId}/automatic-retry`, { method: 'POST', body: JSON.stringify(body) }); }
+  undoPreparationRepair(jobId: string, repairId: string, body: { expected_revision: number; idempotency_key: string }) { return this.fetchJson(`/api/jobs/${jobId}/preparation-repairs/${repairId}/undo`, { method: 'POST', body: JSON.stringify(body) }); }
+  getJobs() { return this.fetchJson<{ jobs: Job[]; preparation_links?: Record<string, { batch_id: string; state: string }> }>('/api/jobs'); }
   getJobMaterial(id: string, kind: import('@featherduster/core').MaterialContent['kind']) {
     return this.fetchJson<{ current: import('@featherduster/core').MaterialRevision | null; history: import('@featherduster/core').MaterialRevision[]; stale_reasons: string[] }>(`/api/jobs/${id}/materials/${kind}`);
   }

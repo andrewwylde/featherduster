@@ -1,3 +1,5 @@
+import { PreparationBatchRepository } from './preparation-batch-repository.js';
+import { isTransientPreparationFailure, repairAutomaticReview, repairAutomaticStructure, trimRepeatedSentences } from './automatic-repair.js';
 import { checkedRender } from './checked-render.js';
 import { CorpusRepository } from '../corpus/repository.js';
 import { CorpusService } from '../corpus/service.js';
@@ -47,6 +49,8 @@ export class JobPreparation {
   async run(attempt: C.Attempt, signal: AbortSignal, previousAttemptId?: string): Promise<void> {
     const { repository: r, artifacts, renderer } = this.deps;
     const fence = attemptFence(attempt);
+    const batches = new PreparationBatchRepository(r), enrolled = batches.enrolled(attempt.job_id);
+    const member = enrolled?.input_snapshot_id === attempt.input_snapshot_id ? enrolled : undefined;
     const proposalsRepository = new ProposalRepository(r);
     const reviews = new ProposalService(r, proposalsRepository, artifacts, new CorpusService(new CorpusRepository(r), () => new C.EvidenceStore()), undefined, this.deps.semantic);
     const selection = proposalsRepository.getAttemptReview(attempt.id);
@@ -112,7 +116,16 @@ export class JobPreparation {
       for (let retry = 0; ; retry++) {
         guard(); consent();
         r.recordAttemptProgress(fence, { model_calls: 1, repair_attempts: retry ? 1 : 0 });
-        const raw = await abortable(runner.run({ system: C.buildSystemPrompt(skill.skill, name), prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal);
+        if (member) batches.reserve(member, `${attempt.id}:${name}:${retry}`, 'model');
+        let raw: unknown;
+        try { raw = await abortable(runner.run({ system: C.buildSystemPrompt(skill.skill, name), prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal); }
+        catch (error) {
+          guard();
+          if (!member || !isTransientPreparationFailure(error instanceof Error ? error.message : String(error))) throw error;
+          batches.reserve(member, `${attempt.id}:${name}:transient`, 'retry');
+          r.recordAttemptProgress(fence, { model_calls: 1 });
+          raw = await abortable(runner.run({ system: C.buildSystemPrompt(skill.skill, name), prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal);
+        }
         guard(); const parsed = schema.safeParse(raw);
         if (parsed.success) return parsed.data;
         if (retry >= input.policy.model_retry_count) throw new Error('Model output did not match the stage schema');
@@ -137,9 +150,27 @@ export class JobPreparation {
       const value = await model('proposals', C.buildProposalsPrompt(analysis, alignment, base, all, opts), C.ProposalSetSchema);
       guard();
       const raw = JSON.stringify(value); const id = randomUUID();
-      const generation = proposalsRepository.saveGeneration({ schema_version: 1, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, raw_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/raw-output.json`, fingerprint: fingerprint(raw) }, proposals: { proposals: C.normalizeGenerationProposals(value.proposals) }, created_at: new Date().toISOString() }, fence, raw);
+      const normalized = C.normalizeGenerationProposals(value.proposals);
+      const structural = member ? repairAutomaticStructure(base, normalized) : { proposals: normalized, changes: [] };
+      if (member && structural.changes.length) batches.reserve(member, `${attempt.id}:structure`, 'repair');
+      const generation = proposalsRepository.saveGeneration({ schema_version: 1, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, raw_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/raw-output.json`, fingerprint: fingerprint(raw) }, proposals: { proposals: normalized }, created_at: new Date().toISOString() }, fence, raw);
       activeReview = reviews.initial(generation, fence);
-      if (this.deps.semantic && C.inventoryPassages(C.applyProposals(base, generation.proposals.proposals.map(p => ({ ...p, decision: 'accepted' as const }))), fingerprint).length) {
+      if (member && structural.changes.length) {
+        const patches: C.ProposalPatch[] = [...new Set(structural.changes.map(change => change.proposal_id))].map(id => {
+          const proposal = structural.proposals.find(p => p.id === id)!;
+          return { proposal_id: proposal.id, ...(proposal.edited_after !== undefined ? { edited_after: proposal.edited_after } : {}),
+            ...(proposal.decision === 'rejected' ? { decision: 'rejected' as const } : {}),
+            ...(proposal.type === 'skills.reorder' ? { skills: proposal.skills } : proposal.type === 'bullet.reorder' ? { order: proposal.order } : {}) };
+        });
+        activeReview = reviews.automaticPatches(activeReview, patches, fence);
+      }
+      if (member) for (const change of structural.changes) {
+        const repairId = randomUUID(), proposal = structural.proposals.find(p => p.id === change.proposal_id)!;
+        const record = { ...change, id: repairId, job_id: attempt.job_id, cycle_id: member.cycle_id, input_snapshot_id: input.id, review_id: activeReview.id,
+          review_revision: activeReview.revision, original_target: proposal.target, sources: [], provenance: 'worker', meaningful: false, created_at: new Date().toISOString() };
+        r.database.db.prepare('INSERT INTO preparation_repairs VALUES (?,?,?,?)').run(repairId, attempt.job_id, member.cycle_id, JSON.stringify(record));
+      }
+      if (this.deps.semantic && C.inventoryPassages(C.applyProposals(base, C.applyProposalPatches(generation.proposals.proposals, [], activeReview.patches).proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const }))), fingerprint).length) {
         if (!this.deps.semantic.context(attempt.job_id).inputCurrent)
           throw new PreparationBlocked('Review current inputs before checking evidence.', { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' });
         const facts = this.deps.semantic.read(attempt.job_id);
@@ -149,8 +180,9 @@ export class JobPreparation {
         await this.deps.semantic.wait(attempt.job_id); guard();
         activeReview = reviews.refreshFacts(activeReview, fence);
       }
+      if (member && this.deps.semantic) activeReview = await repairAutomaticReview(reviews, this.deps.semantic, activeReview, fence, signal);
       reviewed = reviews.evaluate(generation, activeReview);
-      if (r.getJob(attempt.job_id).recovery?.recovery_attempt_id === attempt.id) throw new PreparationBlocked('Recovered output saved; inspect and explicitly continue', recovery('proposals'));
+      if (!member && r.getJob(attempt.job_id).recovery?.recovery_attempt_id === attempt.id) throw new PreparationBlocked('Recovered output saved; inspect and explicitly continue', recovery('proposals'));
       if (reviewed.validation.status !== 'ready') throw new PreparationBlocked('Resolve saved proposal or candidate issues', recovery('proposals'));
       return { proposals: reviewed.proposals };
     });
@@ -163,8 +195,39 @@ export class JobPreparation {
           throw new PreparationBlocked('Facts changed since this saved preparation. Review current facts.', recovery('proposals'));
       }
     }
-    const applied = reviewed ? { candidate: reviewed.candidate_preview, proposals: reviewed.proposals, appliedProposalIds: reviewed.appliedProposalIds, valid: reviewed.validation.status === 'ready' } : C.applyCandidateProposals(base, proposals.proposals, { analysis, alignment, evidence: all, skillSupport });
+    let applied = reviewed ? { candidate: reviewed.candidate_preview, proposals: reviewed.proposals, appliedProposalIds: reviewed.appliedProposalIds, valid: reviewed.validation.status === 'ready' } : C.applyCandidateProposals(base, proposals.proposals, { analysis, alignment, evidence: all, skillSupport });
     if (!applied.valid) throw new PreparationBlocked('Resolve candidate issues', recovery('candidate'));
+    let prechecked: Awaited<ReturnType<typeof checkedRender>> | undefined;
+    if (member && activeReview && this.deps.semantic) {
+      for (let pass = 0; pass <= 2; pass++) {
+        prechecked = await abortable(checkedRender(renderer, { templateId: template.id, spec: applied.candidate, rules, signal }, input.policy.page_budget), signal); guard();
+        if (prechecked.status === 'ready' || !prechecked.issues.some(issue => issue.code === 'page-budget') || pass === 2) break;
+        const patches = applied.proposals.filter(p => p.decision !== 'rejected' && ['summary.rewrite', 'bullet.rewrite', 'bullet.add'].includes(p.type))
+          .flatMap(p => { const before = p.edited_after ?? p.after, after = trimRepeatedSentences(before); return before !== after ? [{ proposal_id: p.id, edited_after: after }] : []; });
+        if (!patches.length) break;
+        batches.reserve(member, `${attempt.id}:layout:${pass}`, 'repair');
+        const failureId = randomUUID(), failure = JSON.stringify(prechecked.failure);
+        r.database.files.writeBundle('artifacts', attempt.job_id, failureId, { 'overflow.json': failure });
+        const oldFacts = this.deps.semantic.read(attempt.job_id);
+        activeReview = reviews.automaticPatches(activeReview, patches, fence);
+        for (const patch of patches) {
+          const proposal = applied.proposals.find(p => p.id === patch.proposal_id)!, repairId = randomUUID();
+          const record = { id: repairId, job_id: attempt.job_id, cycle_id: member.cycle_id, input_snapshot_id: input.id, review_id: activeReview.id, review_revision: activeReview.revision,
+            proposal_id: patch.proposal_id, original_target: proposal.target, before: proposal.edited_after ?? proposal.after, after: patch.edited_after,
+            reason: 'Removed repeated complete sentences after verified page overflow; no distinct accomplishment was removed.',
+            sources: oldFacts.facts.filter(f => f.passage.text === (proposal.edited_after ?? proposal.after)).flatMap(f => f.evidence), provenance: 'worker', meaningful: false,
+            failed_render: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, failureId)}/overflow.json`, fingerprint: fingerprint(failure) }, created_at: new Date().toISOString() };
+          r.database.db.prepare('INSERT INTO preparation_repairs VALUES (?,?,?,?)').run(repairId, attempt.job_id, member.cycle_id, JSON.stringify(record));
+        }
+        const facts = this.deps.semantic.read(attempt.job_id);
+        this.deps.semantic.start(attempt.job_id, { target: facts.target, input_fingerprint: facts.input_fingerprint, expected_job_revision: facts.job_revision, expected_semantic_revision: facts.semantic_revision,
+          reason: 'check', idempotency_key: `layout:${attempt.id}:${pass}` }, attempt.id, signal);
+        await this.deps.semantic.wait(attempt.job_id); guard();
+        activeReview = reviews.refreshFacts(activeReview, fence); reviewed = reviews.evaluate(proposalsRepository.getGeneration(activeReview.generation_id), activeReview);
+        if (reviewed.validation.status !== 'ready') throw new PreparationBlocked('Review the affected wording before rendering.', recovery('proposals'));
+        applied = { candidate: reviewed.candidate_preview, proposals: reviewed.proposals, appliedProposalIds: reviewed.appliedProposalIds, valid: true };
+      }
+    }
     await stage('brief', C.DefensibilityBriefSchema, () => model('brief', C.buildBriefPrompt(analysis, alignment, applied.proposals.filter(p => applied.appliedProposalIds.includes(p.id)), all, opts), C.DefensibilityBriefSchema));
     // Once factual wording is approved, editorial cleanup must not silently broaden it.
     const cleaned = await stage('deslop', deslopSchema, async () => activeReview?.validation.version === '2'
@@ -177,7 +240,11 @@ export class JobPreparation {
         r.database.files.writeBundle('artifacts', attempt.job_id, id, { 'failure.json': bytes });
         throw new PreparationBlocked(message, { ...recovery('render'), failed_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/failure.json`, fingerprint: fingerprint(bytes) } });
       };
-const checked = await abortable(checkedRender(renderer, { templateId: template.id, spec: cleaned.candidate, rules, signal }, input.policy.page_budget), signal);
+let checked = prechecked ?? await abortable(checkedRender(renderer, { templateId: template.id, spec: cleaned.candidate, rules, signal }, input.policy.page_budget), signal);
+if (member && checked.status === 'unavailable' && checked.issues.some(i => isTransientPreparationFailure(i.message))) {
+  batches.reserve(member, `${attempt.id}:render:retry`, 'retry');
+  checked = await abortable(checkedRender(renderer, { templateId: template.id, spec: cleaned.candidate, rules, signal }, input.policy.page_budget), signal);
+}
 guard();
 if (checked.status !== 'ready' || !checked.output) return retainFailure(checked.failure ?? checked, checked.issues.map(i => i.message).join('; '));
 return renderedSchema.parse(checked.output);

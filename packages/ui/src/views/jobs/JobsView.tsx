@@ -17,6 +17,7 @@ import {
   displayPreparationState,
   hasCancellableWork,
   pluralize,
+  preparationDestination,
 } from './job-utils.js';
 
 export {
@@ -38,6 +39,17 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
   const [confirmCancelId, setConfirmCancelId] = useState<string | null>(null);
   const [busyCancelId, setBusyCancelId] = useState<string | null>(null);
   const key = useIntentKey();
+  const [selection, setSelection] = useState<string[]>([]);
+  const [preparing, setPreparing] = useState(false), [prepareError, setPrepareError] = useState('');
+  const prepareSelected = async () => {
+    setPreparing(true); setPrepareError('');
+    try {
+      const members = selection.map(id => { const job = data?.jobs.find(j => j.id === id); if (!job) throw Error('A selected job changed. Reload the list.'); return { job_id: id, expected_revision: job.revision }; });
+      const result = await apiClient.prepareJobBatch({ members, idempotency_key: key({ members }) });
+      sessionStorage.setItem('resume-preparation-recent-batch', result.result.id);
+      navigate(`/jobs/preparation-batches/${result.result.id}/review`);
+    } catch (e) { setPrepareError((e as Error).message); } finally { setPreparing(false); }
+  };
 
   const handleCancelJob = async (job: Job) => {
     if (busyCancelId) return;
@@ -94,7 +106,12 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
 
       <JobIntake onSaved={() => void refresh()} />
       <WorkerControls jobs={allJobs} onJobMutated={() => void refresh()} navigate={navigate} />
+      {sessionStorage.getItem('resume-preparation-recent-batch') && <button className={primaryButton} onClick={() => navigate(`/jobs/preparation-batches/${sessionStorage.getItem('resume-preparation-recent-batch')}/review`)}>Return to resume preparation</button>}
 
+      <section className={`${cardClass} p-4 space-y-2`}><h2>Prepare selected resumes</h2><p>Jobs prepare in selection order. Only necessary questions pause their own jobs. Each PDF needs your separate approval.</p>
+        <button className={primaryButton} disabled={!selection.length || preparing} onClick={() => void prepareSelected()}>Prepare resumes ({selection.length})</button>
+        {prepareError && <p role="alert">{prepareError}</p>}
+      </section>
       {/* Filter Tabs Bar */}
       <details><summary>Filter saved jobs and retained history</summary><div className="space-y-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -220,6 +237,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
       {/* Jobs Cards List */}
       <ul className="space-y-3">
         {jobs?.map((job) => {
+          const preparationHref = preparationDestination(job, data?.preparation_links?.[job.id]);
           const initials = (job.company || 'Job')
             .split(' ')
             .map((w) => w[0])
@@ -233,6 +251,9 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
               className={`${cardClass} p-5 space-y-3 break-words hover:border-slate-300 dark:hover:border-slate-700 transition-all hover:shadow-md group`}
             >
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Select ${job.company ?? 'job'} ${job.role ?? ''}`} checked={selection.includes(job.id)}
+                  disabled={preparing || job.kind !== 'job' || ['queued', 'preparing'].includes(job.preparation_state)}
+                  onChange={event => setSelection(previous => event.target.checked ? [...previous, job.id] : previous.filter(id => id !== job.id))} />Prepare{selection.includes(job.id) ? ` · ${selection.indexOf(job.id) + 1}` : ''}</label>
                 {/* Left: Avatar + Title */}
                 <div className="flex items-start gap-3.5 min-w-0">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60">
@@ -243,11 +264,11 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
                     <h2 className="text-base font-semibold leading-tight">
                       <a
                         className="text-slate-900 dark:text-white hover:text-vermilion-600 dark:hover:text-vermilion-400 transition-colors flex items-center gap-1.5 group-hover:underline"
-                        href={`/jobs/${job.id}`}
+                        href={preparationHref ?? `/jobs/${job.id}`}
                         onClick={(e) => {
                           if (!e.ctrlKey && !e.metaKey) {
                             e.preventDefault();
-                            navigate(`/jobs/${job.id}`);
+                            navigate(preparationHref ?? `/jobs/${job.id}`);
                           }
                         }}
                       >
@@ -266,7 +287,8 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
               </div>
 
               {/* Action row */}
-              <div className="pt-2 flex items-center justify-end gap-2">
+              <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
+                {preparationHref && <button className={primaryButton} onClick={() => navigate(preparationHref)}>{preparationHref.endsWith('/questions') ? 'Answer preparation questions' : preparationHref.endsWith('/inputs') ? 'Review current inputs' : 'Preparation progress'}</button>}
                 {hasCancellableWork(job) && (
                   confirmCancelId === job.id ? (
                     <div className="flex items-center gap-1.5">

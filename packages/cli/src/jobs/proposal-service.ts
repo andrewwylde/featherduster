@@ -91,6 +91,17 @@ export class ProposalService {
     const intended = C.applyProposals(base, overlay.proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
     const semantic = semanticEnabled && this.semantic ? this.semantic.support(g.job_id, g.input_snapshot_id, intended, overlay.proposals) : undefined;
     const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport, semanticSupport: semantic?.support }, ctx.rules, supportFor);
+    const automatic = this.jobs.database.db.prepare('SELECT 1 FROM preparation_members WHERE job_id=? AND input_snapshot_id=? LIMIT 1').get(g.job_id, g.input_snapshot_id);
+    if (automatic) for (const proposal of overlay.proposals.filter(p => p.decision !== 'rejected' && ['bullet.drop', 'skills.prune'].includes(p.type))) {
+      const original = base.experiences[proposal.target.experience_index ?? -1]?.bullets[proposal.target.bullet_index ?? -1];
+      const duplicate = proposal.type === 'bullet.drop' && original
+        && base.experiences[proposal.target.experience_index!].bullets.filter(b => b.text === original.text && canonical(b.citations ?? []) === canonical(original.citations ?? [])).length > 1
+        && result.candidate.experiences[proposal.target.experience_index!]?.bullets.some(b => b.text === original.text && canonical(b.citations ?? []) === canonical(original.citations ?? []));
+      if (!duplicate && !this.jobs.database.db.prepare('SELECT 1 FROM preparation_decisions WHERE generation_id=? AND proposal_id=?').get(g.id, proposal.id)) {
+        result.issues.push({ id: `material:${proposal.id}`, subject: { kind: 'proposal', proposal_id: proposal.id }, group: 'Material content decision', action: 'edit_proposal', details: [{ severity: 'block', kind: 'material_decision', message: 'Decide whether to omit this accomplishment or capability. Automatic preparation cannot remove unique content.' }] });
+        result.valid = false;
+      }
+    }
     const validation: C.ProposalReviewRevision['validation'] = { authority: 'server', version: semantic ? '2' : '1', fingerprint: fingerprint(canonical({ generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, proposals: overlay.proposals, groundings: review.groundings, validator_version: semantic ? 2 : 1, ...(semantic ? { semantic_fingerprint: semantic.fingerprint } : {}), ...(corrections.length ? { base_corrections: corrections } : {}) })), generation_id: g.id, input_fingerprint: g.input_fingerprint, review_revision: review.revision, status: result.valid ? 'ready' : 'blocked', issues: result.issues };
     return { candidate_preview: result.candidate, validation, proposals: result.proposals, appliedProposalIds: result.appliedProposalIds };
   }
@@ -104,15 +115,34 @@ export class ProposalService {
       this.event(saved, fence); return saved;
     }).immediate();
   }
-  refreshFacts(review: C.ProposalReviewRevision, fence: OwnershipFence) {
+  refreshFacts(review: C.ProposalReviewRevision, fence?: OwnershipFence) {
     const draft = { ...review, revision: review.revision + 1, groundings: review.groundings.map(g => ({ ...g, review_revision: review.revision + 1 })), created_at: new Date().toISOString() };
     const result = this.evaluate(this.proposals.getGeneration(review.generation_id), draft, true);
     const saved = this.proposals.appendReview({ ...draft, candidate_preview: result.candidate_preview, validation: result.validation }, review.revision, fence);
-    this.event(saved, fence);
+    this.event(saved, fence, true);
     return saved;
   }
-  private event(review: C.ProposalReviewRevision, fence?: OwnershipFence) {
-    this.jobs.appendEvent({ schema_version: 1, id: randomUUID(), workspace_id: review.workspace_id, job_id: review.job_id, created_at: new Date().toISOString(), actor: fence ? { kind: 'worker', id: 'proposal-preparation' } : { kind: 'user', id: 'local-human' }, attempt_id: fence?.attempt_id ?? null, idempotency_key: null, payload: { kind: 'proposal_review', review_id: review.id, revision: review.revision, generation_id: review.generation_id, input_fingerprint: review.input_fingerprint } });
+  /** Worker-only overlay path: never writes human feedback or shared corpus updates. */
+  automaticPatches(review: C.ProposalReviewRevision, patches: C.ProposalPatch[], fence: OwnershipFence, baseEdits: { path: string; before: string; after: string }[] = []) {
+    if (!this.jobs.isAttemptCurrent(fence)) throw new RepositoryError('invalid_ownership', 'Automatic repair lost ownership.');
+    const generation = this.proposals.getGeneration(review.generation_id);
+    const overlay = C.applyProposalPatches(generation.proposals.proposals, review.patches, patches, review.groundings);
+    const captured = this.context(generation).captured.base_resume, base = this.effectiveBase(captured, review);
+    const corrections = [...(review.base_corrections ?? [])];
+    for (const edit of baseEdits) {
+      if (C.baseText(base, edit.path) !== edit.before || C.baseText(captured, edit.path) === undefined) throw new RepositoryError('revision_conflict', 'Original repair target changed.');
+      const index = corrections.findIndex(correction => correction.path === edit.path);
+      if (index >= 0) corrections.splice(index, 1);
+      corrections.push({ path: edit.path, before: C.baseText(captured, edit.path)!, after: edit.after,
+        anchor: C.experienceAnchor(captured, edit.path), recorded_by: 'automatic-preparation', recorded_at: new Date().toISOString() });
+    }
+    const next = { ...review, ...(corrections.length ? { base_corrections: corrections } : {}), patches: overlay.patches, groundings: overlay.groundings.map(g => ({ ...g, review_revision: review.revision + 1 })), revision: review.revision + 1, created_at: new Date().toISOString() };
+    const evaluated = this.evaluate(generation, next, true);
+    const saved = this.proposals.appendReview({ ...next, candidate_preview: evaluated.candidate_preview, validation: evaluated.validation }, review.revision, fence);
+    this.event(saved, fence); return saved;
+  }
+  private event(review: C.ProposalReviewRevision, fence?: OwnershipFence, automatic = false) {
+    this.jobs.appendEvent({ schema_version: 1, id: randomUUID(), workspace_id: review.workspace_id, job_id: review.job_id, created_at: new Date().toISOString(), actor: fence || automatic ? { kind: 'worker', id: 'proposal-preparation' } : { kind: 'user', id: 'local-human' }, attempt_id: fence?.attempt_id ?? null, idempotency_key: null, payload: { kind: 'proposal_review', review_id: review.id, revision: review.revision, generation_id: review.generation_id, input_fingerprint: review.input_fingerprint } });
   }
   save(request: SaveProposalReviewRequest): C.ProposalSaveResponse {
     const { job_id, review_id, ...body } = request;

@@ -11,6 +11,25 @@ export function checkCandidateFields(candidate: ResumeSpec, proposals: Proposal[
   const shape = ResumeSpecSchema.safeParse(candidate);
   if (!shape.success) return shape.error.issues.map(i => ({ path: i.path.join('.'), code: 'required_field', severity: 'block', message: i.code === 'too_small' ? `Enter ${i.path[0] === 'profile' ? 'your ' : 'the '}${String(i.path.at(-1)).replace(/([A-Z])/g, ' $1').toLowerCase()}.` : i.message }));
   const issues: DraftIssue[] = [];
+  candidate.experiences.forEach((experience, ei) => {
+    const seen = new Set<string>();
+    experience.bullets.forEach((bullet, bi) => {
+      const key = bullet.text.trim().replace(/\s+/g, ' ').toLowerCase();
+      if (seen.has(key)) issues.push({ path: `experiences.${ei}.bullets.${bi}.text`, code: 'duplicate_bullet', severity: 'block', message: 'Remove repeated bullet wording without deleting unique accomplishments.' });
+      seen.add(key);
+    });
+  });
+  const existingSkills = new Set(context.baseResume.skills.flatMap(group => group.skills).map(skill => skill.trim().toLowerCase()));
+  candidate.skills.forEach((group, gi) => {
+    const seen = new Set<string>();
+    group.skills.forEach((skill, si) => {
+      const key = skill.trim().toLowerCase();
+      if (seen.has(key)) issues.push({ path: `skills.${gi}.skills.${si}`, code: 'duplicate_skill', severity: 'block', message: 'List each supported skill once.' });
+      if (!existingSkills.has(key) && !context.skillSupport?.some(support => support.support === 'direct' && [support.skill, ...support.permitted_terms].some(term => term.trim().toLowerCase() === key)))
+        issues.push({ path: `skills.${gi}.skills.${si}`, code: 'unsupported_skill', severity: 'block', message: 'This added skill needs captured direct support before publication.' });
+      seen.add(key);
+    });
+  });
   const fields = [
     { path: 'summary', text: candidate.summary ?? '', citations: proposals.filter(p => p.type === 'summary.rewrite').flatMap(p => p.citations), ei: -1, bi: -1 },
     ...candidate.experiences.flatMap((e, ei) => e.bullets.map((b, bi) => ({ path: `experiences.${ei}.bullets.${bi}.text`, text: b.text, citations: b.citations ?? [], ei, bi }))),

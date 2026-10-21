@@ -1,0 +1,21 @@
+import { afterEach, expect, it } from 'vitest';
+import { automaticPreparationFixture } from './fixtures/automatic-preparation-fixture.js';
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
+it('validates a selected batch atomically and reserves one durable retry across reopening', async () => {
+  const f = automaticPreparationFixture(cleanup => cleanups.push(cleanup)), a = await f.add(), b = await f.add();
+  const request = { members: [{ job_id: b.id, expected_revision: b.revision }, { job_id: a.id, expected_revision: a.revision + 1 }], idempotency_key: 'invalid' };
+  expect(() => f.runtime().batches.create(request, f.runtime().captureInputs)).toThrow(/changed/);
+  expect(f.runtime().repository.database.db.prepare('SELECT COUNT(*) AS n FROM preparation_batches').get()).toEqual({ n: 0 });
+  request.members[1].expected_revision = a.revision;
+  const batch = f.runtime().batches.create(request, (id, revision) => f.runtime().captureInputs(id, revision, { automatic: true })).result;
+  const member = f.runtime().batches.members(batch.id)[0];
+  expect(member.job_id).toBe(b.id);
+  f.runtime().batches.reserve(member, 'original', 'model');
+  f.runtime().batches.reserve(member, 'transient', 'retry');
+  const reopened = await f.reopen();
+  expect(() => reopened.batches.reserve(member, 'transient', 'retry')).toThrow(/already dispatched/);
+  expect(() => reopened.batches.reserve(member, 'second-transient', 'retry')).toThrow(/budget exhausted/);
+  expect(reopened.batches.cycle(member.cycle_id).usage).toMatchObject({ calls: 2, retries: 1 });
+  expect(f.run).not.toHaveBeenCalled();
+});

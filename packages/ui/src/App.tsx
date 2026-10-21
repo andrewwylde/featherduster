@@ -1,3 +1,6 @@
+import { ResumeReviewQueue } from './views/jobs/ResumeReviewQueue.js';
+import { PreparationQuestions } from './views/jobs/PreparationQuestions.js';
+import { preparationBatchForPath } from './routing.js';
 import type { JobLeaveGuard } from './views/jobs/JobDraftActions.js';
 import { ResumeTailor } from './views/ResumeTailor';
 import { JobsView } from './views/jobs/JobsView';
@@ -38,6 +41,7 @@ function canonicalPath(pathname: string): string {
 export function App() {
   const [currentTab, setCurrentTab] = useState<NavTab>(() => tabForPath(canonicalPath(window.location.pathname + window.location.search)));
   const [tailorView, setTailorView] = useState<TailorView>(() => tailorViewForPath(window.location.pathname + window.location.search));
+  const [batchView, setBatchView] = useState(() => preparationBatchForPath(window.location.pathname));
   const [jobsView, setJobsView] = useState(() => jobsViewForPath(window.location.pathname + window.location.search));
   const [linkedDraft, setLinkedDraft] = useState(() => jobDraftForPath(window.location.pathname + window.location.search));
   const [linkedVisible, setLinkedVisible] = useState(() => !!jobDraftForPath(window.location.pathname + window.location.search));
@@ -66,9 +70,11 @@ export function App() {
 
     if (!replace && !navigationGuard.current()) { setNavigationError('Changes are not saved yet. Retry saving before leaving this draft.'); return; }
     const draft = jobDraftForPath(path);
+    if (draft && batchView?.section === 'review') sessionStorage.setItem(`resume-review-return:${draft.jobId}`, `/jobs/preparation-batches/${batchView.batchId}/review`);
     if (draft) setLinkedDraft(draft);
     setLinkedVisible(!!draft);
     setJobsView(jobsViewForPath(path));
+    setBatchView(preparationBatchForPath(path));
     setNavigationError(null);
     if (window.location.pathname + window.location.search !== path) {
       window.history[replace ? 'replaceState' : 'pushState']({}, '', path);
@@ -102,6 +108,7 @@ export function App() {
       if (draft) setLinkedDraft(draft);
       setLinkedVisible(!!draft);
       setJobsView(jobsViewForPath(path));
+    setBatchView(preparationBatchForPath(path));
       if (path === '/tailor') setTailorListVisit(visit => visit + 1);
       currentPath.current = path;
       setCurrentTab(tabForPath(path));
@@ -170,7 +177,7 @@ export function App() {
           /></div>
         )}
 
-        {currentTab === 'jobs' && (jobsView ? <JobDetail key={jobsView.id} id={jobsView.id} section={jobsView.section} navigate={navigatePath} /> : <JobsView navigate={navigatePath} />)}
+        {currentTab === 'jobs' && (batchView ? (batchView.section === 'review' ? <ResumeReviewQueue key={batchView.batchId} batchId={batchView.batchId} navigate={navigatePath} /> : <PreparationQuestions key={batchView.batchId} batchId={batchView.batchId} navigate={navigatePath} />) : jobsView ? <JobDetail key={jobsView.id} id={jobsView.id} section={jobsView.section} navigate={navigatePath} /> : <JobsView navigate={navigatePath} />)}
         {linkedDraft && <div className={currentTab === 'tailor' && linkedVisible ? 'block' : 'hidden'}>
           <ResumeTailor key={linkedDraft.draftId} linkedJobDraft={linkedDraft} onReviewJobInputs={() => {
             // JobDraftActions has already saved or explicitly discarded local edits.
@@ -179,7 +186,7 @@ export function App() {
             finally { linkedLeaveBypass.current = false; }
           }} onLeaveGuard={guard => { linkedLeaveGuard.current = guard; }} onBackToRuns={() => {
   linkedLeaveBypass.current = true;
-  try { navigatePath(`/jobs/${linkedDraft.jobId}/resume`); }
+  try { const back = sessionStorage.getItem(`resume-review-return:${linkedDraft.jobId}`); navigatePath(back && preparationBatchForPath(back) ? back : `/jobs/${linkedDraft.jobId}/resume`); }
   finally { linkedLeaveBypass.current = false; }
 }} />
         </div>}

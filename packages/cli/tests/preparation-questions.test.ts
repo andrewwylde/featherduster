@@ -1,0 +1,38 @@
+import { afterEach, expect, it, vi } from 'vitest';
+import { automaticPreparationFixture, installAutomaticContent } from './fixtures/automatic-preparation-fixture.js';
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
+const setup = () => { const f = automaticPreparationFixture(cleanup => cleanups.push(cleanup)); installAutomaticContent(f, 'feature'); return f; };
+it('groups exact work, applies equivalent answers once with job-local provenance, and excludes stale members', async () => {
+  const f = setup(), a = await f.add(), b = await f.add();
+  const batch = f.runtime().prepareBatch({ members: [a, b].map(job => ({ job_id: job.id, expected_revision: job.revision })), idempotency_key: 'two' }).result;
+  await vi.waitFor(() => expect(f.runtime().readBatch(batch.id).counts.questions).toBe(2), { timeout: 10000 });
+  const group = f.runtime().questions.read(batch.id)[0]; expect(group.members).toHaveLength(2);
+  const member = f.runtime().batches.members(batch.id)[0];
+  f.runtime().batches.save({ ...member, state: 'running', questions_visible: false });
+  expect(f.runtime().questions.read(batch.id).flatMap(g => g.members).some(m => m.job_id === member.job_id)).toBe(false);
+  f.runtime().batches.save({ ...member, state: 'running', questions_visible: true });
+  expect(f.runtime().questions.read(batch.id).flatMap(g => g.members).some(m => m.job_id === member.job_id)).toBe(true);
+  f.runtime().batches.save(member);
+  const current = f.runtime().repository.getJob(b.id);
+  f.runtime().repository.updateJob({ ...current, role: 'Changed role' }, current.revision);
+  const request = { members: group.members, action: 'answer', assertion: 'These were the same feature.', confirmed: true, kind: 'confirmation', idempotency_key: 'scoped-answer' };
+  const result = f.runtime().questions.answer(batch.id, group.id, request);
+  expect(result.result.map(r => r.status)).toEqual(['saved', 'conflict']);
+  expect(f.runtime().questions.answer(batch.id, group.id, request).result).toEqual(result.result);
+  await vi.waitFor(() => expect(f.runtime().readBatch(batch.id).queue.some(q => q.job_id === a.id)).toBe(true), { timeout: 10000 });
+  const rows = f.runtime().repository.database.db.prepare('SELECT payload FROM semantic_clarifications').all() as { payload: string }[];
+  expect(rows.map(row => JSON.parse(row.payload))).toMatchObject([{ job_id: a.id, actor: 'local-human' }]);
+  expect(f.runtime().corpus.repository.snapshot().revision).toBe(0);
+}, 20000);
+it('selects exact captured narrower wording as a checked edit, not a factual confirmation', async () => {
+  const f = setup(), job = await f.add(), batch = f.runtime().prepareBatch({ members: [{ job_id: job.id, expected_revision: job.revision }], idempotency_key: 'one' }).result;
+  await vi.waitFor(() => expect(f.runtime().readBatch(batch.id).counts.questions).toBe(1), { timeout: 10000 });
+  const group = f.runtime().questions.read(batch.id)[0]; expect(group.members[0].narrower?.text).toBe('Implemented Time Spend reporting.');
+  f.runtime().questions.answer(batch.id, group.id, { members: group.members, action: 'narrower', assertion: 'Use displayed wording.', confirmed: false, kind: 'confirmation', idempotency_key: 'narrow' });
+  await vi.waitFor(() => expect(f.runtime().readBatch(batch.id).counts.ready).toBe(1), { timeout: 10000 });
+  const progress = f.runtime().readBatch(batch.id), view = f.runtime().artifacts.review(job.id, progress.queue[0].artifact_id);
+  expect(view.draft.candidate.experiences[0].bullets[0].text).toBe('Implemented Time Spend reporting.');
+  expect(f.runtime().repository.database.db.prepare('SELECT COUNT(*) AS n FROM semantic_clarifications').get()).toEqual({ n: 0 });
+  expect(progress.decisions[0]).toMatchObject({ decision: 'narrower', actor: 'local-human' });
+}, 20000);

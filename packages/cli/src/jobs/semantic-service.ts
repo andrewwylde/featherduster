@@ -16,6 +16,7 @@ export interface SemanticDependencies {
   consent(runner: ModelRunner): boolean;
   timeoutMs(): number;
   currentRules?(): C.PrivacyRulesConfig;
+  beforeDispatch?(jobId: string, key: string, kind: 'model' | 'retry', inputSnapshotId: string): boolean | void;
 }
 export class SemanticService {
   readonly store: SemanticRepository;
@@ -169,7 +170,10 @@ export class SemanticService {
       if (this.deps.currentRules && canonical(C.PrivacyRulesConfigSchema.parse(this.deps.currentRules())) !== canonical(ctx.rules))
         throw Error('Privacy rules changed. Review current inputs before checking evidence.');
       const batch = uncached.slice(offset, offset + batchSize);
-      const ranked = C.discoverEvidence(batch.map(p => p.text).join('\n'), ctx.sources.map((s, i) => ({ id: String(i), fingerprint: s.evidence_fingerprint, work_id: s.work_id, text: s.text, retracted: false })));
+      const query = batch.map(p => `${p.text}\n${p.work_context ?? ''}`).join('\n');
+      const ranked = C.discoverEvidence(query, ctx.sources.map((s, i) => ({ id: String(i), fingerprint: s.evidence_fingerprint, work_id: s.work_id, text: `${s.evidence_id}\n${s.company ?? ''}\n${s.text}`, retracted: false })));
+      const cited = new Set(batch.flatMap(p => { try { return (JSON.parse(p.work_context ?? '{}').cited_work ?? []) as string[]; } catch { return []; } }));
+      ranked.matches.sort((a, b) => Number(cited.has(ctx.sources[Number(b.id)].evidence_id)) - Number(cited.has(ctx.sources[Number(a.id)].evidence_id)) || b.score - a.score);
       // Include identities, work context, JSON escaping and coverage metadata in
       // the bound, rather than counting only source text.
       let chars = semanticPrompt({ subjects: batch, sources: [], configuration_key: ctx.configurationKey,
@@ -186,10 +190,19 @@ export class SemanticService {
       });
       if (ctx.runner.locality === 'cloud' && batch.some(p => { const redacted = C.redactText(p.text, ctx.rules); return !redacted.isClean || redacted.redactedText !== p.text; }))
         throw Error('These claims contain wording that cannot be sent under the current privacy rules. Review them manually.');
-      const call = this.store.reserve(op.id, Math.min(60000, this.deps.timeoutMs()) + 10000), started = Date.now();
-      const outcome = await classifyBatch(ctx.runner, { subjects: batch, sources, configuration_key: ctx.configurationKey,
+      const dispatchKey = `${op.id}:${batch.map(p => p.subject.id).join(':')}`;
+      const automatic = this.deps.beforeDispatch?.(op.job_id, dispatchKey, 'model', op.input_snapshot_id);
+      let call = this.store.reserve(op.id, Math.min(60000, this.deps.timeoutMs()) + 10000), started = Date.now();
+      const request = { subjects: batch, sources, configuration_key: ctx.configurationKey,
         configuredStepTimeoutMs: this.deps.timeoutMs(), coverage: { searched_source_count: ctx.captured.evidence.getAll().length,
-          omitted_source_ids: [...new Set(ctx.sources.filter(s => !sources.includes(s)).map(s => s.evidence_id))], truncated: sources.length !== ctx.sources.length } }, signal);
+          omitted_source_ids: [...new Set(ctx.sources.filter(s => !sources.includes(s)).map(s => s.evidence_id))], truncated: sources.length !== ctx.sources.length } };
+      let outcome = await classifyBatch(ctx.runner, request, signal);
+      if (outcome.status === 'unavailable' && automatic && !signal.aborted && /timeout|timed out|temporar|offline|ECONNRESET|ECONNREFUSED|rate.limit|\b503\b/i.test(outcome.reason)) {
+        this.store.failCall(call, outcome.reason, Date.now() - started);
+        this.deps.beforeDispatch?.(op.job_id, `${dispatchKey}:retry`, 'retry', op.input_snapshot_id);
+        call = this.store.reserve(op.id, Math.min(60000, this.deps.timeoutMs()) + 10000); started = Date.now();
+        outcome = await classifyBatch(ctx.runner, request, signal);
+      }
       if (outcome.status === 'unavailable') { this.store.failCall(call, outcome.reason, Date.now() - started); return; }
       try {
         // One result per batch; cache identity includes its exact submitted passage set.

@@ -27,6 +27,20 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
       return c.json({ code: 'internal_error', error: 'Jobs operation failed' }, 500);
     }
   };
+  app.post('/api/jobs/preparation-batches', handle(async (c, r) => r.prepareBatch(await c.req.json()), 202));
+  app.get('/api/jobs/preparation-batches/:batchId', handle((c, r) => r.readBatch(uuid.parse(c.req.param('batchId')))));
+  app.get('/api/jobs/preparation-batches/:batchId/review-queue', handle((c, r) => ({ queue: r.readBatch(uuid.parse(c.req.param('batchId'))).queue })));
+  app.get('/api/jobs/preparation-batches/:batchId/questions', handle((c, r) => ({ groups: r.questions.read(uuid.parse(c.req.param('batchId'))), materials: r.questions.materials(uuid.parse(c.req.param('batchId'))) })));
+  app.post('/api/jobs/preparation-batches/:batchId/material-decisions', handle(async (c, r) => r.questions.decide(uuid.parse(c.req.param('batchId')), await c.req.json())));
+  app.post('/api/jobs/preparation-batches/:batchId/questions/:groupId/answers', handle(async (c, r) => r.questions.answer(uuid.parse(c.req.param('batchId')), key.parse(c.req.param('groupId')), await c.req.json())));
+  app.post('/api/jobs/:id/preparation-repairs/:repairId/undo', handle(async (c, r) => {
+    const body = z.object({ expected_revision: revision, idempotency_key: key }).strict().parse(await c.req.json());
+    return r.undoRepair(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('repairId')), body);
+  }));
+  app.post('/api/jobs/:id/automatic-retry', handle(async (c, r) => {
+    const body = z.object({ expected_revision: revision, idempotency_key: key }).strict().parse(await c.req.json());
+    return r.coordinator.retry(uuid.parse(c.req.param('id')), body.expected_revision, body.idempotency_key);
+  }, 202));
   app.get('/api/jobs/:id/facts', handle((c, r) => {
     const id = uuid.parse(c.req.param('id')), draftId = c.req.query('draft_id');
     const draft = draftId ? r.repository.getLatestDraft(uuid.parse(draftId)) : null;
@@ -35,9 +49,15 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
   app.post('/api/jobs/:id/facts/view', handle(async (c, r) => r.semantic.read(uuid.parse(c.req.param('id')), SemanticTargetSchema.parse(await c.req.json()))));
   app.post('/api/jobs/:id/facts/check', handle(async (c, r) => r.semantic.start(uuid.parse(c.req.param('id')), StartSemanticCheckSchema.parse(await c.req.json())), 202));
   app.get('/api/jobs/:id/facts/checks/:operationId', handle((c, r) => r.semantic.operation(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('operationId')))));
-  app.post('/api/jobs/:id/facts/clarifications', handle(async (c, r) => r.semantic.clarify(uuid.parse(c.req.param('id')), SaveFactClarificationSchema.parse(await c.req.json()))));
+  app.post('/api/jobs/:id/facts/clarifications', handle(async (c, r) => {
+    const id = uuid.parse(c.req.param('id')), result = r.semantic.clarify(id, SaveFactClarificationSchema.parse(await c.req.json()));
+    r.coordinator.answered(id); return result;
+  }));
   const checkFallback = (r: JobsRuntime, id?: string, rev?: number) => { if (id && r.repository.getJob(id).revision !== rev) throw new RepositoryError('revision_conflict', 'Stale fallback revision'); };
-  app.get('/api/jobs', handle((c, r) => { const filters = jobFilters.parse(c.req.query()); return { jobs: r.repository.listJobs().filter(job => Object.entries(filters).every(([k, v]) => job[k as keyof typeof job] === v)) }; }));
+  app.get('/api/jobs', handle((c, r) => { const filters = jobFilters.parse(c.req.query()); return {
+    jobs: r.repository.listJobs().filter(job => Object.entries(filters).every(([k, v]) => job[k as keyof typeof job] === v)),
+    preparation_links: Object.fromEntries(r.batches.members().map(member => [member.job_id, { batch_id: member.batch_id, state: member.state }])),
+  }; }));
   app.post('/api/jobs/preview', handle(async (c, r) => {
     const body = z.object({ mode: z.enum(['urls', 'text']), input: z.string().min(1), details: manualDetails.optional(), fallback_job_id: uuid.optional(), expected_revision: revision.optional() }).strict().refine(v => !v.fallback_job_id || (v.mode === 'text' && v.expected_revision !== undefined)).parse(await c.req.json());
     checkFallback(r, body.fallback_job_id, body.expected_revision);
@@ -119,7 +139,7 @@ if (page === undefined && c.req.query('download') === '1') {
     const body = binding.extend({ input_snapshot_id: uuid, input_fingerprint: key }).parse(await c.req.json());
     const job_id = uuid.parse(c.req.param('id')); const artifact_version_id = uuid.parse(c.req.param('versionId'));
     r.artifacts.review(job_id, artifact_version_id);
-    return { review: r.artifacts.approveResume({ ...body, job_id, artifact_version_id, reviewer_id: 'local-human' }) };
+    return { review: r.artifacts.approveResume({ ...body, job_id, artifact_version_id, reviewer_id: 'local-human' }, () => { r.exports.files(job_id, { artifact_id: artifact_version_id, artifact_fingerprint: body.artifact_fingerprint, dossier: false }); }) };
   }));
   app.post('/api/jobs/:id/artifacts/:versionId/continue-editing', handle(async (c, r) => ({ draft: r.artifacts.continueEditing({ ...binding.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), artifact_version_id: uuid.parse(c.req.param('versionId')) }) })));
   const getDraft = (c: Context, r: JobsRuntime) => {
@@ -140,7 +160,9 @@ app.post('/api/jobs/:id/drafts/:draftId/finalize', handle(async (c, r) => {
   app.get('/api/jobs/:id/drafts/:draftId', handle((c, r) => ({ draft: getDraft(c, r) })));
   app.put('/api/jobs/:id/drafts/:draftId', handle(async (c, r) => {
     const body = z.object({ expected_revision: revision, candidate: DraftResumeSpecSchema }).strict().parse(await c.req.json());
-    return { draft: new JobDraftRepository(r.repository).save({ ...getDraft(c, r), candidate: body.candidate }, body.expected_revision) };
+    const draft = new JobDraftRepository(r.repository).save({ ...getDraft(c, r), candidate: body.candidate }, body.expected_revision);
+    r.coordinator.edited(draft.job_id, draft);
+    return { draft };
   }));
   app.get('/api/jobs/:id/proposals', handle((c, r) => r.proposals.read(uuid.parse(c.req.param('id')))));
   app.put('/api/jobs/:id/proposals/:reviewId', handle(async (c, r) => r.proposals.save({ ...SaveReviewSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')), review_id: uuid.parse(c.req.param('reviewId')) })));

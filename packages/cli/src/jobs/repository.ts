@@ -203,13 +203,23 @@ export class JobsRepository {
   }
   getLatestDraft(id: string): C.JobDraft { return this.decode(this.database.db.prepare('SELECT payload FROM draft_revisions WHERE id=? ORDER BY revision DESC LIMIT 1').get(id), C.JobDraftSchema); }
   getDraftRevision(id: string, revision: number): C.JobDraft { return this.decode(this.database.db.prepare('SELECT payload FROM draft_revisions WHERE id=? AND revision=?').get(id, revision), C.JobDraftSchema); }
-  approveResume(request: { job_id: string; expected_job_revision: number; artifact_version_id: string; artifact_fingerprint: string; input_snapshot_id: string; input_fingerprint: string; reviewer_id: string; idempotency_key: string }): C.ResumeReview {
+  approveResume(request: { job_id: string; expected_job_revision: number; artifact_version_id: string; artifact_fingerprint: string; input_snapshot_id: string; input_fingerprint: string; reviewer_id: string; idempotency_key: string }, currentChecks?: () => void): C.ResumeReview {
     const { idempotency_key, ...data } = request;
     return this.receipt('approve_resume', idempotency_key, data, () => {
       const job = this.getJob(data.job_id); this.revision(job.revision, data.expected_job_revision);
       const artifact = this.getArtifact(data.artifact_version_id); this.sameJob(artifact, job.id);
       if (artifact.validation_result !== 'passed') this.error('ineligible', 'Only validated artifacts may be approved');
+      if (job.artifact_version_ids.at(-1) !== artifact.id) this.error('ineligible', 'Only the current artifact may be approved');
+      const manifest = JSON.parse(this.database.files.readArtifact({ id: `${this.database.files.bundlePath('artifacts', job.id, artifact.id)}/manifest.json`, fingerprint: artifact.version_fingerprint }, job.id, artifact.id).toString()) as { draft_id: string; draft_revision: number };
+      const published = this.getDraftRevision(manifest.draft_id, manifest.draft_revision);
+      const working = this.database.db.prepare('SELECT id FROM draft_revisions WHERE job_id=? AND parent_artifact_version_id=? ORDER BY rowid DESC LIMIT 1').get(job.id, artifact.id) as { id: string } | undefined;
+      if (working && stable(this.getLatestDraft(working.id).candidate) !== stable(published.candidate)) this.error('ineligible', 'Working resume has pending edits; wait for a new checked PDF.');
+      currentChecks?.();
       if (artifact.version_fingerprint !== data.artifact_fingerprint || artifact.input_snapshot_id !== data.input_snapshot_id || artifact.input_fingerprint !== data.input_fingerprint) this.error('invalid_relationship', 'Approval binding mismatch');
+      const existing = this.listEvents(job.id).find(event => event.payload.kind === 'resume_review' && event.payload.artifact_version_id === artifact.id && event.payload.artifact_fingerprint === artifact.version_fingerprint);
+      if (existing?.payload.kind === 'resume_review') return C.ResumeReviewSchema.parse({ schema_version: 1, id: existing.payload.review_id, workspace_id: job.workspace_id,
+        job_id: job.id, artifact_version_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint, input_snapshot_id: artifact.input_snapshot_id,
+        input_fingerprint: artifact.input_fingerprint, reviewer_id: existing.actor.id, reviewed_at: existing.created_at, decision: 'approved' });
       const review = C.ResumeReviewSchema.parse({ schema_version: 1, id: this.uuid(), workspace_id: job.workspace_id, job_id: job.id, artifact_version_id: artifact.id, artifact_fingerprint: data.artifact_fingerprint, input_snapshot_id: data.input_snapshot_id, input_fingerprint: data.input_fingerprint, reviewer_id: data.reviewer_id, reviewed_at: this.now(), decision: 'approved' });
       this.appendEvent({ schema_version: 1, id: this.uuid(), workspace_id: job.workspace_id, job_id: job.id, created_at: review.reviewed_at, actor: { kind: 'user', id: review.reviewer_id }, attempt_id: null, idempotency_key: `approval:${idempotency_key}`, payload: { kind: 'resume_review', review_id: review.id, artifact_version_id: artifact.id, artifact_fingerprint: review.artifact_fingerprint, input_snapshot_id: review.input_snapshot_id, input_fingerprint: review.input_fingerprint } });
       return review;

@@ -227,8 +227,8 @@ publishManualCandidate(request: Parameters<JobsRepository['assertManualPublicati
     return this.corrupt(() => this.repository.database.files.readArtifact(ref, jobId, id));
   }
   getArtifact(id: string): C.ArtifactVersion { return this.verifiedArtifact(id).artifact; }
-  approveResume(request: Parameters<JobsRepository['approveResume']>[0]): C.ResumeReview {
-    return this.tx(() => { this.getArtifact(request.artifact_version_id); return this.repository.approveResume(request); });
+  approveResume(request: Parameters<JobsRepository['approveResume']>[0], currentChecks?: () => void): C.ResumeReview {
+    return this.tx(() => { this.getArtifact(request.artifact_version_id); return this.repository.approveResume(request, currentChecks); });
   }
   continueEditing(request: Omit<Parameters<JobsRepository['forkDraft']>[0], 'draft_id' | 'draft_revision'>): C.JobDraft {
     return this.tx(() => {

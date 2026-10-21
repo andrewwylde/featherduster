@@ -100,7 +100,7 @@ describe('durable SQLite repository', () => {
     expect(handle.files.databasePath).toBe(path.join(dir, '.featherduster/jobs/jobs.sqlite3'));
     expect(second.handle.workspaceId).toBe(handle.workspaceId); expect(second.repo.getControl().automatic_preparation_enabled).toBe(false);
     expect(handle.db.pragma('journal_mode', { simple: true })).toBe('wal'); expect(handle.db.pragma('foreign_keys', { simple: true })).toBe(1);
-    expect(handle.db.prepare('SELECT * FROM schema_migrations').all()).toHaveLength(5);
+    expect(handle.db.prepare('SELECT * FROM schema_migrations').all()).toHaveLength(6);
     for (const table of ['jobs', 'url_aliases', 'posting_snapshots', 'profiles', 'scoped_answers', 'input_snapshots', 'attempts', 'checkpoints', 'events', 'artifacts', 'draft_revisions', 'mutation_receipts']) expect(handle.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)).toBeTruthy();
     expect(() => handle.db.prepare('INSERT INTO posting_snapshots VALUES (?,?,?,?)').run(randomUUID(), randomUUID(), 'fingerprint', '{}')).toThrow();
     expect(repo.listJobs()).toEqual([]);

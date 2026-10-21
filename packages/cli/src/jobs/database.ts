@@ -58,6 +58,15 @@ CREATE TABLE semantic_receipts (job_id TEXT NOT NULL REFERENCES jobs(id), idempo
 CREATE TABLE semantic_operations (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id), target_fingerprint TEXT NOT NULL, sequence INTEGER NOT NULL, state TEXT NOT NULL, payload TEXT NOT NULL);
 CREATE TABLE semantic_evaluations (configuration_key TEXT NOT NULL, suite_hash TEXT NOT NULL, passed INTEGER NOT NULL CHECK(passed IN (0,1)), payload TEXT NOT NULL, PRIMARY KEY(configuration_key,suite_hash));
 ${['semantic_records', 'semantic_clarifications', 'semantic_calls', 'semantic_call_results'].flatMap(table => ['UPDATE', 'DELETE'].map(action => `CREATE TRIGGER ${table}_no_${action.toLowerCase()} BEFORE ${action} ON ${table} BEGIN SELECT RAISE(ABORT,'immutable semantic history'); END;`)).join('\n')}
+` }, { version: 6, sql: `
+CREATE TABLE preparation_batches (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspace_metadata(workspace_id), payload TEXT NOT NULL);
+CREATE TABLE preparation_members (batch_id TEXT NOT NULL REFERENCES preparation_batches(id), job_id TEXT NOT NULL REFERENCES jobs(id), position INTEGER NOT NULL, input_snapshot_id TEXT NOT NULL REFERENCES input_snapshots(id), state TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(batch_id,job_id), UNIQUE(batch_id,position));
+CREATE TABLE preparation_cycles (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id), input_snapshot_id TEXT NOT NULL REFERENCES input_snapshots(id), payload TEXT NOT NULL);
+CREATE TABLE preparation_operations (id TEXT PRIMARY KEY, cycle_id TEXT NOT NULL REFERENCES preparation_cycles(id), operation_key TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(cycle_id,operation_key));
+CREATE TABLE preparation_decisions (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id), input_snapshot_id TEXT NOT NULL REFERENCES input_snapshots(id), generation_id TEXT NOT NULL REFERENCES proposal_generations(id), proposal_id TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(generation_id,proposal_id));
+CREATE TABLE preparation_repairs (id TEXT PRIMARY KEY, job_id TEXT NOT NULL REFERENCES jobs(id), cycle_id TEXT NOT NULL REFERENCES preparation_cycles(id), payload TEXT NOT NULL);
+CREATE TRIGGER preparation_repairs_no_update BEFORE UPDATE ON preparation_repairs BEGIN SELECT RAISE(ABORT,'immutable repair history'); END;
+CREATE TRIGGER preparation_repairs_no_delete BEFORE DELETE ON preparation_repairs BEGIN SELECT RAISE(ABORT,'immutable repair history'); END;
 ` }];
 
 export function runMigrations(db: Database.Database, steps: Migration[] = migrations): void {
