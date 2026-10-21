@@ -330,7 +330,7 @@ const editActions = <>
       <a href={`${apiClient.jobPdfUrl(job.id, selected)}?download=1`}>{historical ? 'Download historical PDF' : 'Download previous PDF'}</a>
       : <button className={secondaryButton} disabled={busy} onClick={() => void downloadCurrent()}>Download PDF</button>)}
 </>;
-const reloadControl = <button disabled={busy} onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button>;
+const reloadControl = <button className={secondaryButton} disabled={busy} onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button>;
 return <section className="space-y-4 min-w-0">
   {!queue && <div><h2 className="text-lg font-semibold">{historical ? 'Historical resume' : previous ? 'Previous finalized resume' : 'Resume'}</h2></div>}
   {!queue && reloadControl}
@@ -354,7 +354,7 @@ return <section className="space-y-4 min-w-0">
       {job.preparation_state === 'needs_input' ? <button onClick={() => open('corrections')}>Resolve corrections</button>
         : <button onClick={() => navigate(`/jobs/${job.id}`)}>Review posting and preparation</button>}</p>}
     {displayedReview && displayedReview.artifact.validation_result !== 'passed' && <p role="status">This version needs attention. <button onClick={() => open('checks')}>View checks</button></p>}
-    {job.revision !== revision && <p role="status">The job changed. <button onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button></p>}
+    {job.revision !== revision && <p role="status">The job changed. <button className={secondaryButton} onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button></p>}
   </>} preview={unavailable ? (artifacts.length && !error ? <p role="status">Loading resume…</p> : null) : preview}
     renderView={view => {
       if (view === 'checks') return checksContent;
