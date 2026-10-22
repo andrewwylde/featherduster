@@ -8,6 +8,8 @@ While draft changes are pending, the review page shows the previous finalized PD
 
 If checking is unavailable, retry checks; you can still save. If saving conflicts with a newer revision, review the latest saved revision before saving your retained local edits. If finalization fails, the draft and previous PDF remain available. A pending finalization can be checked again using its original request without creating another artifact.
 
+When checks require input review, choose **Review current inputs** to open the job's **Inputs** view. Review the saved job context and posting, select a saved starting resume, then choose **Prepare with current inputs**. This captures fresh inputs and requests a new preparation. Saved drafts and previous PDFs remain available; edits from the old draft are not automatically carried into the new resume. Opening the review does not start preparation.
+
 The standalone canvas's resume selector supports searching names and types, including ordered-character matches such as `snr eng` for Senior Engineer. Jobs intake starts in URLs; choose Posting text to paste a posting.
 
 ## Verify the workflow

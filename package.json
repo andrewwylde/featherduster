@@ -1,6 +1,6 @@
 {
   "name": "featherduster-app",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Links résumé bullets to evidence entries and checks citations, metric placeholders, and privacy rules.",
   "license": "MIT",
   "private": true,

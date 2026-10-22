@@ -20,7 +20,7 @@ describe('CLI bin executable end-to-end', () => {
 
   it('prints version number with -v', async () => {
     const { stdout } = await execFileAsync(process.execPath, [binPath, '-v']);
-    expect(stdout).toContain('0.1.0');
+    expect(stdout).toContain('0.2.0');
   });
 
   it('executes full end-to-end workflow: init, check, and build in isolated workspace', async () => {

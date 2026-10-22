@@ -17,6 +17,19 @@ async function openWording() {
   if (summary && !summary.closest('details')?.open) fireEvent.click(summary);
 }
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
+it('opens and dismisses the passage drawer without saving or starting preparation', async () => {
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(data);
+  const save = vi.spyOn(apiClient, 'saveJobProposals');
+  const prepare = vi.spyOn(apiClient, 'prepareJob');
+  render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
+  fireEvent.click(await screen.findByRole('button', { name: /All Passages/ }));
+  expect(screen.getByRole('dialog', { name: 'Passage overview drawer' })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: 'Close drawer' }));
+  expect(screen.queryByRole('dialog', { name: 'Passage overview drawer' })).not.toBeInTheDocument();
+  expect(save).not.toHaveBeenCalled();
+  expect(prepare).not.toHaveBeenCalled();
+});
 it('explains the next correction and keeps optional input refresh secondary', async () => {
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(data);
   render(<JobProposalReview job={job} onSaved={() => {}} />);
