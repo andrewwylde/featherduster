@@ -25,8 +25,17 @@ node_modules/
 *.sw?
 # OS specific
 
-# Task files
-# tasks.json
-# tasks/ 
+# Task files and agent workflows
+.taskmaster/tasks/
+.taskmaster/state.json
+adws/adw_data/
+.superpowers/
+requests/
+
+# SQLite databases
+*.db
+*.db-wal
+*.db-shm
+
 __pycache__/
 *.pyc
