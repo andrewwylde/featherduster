@@ -1,4 +1,3 @@
-import matter, { GrayMatterFile } from 'gray-matter';
 import yaml from 'js-yaml';
 import { z } from 'zod';
 import { EvidenceEntry, EvidenceEntrySchema } from '../schemas/evidence.js';
@@ -41,9 +40,19 @@ export function parseEvidenceMarkdown(content: string, filePath?: string): Parse
     );
   }
 
-  let parsed: GrayMatterFile<any>;
+  const match = content.match(/^(?:[\uFEFF\s]*?)---\r?\n([\s\S]*?)\r?\n---\s*(?:\r?\n|$)([\s\S]*)$/);
+  if (!match) {
+    throw new EvidenceParseError(
+      `Missing YAML frontmatter delimiters${filePath ? ` in ${filePath}` : ''}`,
+      { filePath }
+    );
+  }
+
+  const [, yamlBlock, rawBody] = match;
+
+  let rawData: any;
   try {
-    parsed = matter(content);
+    rawData = yaml.load(yamlBlock);
   } catch (err: any) {
     throw new EvidenceParseError(
       `Failed to parse YAML frontmatter${filePath ? ` in ${filePath}` : ''}: ${err.message}`,
@@ -51,7 +60,6 @@ export function parseEvidenceMarkdown(content: string, filePath?: string): Parse
     );
   }
 
-  let rawData = parsed.data;
   if (!rawData || typeof rawData !== 'object' || Array.isArray(rawData)) {
     throw new EvidenceParseError(
       `Invalid frontmatter structure${filePath ? ` in ${filePath}` : ''}: expected key-value mapping`,
@@ -80,7 +88,7 @@ export function parseEvidenceMarkdown(content: string, filePath?: string): Parse
 
   return {
     entry: parseResult.data,
-    narrative: parsed.content.trim(),
+    narrative: rawBody.trim(),
   };
 }
 
@@ -91,8 +99,12 @@ export function parseEvidenceMarkdown(content: string, filePath?: string): Parse
 export function serializeEvidenceMarkdown(entry: EvidenceEntry, narrative: string): string {
   const validatedEntry = EvidenceEntrySchema.parse(entry);
   const trimmedNarrative = narrative.trim();
+  const yamlText = yaml.dump(validatedEntry, {
+    lineWidth: -1,
+    noRefs: true,
+  });
   const body = trimmedNarrative ? `\n${trimmedNarrative}\n` : '';
-  return matter.stringify(body, validatedEntry);
+  return `---\n${yamlText}---\n${body}`;
 }
 
 /**
