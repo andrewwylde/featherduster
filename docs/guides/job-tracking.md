@@ -18,7 +18,3 @@ application was submitted.
 Tracking changes use revision checks and idempotency receipts. Errors leave the
 card in place and display the failure. Changes to tracking are recorded in job
 history. The archive timestamp is optional for compatibility with existing jobs.
-
-Implementation verification: production build; jobs UI and HTTP route tests;
-core lifecycle, repository, worker, batch enrollment, and automatic preparation
-regressions. Local host restart is required to load the new tracking API.

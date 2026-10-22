@@ -23,7 +23,7 @@ Checks bind exact candidate content, captured inputs, evidence, configuration, a
 
 ## Model execution and provenance
 
-The application uses the configured runner and its existing consent. It does not install CLEF/JEV, switch providers, or escalate models.
+The application uses the configured runner and its existing consent, without switching providers or escalating models.
 
 The service batches four passages at a time (the transport permits at most eight), with a 48,000-character serialized request budget, a 16,000-character response budget, and a timeout no longer than 60 seconds or the configured step timeout. A preparation attempt permits at most four semantic calls. Calls are reserved durably before dispatch and failures consume the allowance. There are no automatic retries or repair calls.
 
@@ -37,7 +37,7 @@ Automatic support is decided per claim. A supported result must pass exact sourc
 
 Build first, then run the configured runner against synthetic data:
 
-```powershell
+```sh
 node scripts/evaluate-semantic-evidence.mjs --workspace <workspace> --runner codex --output <report.json>
 ```
 
@@ -47,10 +47,10 @@ The suite runs every case three times, including backend implementation versus A
 
 ## Verification and rollout
 
-`scripts/run-semantic-review-walkthrough.mjs` creates a disposable workspace and uses a fake classifier with real HTTP, SQLite, browser interaction, LaTeX rendering, PDF verification, and exports. It exercises grouped facts, another project remaining unresolved, uncertain saved answers, dated corrections, outage/manual fallback, changed-text caching, a fact change during rendering, and finalization replay. Evidence goes to `requests/semantic-review-walkthrough/`.
+`scripts/run-semantic-review-walkthrough.mjs` creates a disposable workspace and uses a synthetic classifier with real HTTP, SQLite, browser interaction, LaTeX rendering, PDF verification, and exports. It exercises grouped facts, unresolved projects, uncertain saved answers, dated corrections, outage fallbacks, changed-text caching, rendering revisions, and finalization replays. Walkthrough output is saved to `requests/semantic-review-walkthrough/`.
 
-Database migration 5 adds immutable semantic records, clarifications, call accounting, operation receipts, and leases. Legacy reviews remain readable without inference or rewriting their validation. Explicit checking and subsequent saved revisions use the new policy.
+Database migrations store immutable semantic records, clarifications, call accounting, operation receipts, and leases. Legacy reviews remain readable without rewriting their validation. Explicit checking and subsequent saved revisions use the active policy.
 
-Before deploying a backend upgrade, stop active work through the application’s existing controls and use the normal workspace backup process. Back up the workspace, including its SQLite database consistently with its WAL state; restore the complete matching workspace backup if rollback is needed. Do not remove individual migration rows or tables from a live workspace.
+Before deploying a backend upgrade, stop active work through the application’s existing controls and use the normal workspace backup process. Back up the workspace, including its SQLite database and WAL state.
 
-The CLI backend must be restarted through an allowed service-management path to load these changes. Rebuilding UI assets alone does not establish that the running backend has loaded the migration or new API.
+Restart the CLI server after updating to load migrations and new API routes. Rebuilding UI assets alone does not reload the running backend process.

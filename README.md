@@ -119,55 +119,20 @@ editing the workspace. In an existing Git repository, `--block-push` creates and
 pre-push hook that blocks ordinary pushes of these private notes. Without `git init`, the hook
 file is created but not activated. Git hooks are local safeguards and can be bypassed.
 
-## Resolve blocked job proposals
+## Job tailoring and proposal review
 
-Open **Jobs → Resume → Resolve proposals**, even when no PDF exists. Inspect the
-original/generated wording, requirements, checks and captured evidence. Edit wording,
-choose citations, or uncheck **Include proposal** to retain the original content; check it
-again to restore inclusion. For a supported terminology correction, open **Ground a
-specific term** and select a cited source, literal passage and explanation.
+When tailoring a résumé to a job posting, Featherduster validates each proposed change against your evidence before allowing you to apply it:
 
-- **Save for this job** saves feedback and rechecks locally. It does not teach other jobs.
-- **Save and remember** additionally saves the relationship shown in the memory preview.
-  Enter a correction explanation, canonical skill, precise facet, support level and scope.
-  Only the named terms and source passages are reusable—not arbitrary related claims.
-- Neither save, evidence preview, nor **Recheck saved revision** runs a model or starts work.
-- **Continue preparation** is separate: it binds the exact saved, ready revision. Stop,
-  pause, consent, tools and worker ownership can still prevent it. Final PDF approval is
-  another separate action; no action here submits an application.
+- **Review and edit:** Inspect generated proposals alongside the original text and cited evidence. Edit wording, adjust citations, or reject proposals directly.
+- **Starting resume corrections:** Fix inaccuracies in the starting resume snapshot for that specific job without altering your shared base résumé.
+- **Corpus knowledge:** Factual corrections and terminology relationships can be saved locally to SQLite to inform future tailoring without modifying external models.
+- **Verification gates:** Preparation only advances when all required validation checks pass. Generated PDFs are compiled and inspected separately before approval.
 
-Unsaved edits are stored locally in this browser for the workspace/job/generation/revision.
-Keep the tab open if browser storage fails. A changed server revision preserves local text
-and requires **Compare server candidate → Reconcile revision (keep edits)** before saving.
-Review the merged edits yourself. Do not share browser profiles containing private drafts.
-
-New evidence does not silently enter a frozen review. Save edits first, then expand
-**Refresh inputs**, capture a new snapshot, and separately choose **Prepare refreshed
-inputs**. This retains history and reruns preparation rather than reusing stale checks.
-For older jobs whose output was lost, **Recover proposal review** explicitly generates
-proposals once from the saved context, then pauses for inspection. Missing prerequisite
-context requires a new preparation version instead.
-
-### Inspect and withdraw learned knowledge
-
-Evidence details and **Skills** show **Remembered corpus knowledge**: exact passages,
-source versions, scope, support level, originating feedback, and active/withdrawn/conflicted
-history. Relationships do not create duplicate accomplishments. **Withdraw** appends a
-versioned withdrawal; future captures stop using the update, while historical jobs remain
-unchanged. **Reconcile / supersede** previews a replacement against current sources before
-saving it. Changed or retracted support cannot silently authorize new claims.
-
-From **Briefing → Strengthen**, edit evidence and preview a **Companion amendment**.
-This supports consolidated ledgers without rewriting their bytes. Factual amendments are
-user-confirmed provisional evidence; changed metrics do not inherit verification. Direct
-standalone-file saving remains separate. Withdraw an amendment to restore the effective
-source view.
-
-Learning is explicit, local SQLite knowledge—not model training or inferred preferences.
-Deterministic validation does not prove arbitrary natural-language truth. Unsupported
-technologies, metrics, ownership, missing citations and privacy violations can still block.
-Inspect the rendered PDF and its diff before approving. Optional AI repair suggestions,
-automatic preference inference and one-job Stop overrides are not implemented.
+For detailed workflows and resolution steps, see the guides:
+- [Job Proposal Resolution Guide](docs/guides/job-proposal-resolution.md)
+- [Job Resume Editing Guide](docs/guides/job-resume-editing.md)
+- [Evidence & Fact Review Guide](docs/guides/semantic-evidence-review.md)
+- [Job Tracking Guide](docs/guides/job-tracking.md)
 
 ## Limits
 
