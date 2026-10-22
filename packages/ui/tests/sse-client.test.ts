@@ -11,7 +11,7 @@ describe('sseClient singleton', () => {
     mockEventSourceInstances = [];
     sseClient.resetForTesting();
 
-    (global as any).EventSource = vi.fn().mockImplementation(() => {
+    (global as any).EventSource = vi.fn().mockImplementation(function (this: any) {
       const listeners: Record<string, ((...args: any[]) => void)[]> = {};
       const instance = {
         addEventListener: vi.fn((event: string, cb: (...args: any[]) => void) => {

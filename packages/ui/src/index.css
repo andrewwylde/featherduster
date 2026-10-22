@@ -1,6 +1,37 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-vermilion-50: #fff1ef;
+  --color-vermilion-100: #ffe1dc;
+  --color-vermilion-200: #ffc7be;
+  --color-vermilion-300: #ffa193;
+  --color-vermilion-400: #f87171;
+  --color-vermilion-500: #d93829;
+  --color-vermilion-600: #c23022;
+  --color-vermilion-700: #a32418;
+  --color-vermilion-800: #841f16;
+  --color-vermilion-900: #691c14;
+  --color-vermilion-950: #45120c;
+
+  --color-brand-50: #f0fdf4;
+  --color-brand-100: #dcfce7;
+  --color-brand-500: #22c55e;
+  --color-brand-600: #16a34a;
+  --color-brand-700: #15803d;
+
+  --color-desk-bg-light: #fbfbfb;
+  --color-desk-bg-dark: #0c0f17;
+  --color-desk-panel-light: #ffffff;
+  --color-desk-panel-dark: #121622;
+  --color-desk-card-light: #ffffff;
+  --color-desk-card-dark: #161c2b;
+  --color-desk-border-light: #e2e8f0;
+  --color-desk-border-dark: #1e293b;
+
+  --radius-desk: 10px;
+}
 
 @layer base {
   :root {

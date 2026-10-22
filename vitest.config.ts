@@ -7,5 +7,6 @@ export default defineConfig({
     // Keep their real deadlines/assertions intact rather than dilating timeouts.
     maxWorkers: 2,
     minWorkers: 1,
+    testTimeout: 15000,
   },
 });

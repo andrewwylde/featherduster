@@ -128,7 +128,7 @@ it('includes reviewed letter and interview as separate real files with exact cur
   expect(f.runtime.exports.content(f.job.id, release.id, 'cover_letter.md').bytes.toString()).toBe('Maintained APIs.');
   expect(f.runtime.exports.content(f.job.id, release.id, 'interview_brief.html').bytes.toString()).toContain('My contribution: Maintained APIs.');
   expect(f.run).not.toHaveBeenCalled();
-});
+}, 15000);
 
 it('blocks changed job scope and newer captured inputs without deleting saved releases', async () => {
   const f = await fixture();

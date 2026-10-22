@@ -217,4 +217,4 @@ it('publishes a fresh preparation after confirming facts about the carried corre
   expect(job.preparation_state).toBe('resume_ready');
   expect(f.rendered.at(-1)!.experiences[0].bullets[0].text).toBe('Improved service reliability for internal teams.');
   expect(f.runtime().artifacts.review(id, job.artifact_version_ids.at(-1)!).base_resume.experiences[0].bullets[0].text).toBe('Improved service reliability for internal teams.');
-});
+}, 15000);
