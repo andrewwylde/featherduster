@@ -1,7 +1,7 @@
 # Draft-first resume tailoring
 
 Date: 2026-11-06
-Status: Experience and technical design approved in conversation; written specification awaiting user review.
+Status: Experience, technical design, and written specification approved by the user on 2026-11-06.
 Tracking: Task 50. This document defines the design; application implementation has not started.
 
 ## Outcome
@@ -191,4 +191,4 @@ Assess the actual resume for relevance to the posting, coherent accomplishments,
 
 ## Review boundary
 
-The user has approved the conversational experience and technical design. The next checkpoint is review of this written specification. After approval, create the detailed implementation plan using the writing-plans skill. Do not begin application implementation as part of this design task.
+The user has approved the conversational experience, technical design, and this written specification. The implementation plan is `docs/superpowers/plans/2026-11-06-draft-first-tailoring.md`. Application implementation is a separate execution stage; no application code was changed as part of writing this design and plan.
