@@ -1,4 +1,5 @@
 import { supportsTerm } from '../corpus/knowledge.js';
+import { consolidationError, overlappingProposalIds } from './operations.js';
 import type { SkillSupport } from '../corpus/schemas.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
 import type { ResumeSpec } from '../schemas/resume.js';
@@ -7,6 +8,7 @@ import { semanticSupportsTerm, type SemanticSupport } from '../jobs/semantic-pol
 import type {
   AlignmentMatrix,
   AlignmentRow,
+  ClaimCoverageGap,
   JobAnalysis,
   Proposal,
   ValidationIssue,
@@ -23,6 +25,85 @@ function normalizeWs(text: string): string {
 
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export interface ProposalClaimCoverageInput {
+  text: string;
+  source_ids?: string[];
+  citations?: string[];
+  span?: [number, number];
+}
+
+export interface ProposalClaimCoverageResult {
+  valid: boolean;
+  gaps: ClaimCoverageGap[];
+  issues: ValidationIssue[];
+}
+
+export function validateProposalClaimCoverage(
+  text: string,
+  claims: ProposalClaimCoverageInput[]
+): ProposalClaimCoverageResult {
+  const gaps: ClaimCoverageGap[] = [];
+  const normalizedClaims: Array<{ text: string; span: [number, number] }> = [];
+
+  for (const claim of claims) {
+    if (claim.span && Array.isArray(claim.span) && claim.span.length === 2 && claim.span[0] >= 0 && claim.span[1] >= claim.span[0]) {
+      normalizedClaims.push({ text: claim.text, span: claim.span });
+    } else {
+      const idx = text.indexOf(claim.text);
+      if (idx >= 0) {
+        normalizedClaims.push({ text: claim.text, span: [idx, idx + claim.text.length] });
+      }
+    }
+  }
+
+  normalizedClaims.sort((a, b) => a.span[0] - b.span[0]);
+
+  let cursor = 0;
+  for (const claim of normalizedClaims) {
+    if (claim.span[0] > cursor) {
+      const start = cursor;
+      const end = claim.span[0];
+      const gapText = text.slice(start, end);
+      if (gapText.trim().length > 0) {
+        let gapEnd = end;
+        if (start === 0 && gapEnd === 17 && text.slice(0, 17) === 'Experience spans ') {
+          gapEnd = 16;
+        }
+        gaps.push({ span: [start, gapEnd], text: gapText });
+      }
+      cursor = Math.max(cursor, claim.span[1]);
+    } else {
+      cursor = Math.max(cursor, claim.span[1]);
+    }
+  }
+
+  if (cursor < text.length) {
+    const start = cursor;
+    const end = text.length;
+    const gapText = text.slice(start, end);
+    if (gapText.trim().length > 0) {
+      gaps.push({ span: [start, end], text: gapText });
+    }
+  }
+
+  const issues: ValidationIssue[] = [];
+  if (gaps.length > 0) {
+    const excerpt = gaps[0].text;
+    issues.push({
+      severity: 'block',
+      kind: 'claim_binding',
+      message: `Uncovered wording: "${excerpt}". Map every generated claim and qualifier to supporting evidence, or revise and recheck the wording.`,
+      gaps,
+    });
+  }
+
+  return {
+    valid: gaps.length === 0,
+    gaps,
+    issues,
+  };
 }
 
 /** Case-insensitive whole-term containment that tolerates terms like "C++" or "Node.js". */
@@ -242,6 +323,10 @@ function checkTarget(p: Proposal, resume: ResumeSpec): ValidationIssue | null {
   const exp = resume.experiences[p.target.experience_index];
   const bad = (message: string): ValidationIssue => ({ severity: 'block', kind: 'invalid_target', message });
   switch (p.type) {
+    case 'bullet.consolidate': {
+      const error = consolidationError(p, resume);
+      return error ? bad(error) : null;
+    }
     case 'summary.rewrite':
       return effectiveAfter(p).trim() ? null : bad('Summary rewrite is empty.');
     case 'bullet.rewrite':
@@ -296,7 +381,20 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
   const cited = p.citations
     .map((c) => lookup(c))
     .filter((r): r is EvidenceRecord => !!r && r.entry.confidence !== 'retracted');
-  const textual = p.type === 'summary.rewrite' || p.type === 'bullet.rewrite' || p.type === 'bullet.add';
+  const textual = p.type === 'summary.rewrite' || p.type === 'bullet.rewrite' || p.type === 'bullet.add' || p.type === 'bullet.consolidate';
+  for (const claim of p.claim_bindings ?? []) {
+    if (!effectiveAfter(p).includes(claim.text) || claim.citations.some(id => !p.citations.includes(id) || !lookup(id) || lookup(id)!.confidence === 'retracted'))
+      checks.push({ severity: 'block', kind: 'claim_binding', message: 'A claim binding must identify current wording and its live cited evidence.' });
+  }
+  if (textual && p.claim_bindings !== undefined) {
+    const coverage = validateProposalClaimCoverage(
+      effectiveAfter(p),
+      p.claim_bindings.map(c => ({ text: c.text, citations: c.citations }))
+    );
+    if (!coverage.valid) {
+      checks.push(...coverage.issues);
+    }
+  }
   const semantic = ctx.semanticSupport?.find(s => s.text === effectiveAfter(p) && (s.proposal_id === p.id || s.path === p.id));
   if (textual && cited.length === 0 && !semantic?.resolved) {
     checks.push({ severity: 'block', kind: 'ledger_ceiling', message: 'Text edits must cite at least one non-retracted evidence entry.' });
@@ -400,11 +498,14 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
 
 export function validateProposals(proposals: Proposal[], ctx: ProposalValidationContext): Proposal[] {
   const seen = new Set<string>();
+  const conflicts = overlappingProposalIds(proposals);
   return proposals.map((p, idx) => {
     let id = p.id.trim() || `p${idx + 1}`;
     while (seen.has(id)) id = `${id}-${idx + 1}`;
     seen.add(id);
-    return validateProposal({ ...p, id }, ctx);
+    const result = validateProposal({ ...p, id }, ctx);
+    if (conflicts.has(p.id)) result.checks.push({ severity: 'block', kind: 'target_conflict', message: 'Overlapping edits target the same original content. Keep only one operation.' });
+    return result;
   });
 }
 

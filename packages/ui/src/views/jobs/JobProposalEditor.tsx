@@ -64,6 +64,14 @@ export function JobProposalEditor({
   const title = (id: string) => evidenceTitle(evidence, id);
   const update = (value: Partial<GroundingDraft>) => onGrounding({ proposal_id: p.id, term: '', evidence_id: '', quote: '', explanation: '', ...grounding, ...value });
   const hasFactIssue = !!fact && fact.state !== 'supported';
+  const uncoveredGaps = Array.from(
+    new Map(
+      [
+        ...(p.checks?.flatMap(c => c.gaps ?? []) ?? []),
+        ...issues.flatMap(i => i.details.flatMap(d => d.gaps ?? [])),
+      ].map(g => [`${g.span[0]}-${g.span[1]}-${g.text}`, g])
+    ).values()
+  );
 
   return (
     <fieldset disabled={disabled} className={`${cardClass} p-4 space-y-4 min-w-0 break-words border border-slate-200 dark:border-slate-800 shadow-sm`}>
@@ -138,6 +146,24 @@ export function JobProposalEditor({
               onChange={e => onPatch({ proposal_id: p.id, edited_after: e.target.value })}
             />
           </label>
+          {uncoveredGaps.length > 0 && !isRejected && (
+            <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-2 space-y-1 text-xs" data-testid="uncovered-spans-warning">
+              <div className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                <span>Uncovered text ({uncoveredGaps.length}):</span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {uncoveredGaps.map((gap, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-mono text-[11px] border border-amber-200 dark:border-amber-800"
+                    title={`Uncovered span [${gap.span[0]}, ${gap.span[1]}]`}
+                  >
+                    &ldquo;{gap.text}&rdquo; <span className="ml-1 text-[10px] text-amber-600 dark:text-amber-400">[{gap.span[0]}:{gap.span[1]}]</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {isRejected && <span className="text-xs text-slate-500 italic block">Original wording will be kept.</span>}
         </div>
       </div>

@@ -47,10 +47,17 @@ export type JobAnalysis = z.infer<typeof JobAnalysisSchema>;
 export const AlignmentClassificationSchema = z.enum(['backed', 'transferable', 'gap']);
 export type AlignmentClassification = z.infer<typeof AlignmentClassificationSchema>;
 
+export const ClaimCoverageGapSchema = z.object({
+  span: z.tuple([z.number(), z.number()]),
+  text: z.string(),
+}).strict();
+export type ClaimCoverageGap = z.infer<typeof ClaimCoverageGapSchema>;
+
 export const ValidationIssueSchema = z.object({
   severity: z.enum(['block', 'warn']),
   kind: z.string(),
   message: z.string(),
+  gaps: z.array(ClaimCoverageGapSchema).optional(),
   target: z.object({
     scope: z.enum(['retained_baseline', 'draft_candidate', 'generated_patch']),
     text: z.string(),
