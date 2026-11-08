@@ -5,12 +5,12 @@ import { apiClient } from '../../api/client.js';
 import { cardClass, inputClass, secondaryButton } from '../tailoring/ui.js';
 
 export function passageCheckState(facts: JobFacts | null, text: string, blocked: boolean, path?: string): 'Needs your answer' | 'Checking' | 'Needs retry' | 'Needs changes' | 'Needs saving' | 'Resolved' {
-  if (facts?.execution === 'checking') return 'Checking';
   const matching = facts?.facts.filter(f => f.passage.text === text && (!path || f.passage.subject.path === path)) ?? [];
   if (matching.length && matching.every(f => f.resolution) && !blocked) return 'Resolved';
   if (matching.some(f => !f.resolution && ['needs_clarification', 'contradicted'].includes(f.state))) return 'Needs your answer';
-  if (matching.some(f => !f.resolution && f.state === 'unavailable')) return 'Needs retry';
   if (blocked) return 'Needs changes';
+  if (facts?.execution === 'checking') return 'Checking';
+  if (matching.some(f => !f.resolution && f.state === 'unavailable')) return 'Needs retry';
   return 'Needs retry';
 }
 

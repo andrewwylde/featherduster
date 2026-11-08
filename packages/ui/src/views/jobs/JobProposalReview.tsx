@@ -13,6 +13,7 @@ import {
   sameFact,
   SYNTHESIS_POLICY,
   isFindingStaleForPreview,
+  computeUnifiedReviewSummary,
   type CorpusScope,
   type Job,
   type JobFacts as Facts,
@@ -53,6 +54,7 @@ function Editor({
   refresh,
   loadError,
   selectTarget,
+  initialFacts,
 }: {
   job: Job;
   data: Available;
@@ -60,6 +62,7 @@ function Editor({
   refresh: () => Promise<void>;
   loadError?: string;
   selectTarget?: { id: string; sequence: number };
+  initialFacts?: Facts;
 }) {
   const [base, setBase] = useState(data);
   const [revision, setRevision] = useState(job.revision);
@@ -105,7 +108,7 @@ function Editor({
 
   // Drawer and Semantic Facts state
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [factsData, setFactsData] = useState<Facts | null>(null);
+  const [factsData, setFactsData] = useState<Facts | null>(() => initialFacts ?? null);
   const resumeNavigation = useRef<ResumeReviewNavigation>(null);
   const [confirmedFacts, setConfirmedFacts] = useState<Record<string, boolean>>({});
   const factReadSequence = useRef(0);
@@ -129,7 +132,6 @@ function Editor({
   }, [job.id]);
 
   useEffect(() => {
-    setFactsData(null);
     void reloadFacts();
   }, [reloadFacts, base.review.revision]);
 
@@ -317,6 +319,7 @@ function Editor({
   const [refreshingChecks, setRefreshingChecks] = useState(false);
   const recheckSaved = () => {
     if (recheckInFlight.current) return recheckInFlight.current;
+    if (refreshingChecks || factsData?.execution === 'checking') return Promise.resolve();
     setRefreshingChecks(true);
     const run = async () => {
     const latest = await apiClient.getJob(job.id);
@@ -353,7 +356,7 @@ function Editor({
   }, [base.review, factsData, busy, dirty, stale, active, job.preparation_state]);
 
   const unifiedResume = unified ? applyProposals(startingResume, overlay.proposals.map(p => ({ ...p, checks: [], decision: p.decision === 'rejected' ? 'rejected' : 'accepted' }))) : startingResume;
-  const reviewRows = unified ? resumeReviewRows(unifiedResume, overlay.proposals, dirty ? null : factsData, base.review.validation.issues) : [];
+  const reviewRows = unified ? resumeReviewRows(unifiedResume, overlay.proposals, factsData, base.review.validation.issues) : [];
   const hasRetainedAnswers = reviewRows.some(r => r.status === 'Needs saving');
   const hasQuestions = reviewRows.some(r => r.status === 'Needs your answer');
   const changeCount = reviewRows.filter(r => r.status === 'Needs changes').length;
@@ -361,7 +364,61 @@ function Editor({
   const factsComplete = factsData?.execution === 'complete' && factsData.facts.length > 0 && factsData.facts.every(f => !!f.resolution);
   const hasRetry = reviewRows.some(r => r.status === 'Needs retry');
   const checkingFacts = refreshingChecks || !factsData || factsData.execution === 'checking';
+
+  const unifiedSummary = computeUnifiedReviewSummary({
+    facts: factsData ?? undefined,
+    issues: base.review.validation.issues,
+    isChecking: refreshingChecks || factsData?.execution === 'checking',
+    hasPdf: !!job.artifact_version_ids?.length,
+    isApproved: false,
+  });
+
+  const summaryHeader = (
+    <div data-testid="unified-review-summary" className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            data-testid="fact-count-badge"
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+          >
+            {unifiedSummary.unresolved_facts_count} {unifiedSummary.unresolved_facts_count === 1 ? 'fact needs answer' : 'facts need answer'}
+          </span>
+          <span
+            data-testid="wording-issue-badge"
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-300"
+          >
+            {unifiedSummary.wording_issues_count} {unifiedSummary.wording_issues_count === 1 ? 'wording issue' : 'wording issues'}
+          </span>
+          <span
+            data-testid="technical-retry-badge"
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
+          >
+            {unifiedSummary.technical_failures_count} {unifiedSummary.technical_failures_count === 1 ? 'technical check needs retry' : 'technical checks need retry'}
+          </span>
+          <span
+            data-testid="supported-claims-summary"
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+          >
+            {unifiedSummary.supported_claims_count} {unifiedSummary.supported_claims_count === 1 ? 'claim supported' : 'claims supported'}
+          </span>
+        </div>
+        <div
+          data-testid="primary-next-action"
+          className="text-xs font-semibold text-slate-700 dark:text-slate-300"
+        >
+          {unifiedSummary.primary_next_action === 'wait_checking' && 'Checking in progress...'}
+          {unifiedSummary.primary_next_action === 'answer_facts' && 'Answer facts to continue'}
+          {unifiedSummary.primary_next_action === 'fix_wording' && 'Fix wording issues'}
+          {unifiedSummary.primary_next_action === 'retry_technical' && 'Retry failed technical checks'}
+          {unifiedSummary.primary_next_action === 'review_pdf' && 'Review generated PDF'}
+          {unifiedSummary.primary_next_action === 'ready_to_approve' && 'Ready for final approval'}
+        </div>
+      </div>
+    </div>
+  );
+
   if (unified) return <section aria-label="Resume review" className="space-y-4">
+    {summaryHeader}
     <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-2 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
       <h2 className="font-semibold">{active ? 'Generating your PDF' : dirty ? 'Save your changes to continue' : base.review.validation.status === 'ready' ? 'Your draft is ready for PDF generation' : hasRetainedAnswers ? 'Finish saving your earlier answers' : hasQuestions ? 'Your draft has unanswered factual questions' : checkingFacts ? 'Checking the saved facts' : hasChanges ? factsComplete ? 'Factual answers complete; wording or evidence needs attention' : 'Wording or evidence needs attention' : hasRetry ? 'Evidence checks need retry' : 'Resume checks need an update'}</h2>
       <p className="text-sm">{active ? 'Your required checks passed. The PDF will appear here when it is ready.' : dirty ? 'Your edits are kept in this browser. Choose Save draft to check the updated wording.' : base.review.validation.status === 'ready' ? 'The PDF will be generated automatically after the final evidence checks.' : hasRetainedAnswers ? 'Earlier answers are retained, but still need saving or confirmation. Open the existing answer below; you do not need to enter it again.' : hasQuestions ? 'Your saved confirmations are retained. Open the next unanswered question below. Your PDF follows when all required checks pass.' : checkingFacts ? 'Wait for the evidence checks to finish. Saved answers are retained.' : hasChanges ? `${changeCount} ${changeCount === 1 ? 'passage still needs' : 'passages still need'} changes. Choose Review remaining changes to open the affected wording and its evidence. You do not need to answer the completed questions again.` : hasRetry ? 'Choose Review evidence checks to open the check that needs retrying. Your saved answers are retained.' : 'Choose Update resume checks below to check this saved draft again. Your saved answers are retained.'}</p>
@@ -376,7 +433,7 @@ function Editor({
     {stale && <p role="alert">The saved review changed. Your local edits are retained. <button className={secondaryButton} onClick={() => { setBase(data); setRevision(job.revision); setDraftBaseRevision(data.review.revision); }}>Reconcile current review and keep edits</button></p>}
     <button ref={saveDraftButton} className={primaryButton} disabled={busy || active || stale || !dirty} onClick={() => void save(false)}>Save draft</button>
     <ResumeDraftSurface ref={resumeNavigation} resume={unifiedResume}
-      proposals={overlay.proposals} omissions={overlay.patches.filter(p => p.omission)} facts={dirty ? null : factsData} issues={base.review.validation.issues} evidence={base.captured.evidence} workspaceId={job.workspace_id}
+      proposals={overlay.proposals} omissions={overlay.patches.filter(p => p.omission)} facts={factsData} issues={base.review.validation.issues} evidence={base.captured.evidence} workspaceId={job.workspace_id}
       disabled={busy || active || stale} onSelect={setSelectedProposal} onToggle={(id, rejected) => patch({ proposal_id: id, decision: rejected ? 'rejected' : 'pending' })}
       renderResolution={(id, path, text, navigation) => {
         const proposal = overlay.proposals.find(p => p.id === id);
@@ -400,6 +457,7 @@ function Editor({
 
   return (
     <section aria-label="Proposal resolution" className={`${cardClass} proposal-review text-slate-900 dark:text-slate-100 p-4 sm:p-6 space-y-5 min-w-0 break-words`}>
+      {summaryHeader}
       {loadError && <p role="alert">{loadError} Showing the last successfully loaded review; it will refresh when the host responds.</p>}
       {overlayError && <p role="alert">{overlayError}. Showing the captured starting resume; this saved correction cannot be checked or continued.</p>}
 
@@ -716,20 +774,32 @@ function Editor({
   );
 }
 
-export function JobProposalReview({ job, onSaved }: { job: Job; onSaved: () => void }) {
+export function JobProposalReview({
+  job,
+  onSaved,
+  selectTarget: explicitSelectTarget,
+  initialData,
+  initialFacts,
+}: {
+  job: Job;
+  onSaved: () => void;
+  selectTarget?: { id: string; sequence: number };
+  initialData?: Available;
+  initialFacts?: Facts;
+}) {
   const load = useCallback(() => apiClient.getJobProposals(job.id), [job.id]);
-  const { data, error, refresh } = useJobsData(load);
+  const { data, error, refresh } = useJobsData(load, initialData);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const key = useIntentKey();
   const [wordingOpen, setWordingOpen] = useState(true);
-  const [selectTarget] = useState<{ id: string; sequence: number }>();
+  const [selectTarget] = useState<{ id: string; sequence: number } | undefined>(explicitSelectTarget);
 
   if (error && !data) return <p role="alert">{error}</p>;
   if (!data) return <p role="status">Loading proposal review…</p>;
 
   if (data.availability === 'available') {
-    if (data.generation.generation_policy === SYNTHESIS_POLICY) return <Editor key={`${job.workspace_id}:${job.id}:${data.generation.id}`} job={job} data={data} onSaved={onSaved} refresh={refresh} loadError={error ?? undefined} />;
+    if (data.generation.generation_policy === SYNTHESIS_POLICY) return <Editor key={`${job.workspace_id}:${job.id}:${data.generation.id}`} job={job} data={data} onSaved={onSaved} refresh={refresh} loadError={error ?? undefined} initialFacts={initialFacts} />;
     return (
       <div className="space-y-4">
         {message && <p role="status">{message}</p>}
@@ -746,6 +816,7 @@ export function JobProposalReview({ job, onSaved }: { job: Job; onSaved: () => v
               onSaved={onSaved}
               refresh={refresh}
               loadError={error ?? undefined}
+              initialFacts={initialFacts}
             />
           </div>
         </details>

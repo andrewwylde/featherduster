@@ -648,3 +648,131 @@ it('prevents stale finding from showing as defect when user edits newly typed te
   expect(screen.queryByText(/Numbers not supported by cited verified evidence: 99%/)).not.toBeInTheDocument();
 });
 
+function renderJobReview(options: {
+  supportedClaims: number;
+  unresolvedFacts: number;
+  wordingBlockers: number;
+  technicalRetries: number;
+  isChecking: boolean;
+}) {
+  const supported = Array.from({ length: options.supportedClaims }, (_, i) => ({
+    claim: { id: `claim-sup-${i}`, text: `Supported claim ${i}`, fact: { subject: 's', predicate: 'p', object: `sup-${i}` } },
+    state: 'supported' as const,
+    evidence: [{ evidence_id: 'ev-1', field: 'title', text: 'quote' }],
+    explanation: 'Supported',
+    resolution: { provenance: 'model' as const, explanation: 'Verified' },
+    passage: { subject: { id: `p-sup-${i}`, path: 'summary' }, text: 'Original summary' },
+  }));
+
+  const unresolved = Array.from({ length: options.unresolvedFacts }, (_, i) => ({
+    claim: { id: `claim-unres-${i}`, text: `Unresolved claim ${i}`, fact: { subject: 's', predicate: 'p', object: `unres-${i}` } },
+    state: 'needs_clarification' as const,
+    evidence: [],
+    explanation: 'Needs clarification',
+    question: `Clarify fact ${i}?`,
+    resolution: null,
+    passage: { subject: { id: `p-unres-${i}`, path: 'summary' }, text: 'Original summary' },
+  }));
+
+  const technical = Array.from({ length: options.technicalRetries }, (_, i) => ({
+    claim: { id: `claim-tech-${i}`, text: `Technical retry claim ${i}`, fact: { subject: 's', predicate: 'p', object: `tech-${i}` } },
+    state: 'unavailable' as const,
+    evidence: [],
+    explanation: 'Unavailable',
+    resolution: null,
+    passage: { subject: { id: `p-tech-${i}`, path: 'summary' }, text: 'Original summary' },
+  }));
+
+  const mockFacts = {
+    job_id: job.id,
+    job_revision: 2,
+    semantic_revision: 1,
+    input_fingerprint: 'hash',
+    candidate_fingerprint: 'cand',
+    support_fingerprint: 'supp',
+    target: { kind: 'review' as const, review_id: 'review', review_revision: 0 },
+    facts: [...supported, ...unresolved, ...technical],
+    clarifications: [],
+    execution: options.isChecking ? ('checking' as const) : ('complete' as const),
+    configuration_evaluated: true,
+    failures: options.technicalRetries > 0 ? [{
+      batch_index: 1,
+      stage: 'schema_validation' as const,
+      code: 'wire_shape_invalid' as const,
+      safe_diagnostic: 'Schema validation error',
+    }] : [],
+    usage: { dispatched: 0, elapsed_ms: 0, tokens: null, cost: null },
+  };
+
+  const wordingIssues: ProposalIssue[] = Array.from({ length: options.wordingBlockers }, (_, i) => ({
+    id: `issue-wording-${i}`,
+    subject: { kind: 'proposal' as const, proposal_id: `p${i + 1}` },
+    group: 'grounding',
+    action: 'edit_proposal' as const,
+    details: [{
+      severity: 'block' as const,
+      kind: 'unsupported_experience',
+      message: `Wording blocker ${i + 1}`,
+    }],
+  }));
+
+  const mockProposals = Array.from({ length: Math.max(1, options.wordingBlockers) }, (_, i) => ({
+    id: `p${i + 1}`,
+    type: 'summary.rewrite' as const,
+    target: {},
+    before: 'Original',
+    after: `Built backend APIs ${i + 1}.`,
+    citations: [],
+    requirement_ids: [],
+    checks: [],
+    decision: 'pending' as const,
+  }));
+
+  const mockData = {
+    ...data,
+    generation: {
+      ...data.generation,
+      generation_policy: 'synthesis_v1',
+      proposals: { proposals: mockProposals },
+    },
+    review: {
+      ...data.review,
+      validation: {
+        ...data.review.validation,
+        status: (options.wordingBlockers > 0 ? 'blocked' : 'ready') as 'blocked' | 'ready',
+        issues: wordingIssues,
+      },
+    },
+  };
+
+  vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(mockFacts as any);
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(mockData as any);
+
+  return render(
+    <JobProposalReview
+      job={job}
+      onSaved={() => {}}
+      initialData={mockData as any}
+      initialFacts={mockFacts as any}
+    />
+  );
+}
+
+it('displays distinct counts for factual questions, technical checks, and wording issues without resetting to 0 during check', () => {
+  renderJobReview({
+    supportedClaims: 9,
+    unresolvedFacts: 2,
+    wordingBlockers: 3,
+    technicalRetries: 1,
+    isChecking: true,
+  });
+
+  expect(screen.getByTestId('fact-count-badge')).toHaveTextContent('2 facts need answer');
+  expect(screen.getByTestId('wording-issue-badge')).toHaveTextContent('3 wording issues');
+  expect(screen.getByTestId('technical-retry-badge')).toHaveTextContent('1 technical check needs retry');
+  // Crucial: Checking active does not wipe supported claims count
+  expect(screen.getByTestId('supported-claims-summary')).toHaveTextContent('9 claims supported');
+  expect(screen.getByTestId('primary-next-action')).toHaveTextContent('Checking in progress...');
+});
+
+

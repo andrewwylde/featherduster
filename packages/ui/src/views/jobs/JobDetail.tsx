@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { JobFacts as Facts } from '@featherduster/core';
 import {
   ArrowLeft,
   FileText,
@@ -39,6 +40,7 @@ export function JobDetail({
 }) {
   const load = useCallback(() => apiClient.getJob(id), [id]);
   const { data, error, refresh } = useJobsData(load);
+  const [factsData, setFactsData] = useState<Facts | null>(null);
   const [failure, setFailure] = useState('');
   const [busy, setBusy] = useState(false);
   const pending = useRef(false);
@@ -75,6 +77,7 @@ export function JobDetail({
         idempotency_key: intentKey({ action, ...body }),
       });
       await refresh();
+      if (section === 'posting') navigate(`/jobs/${id}/resume`);
     } catch (e) {
       setFailure(e instanceof Error ? e.message : 'Preparation failed');
     } finally {
@@ -109,7 +112,27 @@ export function JobDetail({
   const state = job ? displayPreparationState(job) : undefined;
   const stateReason = recoveredCapture ? null : describeStateReason(job?.state_reason);
   const hasReview = data?.proposal_review?.availability === 'available';
+  useEffect(() => {
+    if (!hasReview) { setFactsData(null); return; }
+    let alive = true;
+    apiClient.getJobFacts(id).then(f => { if (alive) setFactsData(f); }).catch(() => {});
+    return () => { alive = false; };
+  }, [id, hasReview, data?.job.revision]);
   const canRecover = data?.proposal_review?.availability === 'missing_output' && data.proposal_review.recoverable;
+  const unresolvedFactsCount = factsData
+    ? factsData.facts.filter(f => !f.resolution && ['needs_clarification', 'contradicted'].includes(f.state)).length
+    : (data?.proposal_review?.availability === 'available' ? data.proposal_review.blocking_count : 0);
+  const wordingBlockersCount = data?.proposal_review?.availability === 'available' ? data.proposal_review.blocking_count : 0;
+  const reviewButtonLabel = factsData
+    ? unresolvedFactsCount > 0 && wordingBlockersCount > 0
+      ? `Review draft (${unresolvedFactsCount} ${unresolvedFactsCount === 1 ? 'fact' : 'facts'}, ${wordingBlockersCount} wording)`
+      : unresolvedFactsCount > 0
+      ? `Review facts (${unresolvedFactsCount})`
+      : wordingBlockersCount > 0
+      ? `Review wording (${wordingBlockersCount})`
+      : 'Review draft'
+    : `Review facts${data?.proposal_review?.availability === 'available' && data.proposal_review.blocking_count > 0 ? ` (${data.proposal_review.blocking_count})` : ''}`;
+
   const focusedCorrection = section === 'resume' && hasReview && state === 'needs_input' && job?.recovery?.kind !== 'stale_inputs';
   const setup = job?.recovery?.kind === 'setup';
   const recoveryAction = job?.recovery?.kind === 'stale_inputs' ? { label: 'Review current inputs', path: `/jobs/${id}/inputs` }
@@ -204,12 +227,12 @@ export function JobDetail({
                 </h1>
 
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {state === 'saved' ? 'Saved. Choose an optional activity below.' : state === 'resume_ready' ? 'Resume available for review.' : state === 'needs_input' ? (focusedCorrection ? 'Preparation stopped — proposal review needs your input.' : 'Preparation needs your attention.') : data.activity === 'fit' ? 'Fit assessment' : data.activity === 'cover_letter' ? 'Cover-letter preparation' : data.activity === 'interview_brief' ? 'Interview-brief preparation' : 'Resume preparation'}
+                  {state === 'saved' ? 'Saved. Choose an optional activity below.' : state === 'resume_ready' ? 'Resume available for review.' : state === 'needs_input' ? (focusedCorrection ? 'Your draft needs your input before the PDF can be generated.' : 'Preparation needs your attention.') : data.activity === 'fit' ? 'Fit assessment' : data.activity === 'cover_letter' ? 'Cover-letter preparation' : data.activity === 'interview_brief' ? 'Interview-brief preparation' : 'Resume preparation'}
                 </p>
 
                 {state === 'needs_input' && hasReview && job.recovery?.kind !== 'stale_inputs' && section !== 'proposals' &&
                   <button className={primaryButton} onClick={() => navigate(`/jobs/${id}/proposals`)}>
-                    Review facts{data.proposal_review?.availability === 'available' && data.proposal_review.blocking_count > 0 ? ` (${data.proposal_review.blocking_count})` : ''}
+                    {reviewButtonLabel}
                   </button>}
 
                 {stateReason && <p className={focusedCorrection ? 'hidden' : 'text-xs font-medium text-slate-700 dark:text-slate-300'}>
@@ -217,18 +240,18 @@ export function JobDetail({
                 </p>}
               </div>
 
-              {section === 'posting' && <button className={primaryButton} onClick={() => navigate(`/jobs/${id}/resume`)}>Tailor resume</button>}
+              {section === 'posting' && !['saved', 'queued'].includes(state!) && <button className={secondaryButton} onClick={() => navigate(`/jobs/${id}/resume`)}>Open resume</button>}
               {/* Action Buttons */}
               {!focusedCorrection && job.kind === 'job' && (section === 'resume' || section === 'posting') && (
                 <div className="flex flex-wrap items-center gap-2.5">
-                  {section === 'resume' && ['saved', 'queued'].includes(state!) && (
+                  {['saved', 'queued'].includes(state!) && (
                     <button
                       className={`${primaryButton} text-xs font-semibold`}
                       disabled={busy}
                       onClick={() => void prepare(preparationActionFor(job) === 'resume' ? 'resume' : 'prepare')}
                     >
                       <Sparkles className="h-3.5 w-3.5" />
-                      Prepare resume
+                      {busy ? 'Starting tailoring…' : 'Tailor resume'}
                     </button>
                   )}
 

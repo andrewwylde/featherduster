@@ -3,8 +3,8 @@ import { sseClient } from '../api/events.js';
 import { requestErrorMessage } from '../views/jobs/job-utils.js';
 
 /** Reconciliation only reads; a reconnect can never enable preparation. */
-export function useJobsData<T>(load: () => Promise<T>) {
-  const [data, setData] = useState<T | null>(null);
+export function useJobsData<T>(load: () => Promise<T>, initial?: T) {
+  const [data, setData] = useState<T | null>(initial ?? null);
   const [error, setError] = useState<string | null>(null);
   const refreshRef = useRef<() => Promise<void>>(async () => {});
   useEffect(() => {
@@ -16,7 +16,8 @@ export function useJobsData<T>(load: () => Promise<T>) {
       pending = load().then(value => { if (alive) { setData(value); setError(null); } }, e => { if (alive) setError(requestErrorMessage(e, { timeout: 'The jobs host is taking longer than expected to respond.', fallback: 'Jobs host unavailable.' })); }).finally(() => { pending = null; });
       return pending;
     };
-    setData(null); setError(null);
+    if (initial === undefined) setData(null);
+    setError(null);
     refreshRef.current = async () => { if (pending) await pending; if (alive) await refresh(); };
     void refresh();
     const offJobs = sseClient.onJobs(() => void refresh());

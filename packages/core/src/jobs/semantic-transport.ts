@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DraftResumeSpecSchema } from './draft-content.js';
 import { FactSchema, SourceQuoteSchema, type ClaimResult, type Clarification, type SemanticPassage, type SemanticSource } from './semantic-evidence.js';
+import type { ProposalIssue } from './proposal-review.js';
 const key = z.string().min(1), revision = z.number().int().nonnegative();
 export const SemanticTargetSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('review'), review_id: z.string().uuid(), review_revision: revision }).strict(),
@@ -46,4 +47,76 @@ export interface JobFacts {
   batchesSucceeded?: number;
   batchesFailed?: number;
   usage: { dispatched: number; elapsed_ms: number; tokens: number | null; cost: number | null };
+}
+
+export const UnifiedReviewSummarySchema = z.object({
+  unresolved_facts_count: z.number().int().nonnegative(),
+  wording_issues_count: z.number().int().nonnegative(),
+  technical_failures_count: z.number().int().nonnegative(),
+  supported_claims_count: z.number().int().nonnegative(),
+  total_claims_count: z.number().int().nonnegative(),
+  primary_next_action: z.enum([
+    'answer_facts',
+    'fix_wording',
+    'retry_technical',
+    'wait_checking',
+    'review_pdf',
+    'ready_to_approve',
+  ]),
+}).strict();
+export type UnifiedReviewSummary = z.infer<typeof UnifiedReviewSummarySchema>;
+
+export function computeUnifiedReviewSummary(params: {
+  facts?: JobFacts;
+  issues?: ProposalIssue[];
+  isChecking?: boolean;
+  hasPdf?: boolean;
+  isApproved?: boolean;
+}): UnifiedReviewSummary {
+  const isChecking = params.isChecking ?? (params.facts?.execution === 'checking');
+  const factsList = params.facts?.facts ?? [];
+
+  const unresolved_facts_count = factsList.filter(
+    f => !f.resolution && (f.state === 'needs_clarification' || f.state === 'contradicted')
+  ).length;
+
+  const wording_issues_count = params.issues?.filter(
+    i => !i.details || i.details.length === 0 || i.details.some(d => d.severity === 'block')
+  ).length ?? 0;
+
+  const batchFailures = params.facts?.failures?.length ?? 0;
+  const unavailableFacts = factsList.filter(f => !f.resolution && f.state === 'unavailable').length;
+  const technical_failures_count = batchFailures > 0 ? batchFailures : unavailableFacts;
+
+  const supported_claims_count = factsList.filter(
+    f => f.resolution != null || f.state === 'supported'
+  ).length;
+
+  const total_claims_count = factsList.length;
+
+  let primary_next_action: UnifiedReviewSummary['primary_next_action'];
+  if (isChecking) {
+    primary_next_action = 'wait_checking';
+  } else if (unresolved_facts_count > 0) {
+    primary_next_action = 'answer_facts';
+  } else if (technical_failures_count > 0) {
+    primary_next_action = 'retry_technical';
+  } else if (wording_issues_count > 0) {
+    primary_next_action = 'fix_wording';
+  } else if (!params.hasPdf) {
+    primary_next_action = 'review_pdf';
+  } else if (!params.isApproved) {
+    primary_next_action = 'ready_to_approve';
+  } else {
+    primary_next_action = 'review_pdf';
+  }
+
+  return {
+    unresolved_facts_count,
+    wording_issues_count,
+    technical_failures_count,
+    supported_claims_count,
+    total_claims_count,
+    primary_next_action,
+  };
 }

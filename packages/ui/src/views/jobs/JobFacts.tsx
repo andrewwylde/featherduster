@@ -35,6 +35,7 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
   const readSequence = useRef(0);
   const inFlight = useRef<{ sequence: number; promise: Promise<Facts> }>();
   const data = view?.identity === identity ? view.data : undefined;
+  const dataRef = useRef(data); dataRef.current = data;
   const factsChanged = useRef(onFactsChanged); factsChanged.current = onFactsChanged;
   useEffect(() => { if (data) factsChanged.current?.(data); }, [data]);
   const load = useCallback(async () => {
@@ -59,12 +60,12 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
     return () => clearTimeout(timer);
   }, [load, data]);
   const check = useCallback(async (reason: 'edit' | 'check' | 'retry') => {
-    if (lock.current) return;
+    if (lock.current || dataRef.current?.execution === 'checking') return;
     if (reason === 'edit') priorEdit.current = identity;
     lock.current = true; setBusy(true); setError('');
     try {
       const snapshot = await load();
-      if (current.current !== identity || generation.current.value !== sequence) return;
+      if (current.current !== identity || generation.current.value !== sequence || snapshot.execution === 'checking') return;
       await apiClient.startJobFactCheck(jobId, { target: snapshot.target, input_fingerprint: snapshot.input_fingerprint,
         expected_job_revision: snapshot.job_revision, expected_semantic_revision: snapshot.semantic_revision,
         reason, idempotency_key: crypto.randomUUID() });
@@ -73,7 +74,7 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
     finally { lock.current = false; setBusy(false); }
   }, [identity, sequence, load]);
   useEffect(() => {
-    if (!reactive || busy || priorEdit.current === identity) return;
+    if (!reactive || busy || priorEdit.current === identity || dataRef.current?.execution === 'checking') return;
     const timer = setTimeout(() => { void check('edit'); }, 600);
     return () => clearTimeout(timer);
   }, [identity, reactive, check, busy]);
