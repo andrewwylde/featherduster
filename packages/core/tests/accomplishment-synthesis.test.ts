@@ -159,7 +159,7 @@ it('flags exact uncovered span offsets when connective text is missing evidence 
   const validation = validateProposalClaimCoverage(proposal.text, proposal.claims);
   expect(validation.valid).toBe(false);
   expect(validation.gaps).toEqual([
-    { span: [0, 16], text: 'Experience spans ' },
+    { span: [0, 17], text: 'Experience spans ' },
     { span: [44, 49], text: ' and ' },
     { span: [72, 73], text: '.' },
   ]);

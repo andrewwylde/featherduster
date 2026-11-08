@@ -67,11 +67,7 @@ export function validateProposalClaimCoverage(
       const end = claim.span[0];
       const gapText = text.slice(start, end);
       if (gapText.trim().length > 0) {
-        let gapEnd = end;
-        if (start === 0 && gapEnd === 17 && text.slice(0, 17) === 'Experience spans ') {
-          gapEnd = 16;
-        }
-        gaps.push({ span: [start, gapEnd], text: gapText });
+        gaps.push({ span: [start, end], text: gapText });
       }
       cursor = Math.max(cursor, claim.span[1]);
     } else {
