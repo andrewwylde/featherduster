@@ -1,5 +1,5 @@
 import { load } from 'cheerio';
-import { canonicalizeJobUrl } from '@featherduster/core';
+import { canonicalizeJobUrl, type JobPostingMetadata, JobPostingMetadataSchema } from '@featherduster/core';
 import { isPublicAddress } from './posting-fetcher.js';
 import ipaddr from 'ipaddr.js';
 
@@ -58,4 +58,232 @@ export function extractPosting(html: string, finalUrl: string): ExtractedPosting
   }
   if (!text || !semantic.length) throw new PostingExtractionError();
   return { kind: 'job', text, role: string(heading), company: null, external_job_id: null, candidates: [] };
+}
+
+function parseNum(raw: string): number | undefined {
+  if (!raw) return undefined;
+  const cleaned = raw.replace(/[$£€¥,]/g, '').replace(/\b[A-Z]{3}\b/gi, '').trim();
+  const kMatch = cleaned.match(/^([\d.]+)\s*[kK]$/);
+  if (kMatch) {
+    const val = parseFloat(kMatch[1]);
+    return isNaN(val) ? undefined : Math.round(val * 1000);
+  }
+  const numMatch = cleaned.match(/^[\d.]+/);
+  if (numMatch) {
+    const val = parseFloat(numMatch[0]);
+    return isNaN(val) ? undefined : Math.round(val);
+  }
+  return undefined;
+}
+
+function parsePeriod(text: string, amount?: number): 'annual' | 'monthly' | 'hourly' | 'unknown' {
+  if (/(\/|\bper\s+|\b)(hr|hour|hourly)\b/i.test(text)) return 'hourly';
+  if (/(\/|\bper\s+|\b)(mo|month|monthly)\b/i.test(text)) return 'monthly';
+  if (/(\/|\bper\s+|\b)(yr|year|annual|annually)\b/i.test(text)) return 'annual';
+  if (amount !== undefined) {
+    if (amount >= 20000) return 'annual';
+    if (amount > 0 && amount <= 500) return 'hourly';
+  }
+  return 'unknown';
+}
+
+function parseLocations(text: string): string[] {
+  if (!text) return [];
+  if (text.includes('|') || text.includes(';')) {
+    return text.split(/[|;]+/).map(s => s.trim()).filter(Boolean);
+  }
+  if (/^[A-Za-z\s.-]+,\s*[A-Z]{2}$/.test(text)) {
+    return [text];
+  }
+  const parts = text.split(/\s*,\s*/).map(s => s.trim()).filter(Boolean);
+  if (parts.length > 1) {
+    const isRegionList = parts.every(p => /^[A-Z]{2,6}$/.test(p) || /^(US|USA|UK|LATAM|EMEA|APAC|EU|Canada)$/i.test(p));
+    if (isRegionList) return parts;
+  }
+  return parts.length > 1 && !/^[A-Za-z\s.-]+,\s*[A-Z]{2}/.test(text) ? parts : [text];
+}
+
+export async function extractPostingMetadata(html: string, url?: string): Promise<JobPostingMetadata> {
+  const $ = load(html);
+  const jobs: Record<string, any>[] = [];
+  let visited = 0;
+  function visit(value: any, depth = 0): void {
+    if (!value || typeof value !== 'object' || depth > 20 || ++visited > 10000) return;
+    if (Array.isArray(value)) { value.forEach(v => visit(v, depth + 1)); return; }
+    const types = [value['@type']].flat();
+    if (types.includes('JobPosting')) jobs.push(value);
+    for (const child of Object.values(value)) visit(child, depth + 1);
+  }
+  $('script[type="application/ld+json"]').each((_, node) => {
+    try { visit(JSON.parse($(node).text())); } catch { /* Ignore malformed JSON-LD */ }
+  });
+
+  let remote_policy: string | undefined;
+  let employment_type: string | undefined;
+  let locations: string[] = [];
+  const compensation: JobPostingMetadata['compensation'] = [];
+
+  const job = jobs[0];
+  if (job) {
+    if (job.employmentType) {
+      const raw = Array.isArray(job.employmentType) ? job.employmentType[0] : job.employmentType;
+      if (typeof raw === 'string') {
+        const typeMap: Record<string, string> = {
+          FULL_TIME: 'Full-time',
+          PART_TIME: 'Part-time',
+          CONTRACTOR: 'Contractor',
+          TEMPORARY: 'Temporary',
+          INTERN: 'Internship',
+        };
+        employment_type = typeMap[raw] ?? raw;
+      }
+    }
+    if (job.jobLocationType && String(job.jobLocationType).toUpperCase() === 'TELECOMMUTE') {
+      remote_policy = 'Remote';
+    } else if (job.applicantLocationRequirements) {
+      remote_policy = 'Remote';
+    }
+    if (job.jobLocation) {
+      const locs = [job.jobLocation].flat();
+      for (const l of locs) {
+        if (typeof l === 'string') {
+          locations.push(l);
+        } else if (l && typeof l === 'object') {
+          const addr = l.address;
+          if (typeof addr === 'string') {
+            locations.push(addr);
+          } else if (addr && typeof addr === 'object') {
+            const parts = [addr.addressLocality, addr.addressRegion, addr.addressCountry].filter(Boolean);
+            if (parts.length) locations.push(parts.join(', '));
+          } else if (l.name && typeof l.name === 'string') {
+            locations.push(l.name);
+          }
+        }
+      }
+    }
+    if (job.baseSalary && typeof job.baseSalary === 'object') {
+      const bs = job.baseSalary;
+      const currency = typeof bs.currency === 'string' ? bs.currency : 'USD';
+      let min: number | undefined;
+      let max: number | undefined;
+      let unitText: string | undefined;
+      if (typeof bs.value === 'number') {
+        min = max = bs.value;
+      } else if (bs.value && typeof bs.value === 'object') {
+        min = typeof bs.value.minValue === 'number' ? bs.value.minValue : undefined;
+        max = typeof bs.value.maxValue === 'number' ? bs.value.maxValue : (typeof bs.value.value === 'number' ? bs.value.value : min);
+        unitText = typeof bs.value.unitText === 'string' ? bs.value.unitText : undefined;
+      }
+      const period: 'annual' | 'monthly' | 'hourly' | 'unknown' =
+        unitText ? (unitText.toLowerCase().includes('hour') ? 'hourly' : unitText.toLowerCase().includes('month') ? 'monthly' : 'annual') : (min ?? max ?? 0) >= 20000 ? 'annual' : 'unknown';
+      const raw_text = min && max && min !== max ? `${currency} ${min.toLocaleString()} - ${max.toLocaleString()}` : `${currency} ${(min ?? max ?? 0).toLocaleString()}`;
+      compensation.push({
+        currency,
+        ...(min !== undefined ? { min } : {}),
+        ...(max !== undefined ? { max } : {}),
+        period,
+        raw_text,
+      });
+    }
+  }
+
+  if (!employment_type) {
+    const empEl = $('.employment-type, .employment_type, [itemprop="employmentType"], .job-type').first();
+    if (empEl.length && empEl.text().trim()) {
+      employment_type = empEl.text().trim();
+    }
+  }
+
+  const locEl = $('.location, .job-location, [itemprop="jobLocation"], .remote-policy, .workplace-type').first();
+  const locText = locEl.length ? locEl.text().trim() : '';
+  if (!remote_policy) {
+    if (/\bhybrid\b/i.test(locText)) remote_policy = 'Hybrid';
+    else if (/\bremote\b/i.test(locText)) remote_policy = 'Remote';
+    else if (/\b(on-site|onsite|in-office)\b/i.test(locText)) remote_policy = 'On-site';
+  }
+  if (locations.length === 0 && locText) {
+    const cleanedLoc = locText.replace(/^(remote|hybrid|on-site|onsite|in-office)\s*[-:—–]\s*/i, '').trim();
+    if (cleanedLoc) {
+      locations = parseLocations(cleanedLoc);
+    }
+  }
+
+  const salEl = $('.salary, .compensation, [itemprop="baseSalary"], .pay-range, .salary-range');
+  if (salEl.length) {
+    salEl.each((_, el) => {
+      const salText = $(el).text().trim();
+      const segments = salText.split(/[|\n;]+/).map(s => s.trim()).filter(Boolean);
+      for (const seg of segments) {
+        if (!/\d/.test(seg)) continue;
+        const regionMatch = seg.match(/^([A-Za-z\s]{2,20})\s*[:\-–—]\s*(.*)$/);
+        let region: string | undefined;
+        let raw_text = seg;
+        if (regionMatch && !/^(USD|GBP|EUR|CAD|AUD|CHF|JPY|NZD|SGD|HKD|SEK|NOK|DKK|INR)$/i.test(regionMatch[1].trim())) {
+          region = regionMatch[1].trim();
+          raw_text = regionMatch[2].trim();
+        }
+        const currMatch = raw_text.match(/\b(USD|GBP|EUR|CAD|AUD|CHF|JPY|NZD|SGD|HKD|SEK|NOK|DKK|INR)\b/i);
+        let currency = 'USD';
+        if (currMatch) {
+          currency = currMatch[1].toUpperCase();
+        } else if (raw_text.includes('£')) {
+          currency = 'GBP';
+        } else if (raw_text.includes('€')) {
+          currency = 'EUR';
+        } else if (raw_text.includes('¥')) {
+          currency = 'JPY';
+        }
+        const rangeMatch = raw_text.match(/([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)\s*(?:-|–|—|to)\s*([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)/);
+        let min: number | undefined;
+        let max: number | undefined;
+        if (rangeMatch) {
+          min = parseNum(rangeMatch[1]);
+          max = parseNum(rangeMatch[2]);
+        } else {
+          const single = raw_text.match(/[$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?/);
+          if (single) {
+            min = parseNum(single[0]);
+            max = min;
+          }
+        }
+        const period = parsePeriod(raw_text, min ?? max);
+        compensation.push({
+          ...(region ? { region } : {}),
+          currency,
+          ...(min !== undefined ? { min } : {}),
+          ...(max !== undefined ? { max } : {}),
+          period,
+          raw_text,
+        });
+      }
+    });
+  }
+
+  const fullText = plain(html);
+  if (!remote_policy) {
+    if (/\bhybrid\b/i.test(fullText)) remote_policy = 'Hybrid';
+    else if (/\bremote\b/i.test(fullText)) remote_policy = 'Remote';
+    else if (/\b(on-site|onsite|in-office)\b/i.test(fullText)) remote_policy = 'On-site';
+  }
+  if (!employment_type) {
+    const m = fullText.match(/\b(Full-time Employee|Full-time|Part-time Employee|Part-time|Contractor|Contract|Internship)\b/i);
+    if (m) employment_type = m[1];
+  }
+
+  let validSourceUrl: string | undefined;
+  if (url) {
+    try {
+      const parsed = new URL(url);
+      if (/^https?:$/i.test(parsed.protocol)) validSourceUrl = parsed.href;
+    } catch { /* Ignore malformed URL */ }
+  }
+
+  return JobPostingMetadataSchema.parse({
+    ...(remote_policy ? { remote_policy } : {}),
+    locations,
+    ...(employment_type ? { employment_type } : {}),
+    compensation,
+    ...(validSourceUrl ? { source_url: validSourceUrl } : {}),
+    captured_at: new Date().toISOString(),
+  });
 }

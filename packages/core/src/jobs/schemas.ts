@@ -40,6 +40,22 @@ export const JobRecoverySchema = z.object({
 export type JobRecovery = z.infer<typeof JobRecoverySchema>;
 export const CorpusNotificationSchema = z.object({ revision: count, update_ids: z.array(uuid) }).strict();
 export type CorpusNotification = z.infer<typeof CorpusNotificationSchema>;
+export const JobPostingMetadataSchema = z.object({
+  remote_policy: z.string().optional(),
+  locations: z.array(z.string()).default([]),
+  employment_type: z.string().optional(),
+  compensation: z.array(z.object({
+    region: z.string().optional(),
+    currency: z.string().min(1),
+    min: z.number().optional(),
+    max: z.number().optional(),
+    period: z.enum(['annual', 'monthly', 'hourly', 'unknown']),
+    raw_text: z.string(),
+  })).default([]),
+  source_url: z.string().url().optional(),
+  captured_at: z.string(),
+}).strict();
+export type JobPostingMetadata = z.infer<typeof JobPostingMetadataSchema>;
 export const JobSchema = z.object({
   ...entity, recovery: JobRecoverySchema.optional(), revision: count, kind: z.enum(['job', 'discovery']),
   original_url: z.string().url().nullable(), canonical_url: z.string().url().nullable(),
@@ -48,6 +64,7 @@ export const JobSchema = z.object({
   archived_at: timestamp.nullable().optional(),
   context_url: z.string().url().refine(url => /^https?:\/\//i.test(url), 'Use an HTTP or HTTPS link').nullable().optional(),
   parent_discovery_id: uuid.nullable(), posting_snapshot_id: uuid.nullable(),
+  posting_metadata: JobPostingMetadataSchema.optional(),
   preparation_state: PreparationStateSchema, application_lifecycle: ApplicationLifecycleSchema,
   preparation_stage: PreparationStageSchema.nullable(), base_resume_id: text.nullable(), template_id: text.nullable(),
   runner: text.nullable(), policy_fingerprint: text.nullable(), current_attempt_id: uuid.nullable(),
@@ -60,6 +77,7 @@ export const PostingSnapshotSchema = z.object({
   ...jobEntity, source_kind: z.enum(['url', 'text']), original_url: z.string().url().nullable(),
   final_url: z.string().url().nullable(), retrieved_at: timestamp.nullable(), captured_at: timestamp,
   text, content_fingerprint: text,
+  posting_metadata: JobPostingMetadataSchema.optional(),
 }).strict().refine(s => s.source_kind !== 'url' || !!(s.original_url && s.final_url && s.retrieved_at), {
   message: 'URL capture requires original/final URLs and retrieval time.',
 });
@@ -129,6 +147,7 @@ export const InputSnapshotSchema = z.object({
   resolved_resume_fingerprint: text.optional(),
   page_budget: z.number().int().positive().optional(),
   recorded_runner: text.optional(),
+  posting_metadata: JobPostingMetadataSchema.optional(),
 }).strict();
 export type InputSnapshot = z.infer<typeof InputSnapshotSchema>;
 export const JobInputsSnapshotSchema = InputSnapshotSchema;

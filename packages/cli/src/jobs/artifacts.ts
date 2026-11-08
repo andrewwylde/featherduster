@@ -93,6 +93,7 @@ export class JobArtifactsService {
         ...(resolvedResumeFingerprint ? { resolved_resume_fingerprint: resolvedResumeFingerprint } : {}),
         ...(pageBudget ? { page_budget: pageBudget } : {}),
         ...(recordedRunner ? { recorded_runner: recordedRunner } : {}),
+        ...(posting.posting_metadata ? { posting_metadata: posting.posting_metadata } : job.posting_metadata ? { posting_metadata: job.posting_metadata } : {}),
       };
       const manifest = inputManifest.parse({ schema_version: 1, snapshot, job_scope: { company: job.company, role: job.role, employer_id: job.employer_id }, posting_file: add('posting.txt', posting.text), policy_file: add('policy.json', canonical(policy)), evidence_sources: request.selected_evidence.map(e => e.source_id), ...(request.resume_id ? { resume_id: request.resume_id } : {}), ...(request.resume_path ? { resume_path: request.resume_path } : {}), ...(request.resume_fingerprint ? { resume_fingerprint: request.resume_fingerprint } : {}) });
       const bytes = canonical(manifest); bundle['manifest.json'] = bytes;

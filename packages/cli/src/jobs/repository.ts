@@ -81,8 +81,13 @@ export class JobsRepository {
     if (snapshot) { this.workspace(snapshot); if (snapshot.job_id !== job.id || snapshot.content_fingerprint !== fingerprint(snapshot.text)) this.error('invalid_relationship', 'Invalid capture binding'); }
     const { id, created_at, updated_at, ...jobContent } = job;
     const content = snapshot && { source_kind: snapshot.source_kind, original_url: snapshot.original_url, final_url: snapshot.final_url, text: snapshot.text, content_fingerprint: snapshot.content_fingerprint };
+    const normalizedJob = {
+      ...jobContent,
+      missing_inputs: job.missing_inputs.map(({ scope, ...q }) => q),
+      ...(jobContent.posting_metadata ? { posting_metadata: { ...jobContent.posting_metadata, captured_at: '' } } : {}),
+    };
     // Scope IDs are generated for new jobs, not part of the semantic request.
-    const request = { submitted, fallback, job: { ...jobContent, missing_inputs: job.missing_inputs.map(({ scope, ...q }) => q) }, snapshot: content };
+    const request = { submitted, fallback, job: normalizedJob, snapshot: content };
     return this.receipt('intake', key, request, () => {
       let saved: C.Job;
       if (fallback) {

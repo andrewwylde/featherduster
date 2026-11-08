@@ -808,6 +808,7 @@ function renderJobInputReview(options: {
   currentSelection?: string | null;
   resolvedDefaultId?: string;
   additionalResumes?: any[];
+  postingMetadata?: any;
 }) {
   const resume = {
     id: options.resolvedDefaultId ?? 'tailored/main:yaml',
@@ -825,7 +826,7 @@ function renderJobInputReview(options: {
 
   const testDetail: JobsDetail = {
     job: testJob,
-    posting: { text: 'Some posting' } as any,
+    posting: { text: 'Some posting', posting_metadata: options.postingMetadata } as any,
     attempt: null,
     artifacts: [],
     events: [],
@@ -869,5 +870,34 @@ it('displays active captured resume fingerprint alongside next-run selection wit
   fireEvent.change(screen.getByLabelText('Starting resume'), { target: { value: 'tailored/alt:yaml' } });
   expect(screen.getByTestId('next-selection-label')).toHaveTextContent('resumes/tailored/alt.yaml');
   expect(screen.getByTestId('next-selection-label')).not.toHaveTextContent('Default:');
+});
+
+it('renders position details section with location, employment type, remote policy, and regional compensation with tooltips', () => {
+  renderJobInputReview({
+    postingMetadata: {
+      remote_policy: 'Remote',
+      employment_type: 'Full-time Employee',
+      locations: ['US', 'UK', 'LATAM'],
+      compensation: [
+        { region: 'US', currency: 'USD', min: 160000, max: 190000, period: 'annual', raw_text: '$160,000 - $190,000 USD' },
+        { region: 'UK', currency: 'GBP', min: 100000, max: 120000, period: 'annual', raw_text: '£100,000 - £120,000 GBP' },
+      ],
+      captured_at: new Date().toISOString(),
+    },
+  });
+
+  expect(screen.getByTestId('position-details-section')).toBeInTheDocument();
+  expect(screen.getByTestId('position-location')).toHaveTextContent('US, UK, LATAM');
+  expect(screen.getByTestId('position-employment-type')).toHaveTextContent('Full-time Employee');
+  expect(screen.getByTestId('position-remote-policy')).toHaveTextContent('Remote');
+
+  const compensation = screen.getByTestId('position-compensation');
+  expect(compensation).toHaveTextContent('US: 160,000 - 190,000 USD (annual)');
+  expect(compensation).toHaveTextContent('UK: 100,000 - 120,000 GBP (annual)');
+
+  const usCompensation = screen.getByTitle('$160,000 - $190,000 USD');
+  expect(usCompensation).toBeInTheDocument();
+  const ukCompensation = screen.getByTitle('£100,000 - £120,000 GBP');
+  expect(ukCompensation).toBeInTheDocument();
 });
 

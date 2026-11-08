@@ -3,7 +3,7 @@ import * as C from '@featherduster/core';
 import { JobsRepository, RepositoryError } from './repository.js';
 import { fingerprint } from './files.js';
 import { fetchPosting, MAX_POSTING_BYTES, type PostingFetchResult } from './posting-fetcher.js';
-import { extractPosting, type Opening } from './posting-extractor.js';
+import { extractPosting, extractPostingMetadata, type Opening } from './posting-extractor.js';
 
 export type IntakeRequest = C.JobIntakeInput & { fallback_job_id?: string; expected_revision?: number; details?: Partial<Pick<C.Job, 'company' | 'role' | 'notes' | 'context_url'>> };
 export interface IntakeItem {
@@ -37,15 +37,22 @@ export class PostingIntakeService {
           item.job = old; item.fallback = { job_id: id, revision: request.expected_revision };
         }
         let text: string; let final_url: string | null = null; let retrieved_at: string | null = null;
+        let metadata: C.JobPostingMetadata | undefined = undefined;
         if (row.mode === 'text') {
           text = row.text;
           if (Buffer.byteLength(text) > MAX_POSTING_BYTES) throw new Error('Posting text exceeds 2 MiB');
+          try {
+            metadata = await extractPostingMetadata(text);
+          } catch { /* Unstructured or plain text postings remain usable without structured metadata */ }
         } else {
           try {
             const fetched = await (this.options.fetcher ?? fetchPosting)(row.original.trim());
             const extracted = extractPosting(fetched.html, fetched.final_url);
             text = extracted.text; final_url = fetched.final_url; retrieved_at = fetched.retrieved_at;
             job.canonical_url = C.canonicalizeJobUrl(final_url); job.kind = extracted.kind; job.company = extracted.company; job.role = extracted.role; job.external_job_id = extracted.external_job_id; item.candidates = extracted.candidates;
+            try {
+              metadata = await extractPostingMetadata(fetched.html, final_url);
+            } catch { /* Structured metadata extraction is best-effort */ }
           } catch (error) {
             item.error = { code: error && typeof error === 'object' && 'code' in error ? String(error.code) : 'capture_failed', message: 'Unable to capture posting. Paste posting text instead.' };
             item.fallback_available = true; job.preparation_state = 'needs_input'; job.state_reason = `${item.error.code}: ${item.error.message}`;
@@ -53,12 +60,16 @@ export class PostingIntakeService {
             continue;
           }
         }
+        if (metadata) {
+          metadata.captured_at = time;
+          job.posting_metadata = metadata;
+        }
         if (job.kind === 'discovery') {
           job.preparation_state = 'needs_input'; job.state_reason = 'Select an opening before preparation';
           job.missing_inputs = [{ key: 'select_opening', question: 'Which opening should be prepared?', scope: { kind: 'job', job_id: id }, reason: job.state_reason }];
         }
         if (request.details) item.job = C.JobSchema.parse({ ...item.job, ...request.details });
-        item.snapshot = C.PostingSnapshotSchema.parse({ schema_version: 1, id: uuid(), workspace_id, job_id: id, source_kind: row.mode === 'text' ? 'text' : 'url', original_url: item.job.original_url, final_url, retrieved_at, captured_at: time, text, content_fingerprint: fingerprint(text) });
+        item.snapshot = C.PostingSnapshotSchema.parse({ schema_version: 1, id: uuid(), workspace_id, job_id: id, source_kind: row.mode === 'text' ? 'text' : 'url', original_url: item.job.original_url, final_url, retrieved_at, captured_at: time, text, content_fingerprint: fingerprint(text), ...(metadata ? { posting_metadata: metadata } : {}) });
       } catch { item.valid = false; item.job = null; item.snapshot = null; item.error = { code: 'invalid_input', message: 'Invalid text or fallback target/revision.' }; }
     }
     const preview = { workspace_id, items }; this.previews.set(preview, JSON.stringify(preview)); return preview;

@@ -12,6 +12,7 @@ export function JobInputReview({ data, navigate, initialResumes }: {
 }) {
   const { job, posting } = data;
   const captured = data.capturedInputs ?? data.captured;
+  const metadata = captured?.input?.posting_metadata ?? posting?.posting_metadata ?? job.posting_metadata;
   const capturedResumePath = captured?.resume_path ?? captured?.input?.resolved_resume_path;
   const capturedResumeFingerprint = captured?.resume_fingerprint ?? captured?.input?.resolved_resume_fingerprint;
   const capturedResumeId = captured?.resume_id ?? captured?.input?.base_resume?.id;
@@ -95,6 +96,51 @@ export function JobInputReview({ data, navigate, initialResumes }: {
             Captured: <time>{new Date(capturedCreatedAt).toLocaleString()}</time>
           </div>
         )}
+      </div>
+    )}
+    {metadata && (
+      <div data-testid="position-details-section" className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-4 space-y-2 text-sm">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Position details</h3>
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {metadata.locations && metadata.locations.length > 0 && (
+            <div>
+              <dt className="font-medium text-slate-500 dark:text-slate-400 text-xs">Location</dt>
+              <dd data-testid="position-location" className="text-slate-900 dark:text-slate-100">{metadata.locations.join(', ')}</dd>
+            </div>
+          )}
+          {metadata.employment_type && (
+            <div>
+              <dt className="font-medium text-slate-500 dark:text-slate-400 text-xs">Employment type</dt>
+              <dd data-testid="position-employment-type" className="text-slate-900 dark:text-slate-100">{metadata.employment_type}</dd>
+            </div>
+          )}
+          {metadata.remote_policy && (
+            <div>
+              <dt className="font-medium text-slate-500 dark:text-slate-400 text-xs">Remote policy</dt>
+              <dd data-testid="position-remote-policy" className="text-slate-900 dark:text-slate-100">{metadata.remote_policy}</dd>
+            </div>
+          )}
+          {metadata.compensation && metadata.compensation.length > 0 && (
+            <div className="col-span-full">
+              <dt className="font-medium text-slate-500 dark:text-slate-400 text-xs">Compensation</dt>
+              <dd data-testid="position-compensation" className="space-y-1 mt-1">
+                {metadata.compensation.map((comp, idx) => {
+                  const range = comp.min !== undefined && comp.max !== undefined && comp.min !== comp.max
+                    ? `${comp.min.toLocaleString()} - ${comp.max.toLocaleString()} ${comp.currency}`
+                    : comp.min !== undefined
+                      ? `${comp.min.toLocaleString()} ${comp.currency}`
+                      : comp.currency;
+                  const label = `${comp.region ? `${comp.region}: ` : ''}${range} (${comp.period})`;
+                  return (
+                    <div key={idx} title={comp.raw_text} className="text-xs text-slate-800 dark:text-slate-200 font-mono">
+                      {label}
+                    </div>
+                  );
+                })}
+              </dd>
+            </div>
+          )}
+        </dl>
       </div>
     )}
     <div className="space-y-2">
