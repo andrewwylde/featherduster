@@ -356,3 +356,11 @@ export function validateOmissionTargets(base: z.infer<typeof ResumeSpecSchema>, 
       || o.source_bullets.some(s => e.bullets[s.bullet_index]?.text !== s.before)) throw new Error('Omission targets changed. Reload the current draft before removing an accomplishment.');
   }
 }
+
+export {
+  type PassageDiffStage,
+  type PassageDiffTrace,
+  type ArtifactChangesSummary,
+  computeArtifactChanges,
+} from './restoration.js';
+

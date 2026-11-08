@@ -32,6 +32,8 @@ const inputManifest = z.object({
 const artifactManifest = z.object({
   schema_version: z.literal(1), artifact: C.ArtifactVersionSchema.innerType().omit({ version_fingerprint: true }),
   draft_id: z.string().uuid(), draft_revision: z.number().int().nonnegative(), previews: z.array(C.ImmutableReferenceSchema),
+  changes_summary: C.ImmutableReferenceSchema.optional(),
+  base_corrections: C.ImmutableReferenceSchema.optional(),
 }).strict();
 
 export class JobArtifactsService {
@@ -130,7 +132,17 @@ export class JobArtifactsService {
       const previews = (request.previews ?? []).map((bytes, i) => add(`preview-${i}.png`, bytes));
       const artifact = { schema_version: 1 as const, id, workspace_id: draft.workspace_id, job_id: draft.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, parent_version_id: draft.parent_artifact_version_id, created_at: this.now(), source: add('source.tex', request.source), pdf: request.pdf === undefined ? null : add('resume.pdf', request.pdf), preview: previews[0] ?? null, validation_report: request.validation_report === undefined ? null : add('validation.json', request.validation_report), validation_result: request.validation_result };
       if (request.semantic_binding) Object.assign(artifact, { semantic_binding: request.semantic_binding });
-      const bytes = canonical(artifactManifest.parse({ schema_version: 1, artifact, draft_id: draft.id, draft_revision: draft.revision, previews }));
+      const attemptReview = this.attemptReview(attempt.id);
+      const baseCorrections = attemptReview?.base_corrections ?? [];
+      let rawBaseResume: any = null;
+      try {
+        const rawBaseYaml = files.readSnapshot(input.base_resume, draft.job_id, input.id).toString();
+        rawBaseResume = yaml.load(rawBaseYaml);
+      } catch {}
+      const changesSummary = C.computeArtifactChanges(rawBaseResume, baseCorrections, draft.proposals.proposals);
+      const changes_summary = add('changes-summary.json', canonical(changesSummary));
+      const base_corrections = add('base-corrections.json', canonical(baseCorrections));
+      const bytes = canonical(artifactManifest.parse({ schema_version: 1, artifact, draft_id: draft.id, draft_revision: draft.revision, previews, changes_summary, base_corrections }));
       bundle['manifest.json'] = bytes;
       const result = C.ArtifactVersionSchema.parse({ ...artifact, version_fingerprint: fingerprint(bytes) });
       files.writeBundle('artifacts', draft.job_id, id, bundle);
@@ -145,6 +157,8 @@ export class JobArtifactsService {
       const { version_fingerprint, ...metadata } = artifact;
       if (canonical(metadata) !== canonical(manifest.artifact) || canonical(artifact.preview) !== canonical(manifest.previews[0] ?? null)) throw new Error('Artifact binding mismatch');
       for (const ref of manifest.previews) read(ref);
+      if (manifest.changes_summary) read(manifest.changes_summary);
+      if (manifest.base_corrections) read(manifest.base_corrections);
       const input = this.getInputSnapshot(artifact.input_snapshot_id); const draft = this.repository.getDraftRevision(manifest.draft_id, manifest.draft_revision);
       if (input.fingerprint !== artifact.input_fingerprint || input.job_id !== artifact.job_id || draft.job_id !== artifact.job_id || draft.input_snapshot_id !== input.id || draft.parent_artifact_version_id !== artifact.parent_version_id) throw new Error('Draft binding mismatch');
       return { artifact, manifest };
@@ -169,7 +183,17 @@ publishManualCandidate(request: Parameters<JobsRepository['assertManualPublicati
       pdf: add('resume.pdf', request.pdf), preview: previews[0] ?? null,
       validation_report: add('validation.json', request.validation_report), validation_result: 'passed' as const };
     if (request.semantic_binding) Object.assign(artifact, { semantic_binding: request.semantic_binding });
-    const bytes = canonical(artifactManifest.parse({ schema_version: 1, artifact, draft_id: draft.id, draft_revision: draft.revision, previews }));
+    const attemptReview = this.attemptReview(parent.attempt_id);
+    const baseCorrections = attemptReview?.base_corrections ?? [];
+    let rawBaseResume: any = null;
+    try {
+      const rawBaseYaml = files.readSnapshot(input.base_resume, draft.job_id, input.id).toString();
+      rawBaseResume = yaml.load(rawBaseYaml);
+    } catch {}
+    const changesSummary = C.computeArtifactChanges(rawBaseResume, baseCorrections, draft.proposals.proposals);
+    const changes_summary = add('changes-summary.json', canonical(changesSummary));
+    const base_corrections = add('base-corrections.json', canonical(baseCorrections));
+    const bytes = canonical(artifactManifest.parse({ schema_version: 1, artifact, draft_id: draft.id, draft_revision: draft.revision, previews, changes_summary, base_corrections }));
     bundle['manifest.json'] = bytes;
     const result = C.ArtifactVersionSchema.parse({ ...artifact, version_fingerprint: fingerprint(bytes) });
     files.writeBundle('artifacts', draft.job_id, id, bundle);
@@ -212,8 +236,28 @@ publishManualCandidate(request: Parameters<JobsRepository['assertManualPublicati
       files.readArtifact(artifact.source, jobId, id);
       if (artifact.pdf) files.readArtifact(artifact.pdf, jobId, id);
       const working = r.database.db.prepare('SELECT id FROM draft_revisions WHERE job_id=? AND parent_artifact_version_id=? ORDER BY rowid DESC LIMIT 1').get(jobId, id) as { id: string } | undefined;
-      return { artifact, working_draft: working ? r.getLatestDraft(working.id) : null, draft: r.getDraftRevision(manifest.draft_id, manifest.draft_revision),
-        base_resume: C.effectiveBaseResume(C.ResumeSpecSchema.parse(yaml.load(files.readSnapshot(input.base_resume, jobId, input.id).toString())), this.attemptReview(artifact.attempt_id) ?? {}),
+      let rawBaseResume: any = null;
+      try {
+        const rawBaseYaml = files.readSnapshot(input.base_resume, jobId, input.id).toString();
+        rawBaseResume = yaml.load(rawBaseYaml);
+      } catch {}
+      const attemptReview = this.attemptReview(artifact.attempt_id);
+      const baseCorrections = manifest.base_corrections
+        ? JSON.parse(files.readArtifact(manifest.base_corrections, jobId, id).toString())
+        : (attemptReview?.base_corrections ?? []);
+      const draft = r.getDraftRevision(manifest.draft_id, manifest.draft_revision);
+      const changesSummary: C.ArtifactChangesSummary = manifest.changes_summary
+        ? JSON.parse(files.readArtifact(manifest.changes_summary, jobId, id).toString())
+        : C.computeArtifactChanges(rawBaseResume, baseCorrections, draft.proposals.proposals);
+      let base_resume = rawBaseResume;
+      try {
+        base_resume = C.effectiveBaseResume(C.ResumeSpecSchema.parse(rawBaseResume), { base_corrections: baseCorrections });
+      } catch {}
+      return { artifact, working_draft: working ? r.getLatestDraft(working.id) : null, draft,
+        raw_base_resume: rawBaseResume,
+        base_corrections: baseCorrections,
+        changes_summary: changesSummary,
+        base_resume,
         ...this.preparationContext(artifact.attempt_id),
         validation_report: artifact.validation_report ? JSON.parse(files.readArtifact(artifact.validation_report, jobId, id).toString()) : null,
         preview_count: manifest.previews.length };
