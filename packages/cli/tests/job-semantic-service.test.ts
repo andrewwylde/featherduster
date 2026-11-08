@@ -127,3 +127,209 @@ it('does not dispatch against privacy rules that changed after capture', async (
   expect(f.run).not.toHaveBeenCalled();
   expect(f.service.operation(f.job.id, op.operation_id).reason).toMatch(/Privacy rules changed/);
 });
+it('prioritizes selected summary evidence within the prompt budget, even when other sources rank higher', async () => {
+  const f = setup(), ctx = f.service.context(f.job.id, f.target);
+  const common = { evidence_fingerprint: 'captured', work_id: 'work', company: 'Acme', field: 'summary' as const, start: 0 };
+  const sources = [
+    { ...common, evidence_id: 'other', text: 'Implemented backend services selected_evidence. '.repeat(950) },
+    { ...common, evidence_id: 'ev-052', text: 'ARIA component contributions. '.repeat(150) },
+  ];
+  vi.spyOn(f.service, 'context').mockReturnValue({ ...ctx, sources, passages: ctx.passages.map(p => ({ ...p, work_context: JSON.stringify({ selected_evidence: ['ev-052'] }) })) });
+  const read = f.service.read(f.job.id, f.target);
+  f.service.start(f.job.id, { target: f.target, expected_job_revision: read.job_revision, expected_semantic_revision: read.semantic_revision,
+    input_fingerprint: read.input_fingerprint, reason: 'check', idempotency_key: randomUUID() });
+  await f.service.wait(f.job.id);
+  expect(f.run).toHaveBeenCalledOnce();
+  const request = f.run.mock.calls[0][0], sent = JSON.parse(request.prompt);
+  expect(sent.sources[0].evidence_id).toBe('ev-052');
+  expect(request.system.length + request.prompt.length).toBeLessThanOrEqual(C.SEMANTIC_LIMITS.inputChars);
+});
+
+
+it('keeps an explicitly confirmed answer resolved on reread and cached recheck', async () => {
+  const f = setup();
+  f.run.mockImplementation(async req => {
+    const batch = JSON.parse(req.prompt);
+    return { passages: batch.subjects.map((p: any) => ({ subject_ref: p.ref, claims: [{ text: p.text,
+      fact: { predicate: 'backend', qualifiers: [] }, qualifier_text: [], state: 'needs_clarification', evidence: [],
+      explanation: 'Confirm contribution.', question: 'Did you implement these handlers?' }] })) };
+  });
+  const check = async () => {
+    const v = f.service.read(f.job.id, f.target);
+    f.service.start(f.job.id, { target: f.target, expected_job_revision: v.job_revision, expected_semantic_revision: v.semantic_revision,
+      input_fingerprint: v.input_fingerprint, reason: 'check', idempotency_key: randomUUID() });
+    await f.service.wait(f.job.id);
+  };
+  await check();
+  const v = f.service.read(f.job.id, f.target), fact = v.facts[0];
+  f.service.clarify(f.job.id, { target: f.target, expected_job_revision: v.job_revision, expected_semantic_revision: v.semantic_revision,
+    input_fingerprint: v.input_fingerprint, idempotency_key: randomUUID(), claim_ids: [fact.claim.id], fact: fact.claim.fact,
+    assertion: 'I implemented these handlers.', confirmed: true, reuse: 'job', kind: 'confirmation', source_ids: [], supersedes: null });
+  await check();
+  const reread = f.service.read(f.job.id, f.target);
+  expect(reread.facts[0].resolution).toEqual({ provenance: 'human', explanation: 'I implemented these handlers.' });
+  expect(reread.clarifications.filter(c => c.confirmed)).toHaveLength(1);
+  expect(f.run).toHaveBeenCalledOnce();
+});
+
+it('preserves successful classification batches and retains structured diagnostic on batch schema error', async () => {
+  const f = setup();
+  const target: C.SemanticTarget = {
+    ...f.target,
+    kind: 'draft',
+    draft_id: (f.target as { draft_id: string }).draft_id,
+    candidate: {
+      ...f.candidate,
+      experiences: [{
+        company: 'Acme',
+        role: 'Engineer',
+        startDate: '2020',
+        bullets: Array.from({ length: 9 }, (_, i) => ({ text: `Implemented backend service ${i}.` })),
+      }],
+    },
+  };
+
+  let callCount = 0;
+  f.run.mockImplementation(async request => {
+    callCount++;
+    if (callCount === 3) {
+      throw new Error('Malformed wire JSON at line 1 col 12');
+    }
+    const batch = JSON.parse(request.prompt);
+    return {
+      passages: batch.subjects.map((p: any) => ({
+        subject_ref: p.ref,
+        claims: [{
+          text: p.text,
+          fact: { predicate: 'backend', qualifiers: [] },
+          qualifier_text: [],
+          state: 'supported',
+          evidence: batch.sources[0] ? [{
+            source_ref: 's1',
+            quote: batch.sources[0].text,
+          }] : [],
+          explanation: 'Supported by source.',
+        }],
+      })),
+    };
+  });
+
+  const read = f.service.read(f.job.id, target);
+  f.service.start(f.job.id, {
+    target,
+    expected_job_revision: read.job_revision,
+    expected_semantic_revision: read.semantic_revision,
+    input_fingerprint: read.input_fingerprint,
+    reason: 'check',
+    idempotency_key: randomUUID(),
+  });
+  await f.service.wait(f.job.id);
+
+  const result = f.service.read(f.job.id, target);
+  expect(result.batchesSucceeded).toBe(2);
+  expect(result.batchesFailed).toBe(1);
+  expect(result.facts[0].state).toBe('supported');
+  expect(result.failures).toContainEqual(expect.objectContaining({
+    batch_index: 3,
+    stage: 'schema_validation',
+    code: 'wire_shape_invalid',
+    safe_diagnostic: expect.stringContaining('Malformed wire JSON'),
+  }));
+
+  const supportedFacts = result.facts.filter(fact => fact.state === 'supported');
+  expect(supportedFacts.length).toBeGreaterThanOrEqual(8);
+
+  f.run.mockClear();
+  f.run.mockImplementation(async request => {
+    const batch = JSON.parse(request.prompt);
+    return {
+      passages: batch.subjects.map((p: any) => ({
+        subject_ref: p.ref,
+        claims: [{
+          text: p.text,
+          fact: { predicate: 'backend', qualifiers: [] },
+          qualifier_text: [],
+          state: 'supported',
+          evidence: batch.sources[0] ? [{
+            source_ref: 's1',
+            quote: batch.sources[0].text,
+          }] : [],
+          explanation: 'Supported by source on retry.',
+        }],
+      })),
+    };
+  });
+
+  const readBeforeRetry = f.service.read(f.job.id, target);
+  f.service.start(f.job.id, {
+    target,
+    expected_job_revision: readBeforeRetry.job_revision,
+    expected_semantic_revision: readBeforeRetry.semantic_revision,
+    input_fingerprint: readBeforeRetry.input_fingerprint,
+    reason: 'retry',
+    idempotency_key: randomUUID(),
+  });
+  await f.service.wait(f.job.id);
+
+  const retriedSubjects = f.run.mock.calls.flatMap(([req]) => JSON.parse(req.prompt).subjects.map((s: any) => s.text));
+  expect(retriedSubjects).not.toContain(result.facts[0].claim.text);
+  expect(retriedSubjects).not.toContain(result.facts[1].claim.text);
+
+  const finalResult = f.service.read(f.job.id, target);
+  expect(finalResult.facts.every(fact => fact.state === 'supported')).toBe(true);
+});
+
+it('classifyJobPassages preserves successful classification batches and retains structured diagnostic on batch schema error', async () => {
+  const f = setup();
+  const target: C.SemanticTarget = {
+    ...f.target,
+    kind: 'draft',
+    draft_id: (f.target as { draft_id: string }).draft_id,
+    candidate: {
+      ...f.candidate,
+      experiences: [{
+        company: 'Acme',
+        role: 'Engineer',
+        startDate: '2020',
+        bullets: Array.from({ length: 9 }, (_, i) => ({ text: `Implemented backend service ${i}.` })),
+      }],
+    },
+  };
+
+  let callCount = 0;
+  f.run.mockImplementation(async request => {
+    callCount++;
+    if (callCount === 3) {
+      throw new Error('Malformed wire JSON at line 1 col 12');
+    }
+    const batch = JSON.parse(request.prompt);
+    return {
+      passages: batch.subjects.map((p: any) => ({
+        subject_ref: p.ref,
+        claims: [{
+          text: p.text,
+          fact: { predicate: 'backend', qualifiers: [] },
+          qualifier_text: [],
+          state: 'supported',
+          evidence: batch.sources[0] ? [{
+            source_ref: 's1',
+            quote: batch.sources[0].text,
+          }] : [],
+          explanation: 'Supported by source.',
+        }],
+      })),
+    };
+  });
+
+  const result = await f.service.classifyJobPassages(f.job.id, { target });
+  expect(result.batchesSucceeded).toBe(2);
+  expect(result.batchesFailed).toBe(1);
+  expect(result.passages[0].status).toBe('supported');
+  expect(result.failures).toContainEqual(expect.objectContaining({
+    batch_index: 3,
+    stage: 'schema_validation',
+    code: 'wire_shape_invalid',
+    safe_diagnostic: expect.stringContaining('Malformed wire JSON'),
+  }));
+});
+

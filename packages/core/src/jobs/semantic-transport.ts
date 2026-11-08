@@ -14,16 +14,36 @@ export const SaveFactClarificationSchema = z.object({ target: SemanticTargetSche
   corrected_assertion: key.optional(), effective_date: key.optional(), source_ids: z.array(key), supersedes: z.string().uuid().nullable().default(null),
   supporting_quotes: z.array(SourceQuoteSchema).optional(),
   confirmed: z.boolean().optional(),
+  reuse: z.enum(['job', 'project']).optional(),
+  expected_corpus_revision: revision.optional(),
+  supersedes_shared: z.string().uuid().optional(),
 }).strict();
 export type SemanticTarget = z.infer<typeof SemanticTargetSchema>;
 export type StartSemanticCheck = z.infer<typeof StartSemanticCheckSchema>;
 export type SaveFactClarification = z.infer<typeof SaveFactClarificationSchema>;
 export interface JobFact extends ClaimResult { resolution: { provenance: 'model' | 'human'; explanation: string } | null;
   passage: SemanticPassage; }
+
+export const SemanticBatchFailureSchema = z.object({
+  batch_index: z.number().int().nonnegative().optional(),
+  stage: z.enum(['dispatch', 'wire_parse', 'schema_validation', 'timeout', 'stale_revision']),
+  code: z.enum(['wire_shape_invalid', 'invalid_span', 'timeout', 'stale_result', 'unknown']),
+  safe_diagnostic: z.string().min(1),
+  passage_ids: z.array(z.string()).optional(),
+});
+export type SemanticBatchFailure = z.infer<typeof SemanticBatchFailureSchema>;
+
 export interface JobFacts {
   job_id: string; job_revision: number; input_fingerprint: string; semantic_revision: number; target: SemanticTarget;
   candidate_fingerprint: string; support_fingerprint: string; facts: JobFact[]; clarifications: Clarification[];
   sources?: SemanticSource[];
+  corpus_revision?: number;
+  shared_clarifications?: { update_id: string; clarification: Clarification }[];
   execution: 'unchecked' | 'checking' | 'complete' | 'unavailable'; reason?: string; configuration_evaluated: boolean;
+  failures?: SemanticBatchFailure[];
+  batches_succeeded?: number;
+  batches_failed?: number;
+  batchesSucceeded?: number;
+  batchesFailed?: number;
   usage: { dispatched: number; elapsed_ms: number; tokens: number | null; cost: number | null };
 }

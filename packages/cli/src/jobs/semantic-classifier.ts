@@ -13,25 +13,106 @@ const fact = object({ predicate: string, qualifiers: array(string) });
 const source = object({ source_ref: string, quote: string });
 export const SEMANTIC_RESPONSE_SCHEMA = object({ passages: array(object({ subject_ref: string, claims: array(object({ text: string, fact, qualifier_text: array(string),
   state: { enum: ['supported', 'needs_clarification', 'contradicted', 'unavailable'] }, evidence: array(source), explanation: string, question: string }, ['question'])) })) });
-export const SEMANTIC_PROMPT_HASH = fingerprint(canonical([SEMANTIC_SYSTEM, SEMANTIC_RESPONSE_SCHEMA]));
+export const SEMANTIC_REQUEST_SYSTEM = `${SEMANTIC_SYSTEM}\nFor synthesized accomplishments, validate each substantive claim, purpose, outcome and qualifier using one or more sources. Split claims when their support differs. A set of individually true activities does not establish a common delivered capability: verify their relationship, not merely shared employer or technology. Proposed claim bindings are suggestions, never authority. When work_context.selected_evidence is present, grant support only from those selected evidence IDs; do not silently restore a removed mapping. If a selected evidence ID has no supplied source text, return unavailable and explain that source text was not supplied; do not ask the user to copy captured evidence. Clarification questions should ask about the person's actual contribution or a missing qualifier in plain language, without internal evidence IDs. Never infer aggregate metrics, adoption, sole ownership, or an achieved outcome from a documented purpose.`;
+export const SEMANTIC_PROMPT_HASH = fingerprint(canonical([SEMANTIC_REQUEST_SYSTEM, SEMANTIC_RESPONSE_SCHEMA]));
 const Response = z.object({ passages: z.array(C.PassageResultSchema).min(1) }).strict();
 const WireResponse = z.object({ passages: z.array(z.object({ subject_ref: z.string().min(1), claims: z.array(z.object({
   text: z.string().min(1), fact: C.FactSchema.omit({ work_id: true }), qualifier_text: z.array(z.string()),
   state: C.SemanticStateSchema, evidence: z.array(z.object({ source_ref: z.string().min(1), quote: z.string().min(1) }).strict()),
   explanation: z.string().min(1), question: z.string().nullable().optional(),
 }).strict()).min(1) }).strict()).min(1) }).strict();
-export type Classification = { status: 'complete'; passages: C.PassageResult[] } | { status: 'unavailable'; reason: string };
+
+export function sanitizeDiagnostic(message: string): string {
+  return message
+    .replace(/(bearer\s+)[^\s]+/gi, '$1[REDACTED]')
+    .replace(/(token[=:]\s*)[^\s]+/gi, '$1[REDACTED]')
+    .replace(/(key[=:]\s*)[^\s]+/gi, '$1[REDACTED]')
+    .replace(/(password[=:]\s*)[^\s]+/gi, '$1[REDACTED]')
+    .replace(/sk-[a-zA-Z0-9_-]+/g, '[REDACTED]')
+    .replace(/ghp_[a-zA-Z0-9]+/g, '[REDACTED]');
+}
+
+export function formatSafeZodIssues(issues: z.ZodIssue[]): string {
+  if (!issues || issues.length === 0) return 'Invalid structured schema.';
+  return issues.map(issue => {
+    const pathStr = issue.path
+      .map((seg, i) => (typeof seg === 'number' ? `[${seg}]` : i === 0 ? String(seg) : `.${String(seg)}`))
+      .join('');
+    const msg = sanitizeDiagnostic(issue.message);
+    return pathStr ? `${pathStr}: ${msg}` : msg;
+  }).join('; ');
+}
+
+export function mapToSemanticBatchFailure(
+  e: unknown,
+  batchIndex?: number,
+  passageIds?: string[]
+): C.SemanticBatchFailure {
+  if (e instanceof z.ZodError) {
+    return {
+      ...(batchIndex !== undefined ? { batch_index: batchIndex } : {}),
+      stage: 'schema_validation',
+      code: 'wire_shape_invalid',
+      safe_diagnostic: formatSafeZodIssues(e.issues),
+      ...(passageIds ? { passage_ids: passageIds } : {}),
+    };
+  }
+  const msg = e instanceof Error ? e.message : String(e ?? 'Classification unavailable');
+  const safeDiagnostic = sanitizeDiagnostic(msg);
+
+  let stage: C.SemanticBatchFailure['stage'] = 'dispatch';
+  let code: C.SemanticBatchFailure['code'] = 'unknown';
+
+  if (/timeout|timed out/i.test(msg)) {
+    stage = 'timeout';
+    code = 'timeout';
+  } else if (/malformed|wire|json|parse|schema/i.test(msg)) {
+    stage = 'schema_validation';
+    code = 'wire_shape_invalid';
+  } else if (/quotation|quote|span|coverage|cover the full|invalid claim/i.test(msg)) {
+    stage = 'schema_validation';
+    code = 'invalid_span';
+  } else if (/stale|revision|superseded|subject binding/i.test(msg)) {
+    stage = 'stale_revision';
+    code = 'stale_result';
+  }
+
+  return {
+    ...(batchIndex !== undefined ? { batch_index: batchIndex } : {}),
+    stage,
+    code,
+    safe_diagnostic: safeDiagnostic,
+    ...(passageIds ? { passage_ids: passageIds } : {}),
+  };
+}
+
+export type Classification =
+  | { status: 'complete'; passages: C.PassageResult[] }
+  | { status: 'unavailable'; reason: string; failure?: C.SemanticBatchFailure };
+
 export const semanticPrompt = (request: C.SemanticBatchRequest) => JSON.stringify({ ...request,
   subjects: request.subjects.map((p, i) => ({ ...p, ref: `p${i + 1}` })),
   sources: request.sources.map((s, i) => ({ ...s, ref: `s${i + 1}` })) });
-export async function classifyBatch(runner: ModelRunner, request: C.SemanticBatchRequest, signal: AbortSignal): Promise<Classification> {
+
+export async function classifyBatch(
+  runner: ModelRunner,
+  request: C.SemanticBatchRequest,
+  signal: AbortSignal,
+  batchIndex?: number
+): Promise<Classification> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let cancel!: () => void;
   try {
-    if (signal.aborted) return { status: 'unavailable', reason: 'Classification cancelled.' };
+    if (signal.aborted) {
+      return {
+        status: 'unavailable',
+        reason: 'Classification cancelled.',
+        failure: mapToSemanticBatchFailure(new Error('Classification cancelled.'), batchIndex, request.subjects.map(s => s.subject.id)),
+      };
+    }
     const prompt = semanticPrompt(request);
-    if (!request.subjects.length || request.subjects.length > C.SEMANTIC_LIMITS.passages || prompt.length + SEMANTIC_SYSTEM.length > C.SEMANTIC_LIMITS.inputChars)
+    if (!request.subjects.length || request.subjects.length > C.SEMANTIC_LIMITS.passages || prompt.length + SEMANTIC_REQUEST_SYSTEM.length > C.SEMANTIC_LIMITS.inputChars)
       throw Error('Classification request exceeds its bounded input allowance. Review facts manually.');
     const abort = new Promise<never>((_, reject) => {
       cancel = () => { controller.abort(); reject(Error('Classification cancelled. Your edits are retained.')); };
@@ -39,7 +120,7 @@ export async function classifyBatch(runner: ModelRunner, request: C.SemanticBatc
       timer = setTimeout(() => { controller.abort(); reject(Error('Classification timed out. Retry or review facts manually.')); }, Math.max(1, Math.min(C.SEMANTIC_LIMITS.timeoutMs, request.configuredStepTimeoutMs)));
       if (signal.aborted) cancel();
     });
-    const raw = await Promise.race([runner.run({ system: SEMANTIC_SYSTEM, prompt, schema: SEMANTIC_RESPONSE_SCHEMA,
+    const raw = await Promise.race([runner.run({ system: SEMANTIC_REQUEST_SYSTEM, prompt, schema: SEMANTIC_RESPONSE_SCHEMA,
       transportRetryCount: 0, signal: controller.signal, onProgress: () => {} }), abort]);
     if (JSON.stringify(raw)?.length > C.SEMANTIC_LIMITS.outputChars) throw Error('Classification response exceeded its output allowance.');
     // Structured-output providers require every property; nullable optional fields
@@ -103,6 +184,8 @@ export async function classifyBatch(runner: ModelRunner, request: C.SemanticBatc
     }
     return { status: 'complete', passages: result.passages };
   } catch (e) {
-    return { status: 'unavailable', reason: e instanceof z.ZodError ? 'Classification returned invalid structured data. Retry or review facts manually.' : e instanceof Error ? e.message : 'Classification unavailable.' };
+    const failure = mapToSemanticBatchFailure(e, batchIndex, request.subjects.map(s => s.subject.id));
+    const reason = e instanceof z.ZodError ? 'Classification returned invalid structured data. Retry or review facts manually.' : e instanceof Error ? e.message : 'Classification unavailable.';
+    return { status: 'unavailable', reason, failure };
   } finally { clearTimeout(timer); if (cancel) signal.removeEventListener('abort', cancel); }
 }

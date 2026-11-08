@@ -6,7 +6,8 @@ import { fingerprint } from './files.js';
 export interface SemanticStart { job_id: string; input_snapshot_id: string; expected_job_revision: number;
   expected_semantic_revision: number; cycle_id: string; target_fingerprint: string; idempotency_key: string; automatic: boolean }
 export interface SemanticOperation extends SemanticStart { id: string; sequence: number; stop_generation: number;
-  state: 'checking' | 'complete' | 'unavailable'; reason?: string }
+  state: 'checking' | 'complete' | 'unavailable'; reason?: string; failures?: C.SemanticBatchFailure[];
+  batches_succeeded?: number; batches_failed?: number }
 export interface SemanticCall { id: string; job_id: string; operation_id: string; owner_token: string; started_at: string }
 export class SemanticRepository {
   constructor(readonly jobs: JobsRepository) {}
@@ -87,12 +88,22 @@ export class SemanticRepository {
       return result;
     });
   }
-  finish(operationId: string, jobId: string, reason?: string) {
+  finish(operationId: string, jobId: string, reason?: string, failures?: C.SemanticBatchFailure[], batchesSucceeded?: number, batchesFailed?: number) {
     this.tx(() => {
       const op = this.operation(jobId, operationId);
       if (op.state !== 'checking') return;
       if (!reason) this.assertCurrent(op);
-      this.setOperation({ ...op, state: reason ? 'unavailable' : 'complete', ...(reason ? { reason } : {}) });
+      this.setOperation({ ...op, state: reason ? 'unavailable' : 'complete',
+        ...(reason ? { reason } : {}),
+        ...(failures?.length ? { failures } : {}),
+        ...(batchesSucceeded !== undefined ? { batches_succeeded: batchesSucceeded } : {}),
+        ...(batchesFailed !== undefined ? { batches_failed: batchesFailed } : {}) });
+    });
+  }
+  recordBatchFailure(call: SemanticCall, failure: C.SemanticBatchFailure, reason: string, elapsedMs: number) {
+    this.tx(() => {
+      this.db.prepare('INSERT OR IGNORE INTO semantic_call_results VALUES (?,?)').run(call.id, JSON.stringify({ state: 'unavailable', reason, elapsed_ms: elapsedMs, failure }));
+      this.db.prepare('DELETE FROM semantic_leases WHERE job_id=? AND owner_token=?').run(call.job_id, call.owner_token);
     });
   }
   private finishFailure(call: SemanticCall, reason: string, elapsedMs: number) {
