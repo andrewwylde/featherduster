@@ -41,8 +41,15 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
   let list = r.repository.listJobs();
   if (options?.cursor) {
     const idx = list.findIndex(j => j.id === options.cursor);
-    if (idx >= 0) list = list.slice(idx + 1);
+    if (idx >= 0) list = list.slice(idx);
   }
+
+  const stmtDraft = db.prepare('SELECT payload FROM draft_revisions WHERE job_id=? ORDER BY rowid DESC LIMIT 1');
+  const stmtSem = db.prepare('SELECT payload FROM semantic_records WHERE job_id=? ORDER BY head_revision DESC LIMIT 1');
+  const stmtClar = db.prepare('SELECT payload FROM semantic_clarifications WHERE job_id=?');
+  const stmtGen = db.prepare('SELECT payload FROM proposal_generations WHERE job_id=? ORDER BY rowid DESC LIMIT 1');
+  const stmtWorking = db.prepare('SELECT id FROM draft_revisions WHERE job_id=? AND parent_artifact_version_id=? ORDER BY rowid DESC LIMIT 1');
+  const stmtArtifact = db.prepare('SELECT payload FROM artifacts WHERE id=?');
 
   for (const job of list) {
     if (Date.now() - startTime > maxDurationMs) {
@@ -56,7 +63,7 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
       const jobWorkIds = new Set<string>();
       let hasClaimTokenMatch = false;
 
-      const draftRow = db.prepare('SELECT payload FROM draft_revisions WHERE job_id=? ORDER BY rowid DESC LIMIT 1').get(job.id) as { payload: string } | undefined;
+      const draftRow = stmtDraft.get(job.id) as { payload: string } | undefined;
       if (draftRow) {
         try {
           const draftData = JSON.parse(draftRow.payload);
@@ -82,7 +89,7 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
         } catch {}
       }
 
-      const semRow = db.prepare('SELECT payload FROM semantic_records WHERE job_id=? ORDER BY head_revision DESC LIMIT 1').get(job.id) as { payload: string } | undefined;
+      const semRow = stmtSem.get(job.id) as { payload: string } | undefined;
       if (semRow) {
         try {
           const semData = JSON.parse(semRow.payload);
@@ -94,7 +101,7 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
         } catch {}
       }
 
-      const clarRows = db.prepare('SELECT payload FROM semantic_clarifications WHERE job_id=?').all(job.id) as { payload: string }[];
+      const clarRows = stmtClar.all(job.id) as { payload: string }[];
       for (const clarRow of clarRows) {
         try {
           const clarData = JSON.parse(clarRow.payload);
@@ -102,7 +109,7 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
         } catch {}
       }
 
-      const genRow = db.prepare('SELECT payload FROM proposal_generations WHERE job_id=? ORDER BY rowid DESC LIMIT 1').get(job.id) as { payload: string } | undefined;
+      const genRow = stmtGen.get(job.id) as { payload: string } | undefined;
       if (genRow) {
         try {
           const genData = JSON.parse(genRow.payload);
@@ -130,12 +137,12 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
       let working_draft = false;
 
       if (artifactId) {
-        const workingRow = db.prepare('SELECT id FROM draft_revisions WHERE job_id=? AND parent_artifact_version_id=? ORDER BY rowid DESC LIMIT 1').get(job.id, artifactId) as { id: string } | undefined;
+        const workingRow = stmtWorking.get(job.id, artifactId) as { id: string } | undefined;
         if (workingRow) {
           draft = r.repository.getLatestDraft(workingRow.id);
           working_draft = true;
         } else {
-          const artifactRow = db.prepare('SELECT payload FROM artifacts WHERE id=?').get(artifactId) as { payload: string } | undefined;
+          const artifactRow = stmtArtifact.get(artifactId) as { payload: string } | undefined;
           if (artifactRow) {
             const artifactPayload = JSON.parse(artifactRow.payload);
             const files = r.repository.database.files;
@@ -181,7 +188,7 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
 
 /** Each selected job commits independently; late/stale results never overwrite another edit. */
 export async function updateSelectedClarificationDrafts(r: JobsRuntime, request: z.infer<typeof SelectedUpdatesSchema>) {
-  const preview = affectedClarificationDrafts(r);
+  const preview = affectedClarificationDrafts(r, { maxDurationMs: Number.POSITIVE_INFINITY });
   const results: { job_id: string; status: string; error?: string; operation_key?: string }[] = [];
   const checks: (() => Promise<void>)[] = [];
   for (const selection of request.jobs) {
@@ -191,9 +198,13 @@ export async function updateSelectedClarificationDrafts(r: JobsRuntime, request:
         const affected = preview.jobs.find(j => j.job_id === selection.job_id);
         if (!affected || affected.fingerprint !== selection.fingerprint || affected.busy) throw new RepositoryError('revision_conflict', 'Draft changed or preparation is active. Reload it.');
         if (selection.edits.some(e => !affected.edits.some(a => a.path === e.path && a.before === e.before))) throw new RepositoryError('invalid_relationship', 'Only affected passages may be updated.');
-        const fresh = affectedClarificationDrafts(r).jobs.find(j => j.job_id === selection.job_id);
-        if (fresh?.fingerprint !== affected.fingerprint) throw new RepositoryError('revision_conflict', 'Draft changed during update.');
+        const job = r.repository.getJob(selection.job_id);
+        if (job.revision !== affected.job_revision || ['queued', 'preparing'].includes(job.preparation_state)) throw new RepositoryError('revision_conflict', 'Draft changed during update.');
         const ctx = r.semantic.context(selection.job_id, affected.target);
+        const draft = affected.target.kind === 'draft' ? r.repository.getLatestDraft(affected.target.draft_id) : undefined;
+        if (draft && draft.revision !== affected.draft_revision) throw new RepositoryError('revision_conflict', 'Draft changed during update.');
+        const currentFingerprint = fingerprint(canonical([preview.corpus_revision, job.revision, affected.target, draft?.revision, ctx.candidate]));
+        if (currentFingerprint !== affected.fingerprint) throw new RepositoryError('revision_conflict', 'Draft changed during update.');
         const candidate = C.replaceSelectedPassages(ctx.candidate, selection.edits);
         if (affected.target.kind === 'draft') {
           let draft = r.repository.getLatestDraft(affected.target.draft_id);

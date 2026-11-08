@@ -104,13 +104,14 @@ function create52JobWorkspaceWithOneCorrection() {
 
   // Job 1: Affected job with an artifact containing resume.pdf
   const affectedJobId = randomUUID();
+  const laterTime = '2026-11-08T12:01:00.000Z';
   const affectedJob: C.Job = {
     schema_version: 1, id: affectedJobId, workspace_id: db.workspaceId, revision: 0, kind: 'job',
     original_url: null, canonical_url: null, employer_id: null, external_job_id: null, company: 'Acme', role: 'Engineer',
     parent_discovery_id: null, posting_snapshot_id: null, preparation_state: 'queued', application_lifecycle: 'not_started',
     preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null,
     current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null,
-    created_at: time, updated_at: time,
+    created_at: laterTime, updated_at: laterTime,
   };
   repo.createJob(affectedJob, 'create:affected');
   const posting1 = repo.savePostingSnapshot({ schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, job_id: affectedJobId, source_kind: 'text', original_url: null, final_url: null, retrieved_at: null, captured_at: time, text: 'Acme Engineer', content_fingerprint: fingerprint('Acme Engineer') });
@@ -354,9 +355,17 @@ it('bounds work and returns pagination cursor when duration budget is exceeded',
   expect(capped.incomplete).toBe(true);
   expect(typeof capped.next_cursor).toBe('string');
   expect(capped.next_cursor?.length).toBeGreaterThan(0);
+  expect(capped.jobs).toHaveLength(0);
 
-  // Resuming from cursor with sufficient budget completes discovery
+  // Resuming from cursor with sufficient budget completes discovery and finds affected job placed after cursor
   const resumed = await affectedClarificationDrafts(fixture.runtime, { cursor: capped.next_cursor, maxDurationMs: 5000 });
   expect(resumed.incomplete).toBeUndefined();
+  expect(resumed.jobs).toHaveLength(1);
+  expect(resumed.jobs[0].job_id).toBe(fixture.affectedJobId);
+
+  // Resuming specifically with cursor set to the affected job evaluates it without off-by-one skip
+  const resumedExact = await affectedClarificationDrafts(fixture.runtime, { cursor: fixture.affectedJobId, maxDurationMs: 5000 });
+  expect(resumedExact.jobs).toHaveLength(1);
+  expect(resumedExact.jobs[0].job_id).toBe(fixture.affectedJobId);
 });
 
