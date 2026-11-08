@@ -16,6 +16,7 @@ import type {
   TailoringStep,
   ConfidentialityScanResult,
   ConfidentialityLeak,
+  JobPreparationProgress,
 } from '@featherduster/core';
 
 export interface PreparationBatchProgress {
@@ -48,6 +49,7 @@ export interface JobsDetail {
   job: Job; posting: PostingSnapshot | null; attempt: Omit<Attempt, 'owner_token'> | null;
   artifacts: ArtifactVersion[]; events: JobEvent[]; answers: ScopedAnswer[];
   analysis: JobAnalysis | null; alignment: AlignmentMatrix | null; brief_markdown: string | null;
+  preparation?: JobPreparationProgress | null;
   captured?: {
     input?: InputSnapshot;
     resume_id?: string;

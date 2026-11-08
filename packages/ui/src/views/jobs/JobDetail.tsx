@@ -27,7 +27,91 @@ import { JobMaterialReview } from './JobMaterialReview.js';
 import { JobFitReview } from './JobFitReview.js';
 import { JobResumeReview } from './JobResumeReview.js';
 import { cardClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
-import { actorLabel, describeJobEvent, describeStateReason, displayPreparationState, hasCancellableWork, formatDateTime, hasRecoveredCapture, preparationActionFor, startPreventedHelp } from './job-utils.js';
+import { actorLabel, describeJobEvent, describeStateReason, displayPreparationState, hasCancellableWork, formatDateTime, formatPreparationPhase, hasRecoveredCapture, preparationActionFor, startPreventedHelp } from './job-utils.js';
+
+function PreparationProgressPanel({
+  prep,
+}: {
+  prep: any;
+}) {
+  const startTimeStr = prep.phase_started_at ?? prep.started_at;
+  const calculateElapsed = useCallback(() => {
+    if (!startTimeStr) return '0:00';
+    const startMs = new Date(startTimeStr).getTime();
+    if (isNaN(startMs)) return '0:00';
+    const diffSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+    const m = Math.floor(diffSec / 60);
+    const s = diffSec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }, [startTimeStr]);
+
+  const [elapsed, setElapsed] = useState(calculateElapsed);
+
+  useEffect(() => {
+    setElapsed(calculateElapsed());
+    const interval = setInterval(() => {
+      setElapsed(calculateElapsed());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [calculateElapsed]);
+
+  const usage = prep.usage ?? prep.recorded_usage;
+  const model = usage?.model ?? 'runner-default';
+  const calls = usage?.api_calls ?? usage?.calls ?? 0;
+  const tokens = usage?.tokens != null ? String(usage.tokens) : 'Not recorded';
+
+  return (
+    <div
+      data-testid="prep-progress-card"
+      className="rounded-lg border border-vermilion-200 bg-vermilion-50/50 p-4 dark:border-vermilion-900/40 dark:bg-vermilion-950/20 space-y-2"
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span
+            data-testid="prep-phase-title"
+            className="text-sm font-semibold text-slate-900 dark:text-white"
+          >
+            {formatPreparationPhase(prep.phase)}
+          </span>
+          <span
+            data-testid="prep-elapsed-time"
+            className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          >
+            {elapsed}
+          </span>
+        </div>
+        {(prep.current_operation || prep.active_checkpoint) && (
+          <span
+            data-testid="prep-current-operation"
+            className="text-xs text-slate-500 dark:text-slate-400 font-mono"
+          >
+            {prep.current_operation || prep.active_checkpoint}
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-600 dark:text-slate-400 pt-1 border-t border-vermilion-100 dark:border-vermilion-900/30">
+        <div>
+          <span className="text-slate-400 dark:text-slate-500 mr-1">Model:</span>
+          <span data-testid="prep-usage-model" className="font-medium text-slate-700 dark:text-slate-300">
+            {model}
+          </span>
+        </div>
+        <div>
+          <span className="text-slate-400 dark:text-slate-500 mr-1">API Calls:</span>
+          <span data-testid="prep-usage-calls" className="font-mono text-slate-700 dark:text-slate-300">
+            {calls}
+          </span>
+        </div>
+        <div>
+          <span className="text-slate-400 dark:text-slate-500 mr-1">Tokens:</span>
+          <span data-testid="prep-usage-tokens" className="font-medium text-slate-700 dark:text-slate-300">
+            {tokens}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function JobDetail({
   id,
@@ -107,6 +191,16 @@ export function JobDetail({
   };
 
   const job = data?.job;
+  const prep = data?.preparation ?? (job as any)?.preparation_progress ?? (job?.preparation_state === 'preparing' && data?.attempt ? {
+    phase: 'preparing_resume',
+    phase_started_at: data.attempt.started_at,
+    current_operation: data.attempt.current_stage ?? undefined,
+    usage: {
+      model: 'runner-default',
+      api_calls: data.attempt.resource_usage?.model_calls ?? 0,
+      tokens: null,
+    },
+  } : null);
   // A failed URL capture fixed by pasted text reads as a saved job until preparation starts.
   const recoveredCapture = job ? hasRecoveredCapture(job) : false;
   const state = job ? displayPreparationState(job) : undefined;
@@ -317,6 +411,8 @@ export function JobDetail({
               </div>
             )}
           </div>
+
+          {prep && <PreparationProgressPanel prep={prep} />}
 
           {/* Section Navigation Tabs */}
           <nav

@@ -119,6 +119,32 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   }).immediate();
   const fit = new JobFit(repository);
   const materials = new JobMaterials(repository, artifacts, (id, ids) => selectFit(id, ids), deps.loadPrivacyRules);
+  const progressMap = new Map<string, C.JobPreparationProgress>();
+  const recordProgress = (jobId: string, progress: {
+    phase: C.JobPreparationProgress['phase'];
+    phase_started_at?: string;
+    elapsed_seconds?: number;
+    current_operation?: string;
+    usage?: C.JobPreparationUsage;
+  }) => {
+    const prev = progressMap.get(jobId);
+    const now = new Date().toISOString();
+    const phase_started_at = progress.phase_started_at ?? (prev?.phase === progress.phase ? prev.phase_started_at : now);
+    const elapsed_seconds = progress.elapsed_seconds ?? Math.max(0, Math.floor((Date.now() - new Date(phase_started_at).getTime()) / 1000));
+    const normalized: C.JobPreparationProgress = {
+      phase: progress.phase,
+      phase_started_at,
+      elapsed_seconds,
+      ...(progress.current_operation || prev?.current_operation ? { current_operation: progress.current_operation ?? prev?.current_operation } : {}),
+      usage: progress.usage ?? prev?.usage ?? {
+        model: 'runner-default',
+        api_calls: 0,
+        tokens: null,
+      },
+    };
+    progressMap.set(jobId, normalized);
+    return normalized;
+  };
   // Native tool startup can exceed five seconds on a busy Windows host.
   const renderer = deps.renderer ?? new LatexRenderer({ probeTimeoutMs: 15000 });
   const semantic = new SemanticService(repository, artifacts, { runner: resolveRunner,
@@ -126,7 +152,52 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
     timeoutMs: () => loadTailoringConfig(workspace).runner.step_timeout_seconds * 1000, currentRules: deps.loadPrivacyRules,
     beforeDispatch: (jobId, key, kind, inputSnapshotId) => { const member = batches.enrolled(jobId); if (member?.input_snapshot_id === inputSnapshotId) { batches.reserve(member, `semantic:${key}`, kind); return true; } return false; } });
   const preparation = new JobPreparation({ repository, artifacts, semantic, resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id], renderer });
-  const service = new JobsService({ repository, preparation: { run: (attempt, signal, previous) => repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 3 ? materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : repository.getExecutionInput(attempt.input_snapshot_id).schema_version === 2 ? fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] }) : preparation.run(attempt, signal, previous) }, automaticDrain: deps.automaticDrain, resolveInput: job => captureInputs(job.id, job.revision).id, onEvent: flushEvents });
+  const service = new JobsService({
+    repository,
+    preparation: {
+      run: async (attempt, signal, previous) => {
+        const jobId = attempt.job_id;
+        const input = repository.getExecutionInput(attempt.input_snapshot_id);
+        const runnerName = (input as any).recorded_runner ?? (input as any).runner_configuration?.runner ?? 'runner-default';
+        const modelName = (input as any).runner_configuration?.model ?? 'runner-default';
+        recordProgress(jobId, {
+          phase: 'preparing_resume',
+          phase_started_at: attempt.started_at,
+          current_operation: 'preparing_resume',
+          usage: { model: modelName, api_calls: 0, tokens: null },
+        });
+        try {
+          if (input.schema_version === 3) {
+            await materials.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] });
+          } else if (input.schema_version === 2) {
+            await fit.run(attempt, signal, { resolveRunner, hasConsent: runner => !!loadTailoringConfig(workspace).runner_consent[runner.id] });
+          } else {
+            await preparation.run(attempt, signal, previous);
+          }
+          const finalAttempt = repository.getAttempt(attempt.id);
+          recordProgress(jobId, {
+            phase: 'ready_to_review',
+            phase_started_at: attempt.started_at,
+            current_operation: 'completed',
+            usage: { model: modelName, api_calls: finalAttempt.resource_usage.model_calls, tokens: null },
+          });
+        } catch (err) {
+          const finalAttempt = repository.getAttempt(attempt.id);
+          const currentJob = repository.getJob(jobId);
+          recordProgress(jobId, {
+            phase: currentJob.preparation_state === 'needs_input' ? 'needs_answer' : 'needs_retry',
+            phase_started_at: attempt.started_at,
+            current_operation: 'stopped',
+            usage: { model: modelName, api_calls: finalAttempt.resource_usage.model_calls, tokens: null },
+          });
+          throw err;
+        }
+      }
+    },
+    automaticDrain: deps.automaticDrain,
+    resolveInput: job => captureInputs(job.id, job.revision).id,
+    onEvent: flushEvents
+  });
   const proposals = new ProposalService(repository, new ProposalRepository(repository), artifacts, corpus, service, semantic);
   const selectFit = (id: string, ids?: string[]) => {
     const job = repository.getJob(id);
@@ -212,6 +283,8 @@ const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.l
     return result;
   };
   return { repository, artifacts, intake, service, corpus, proposals, semantic, batches, coordinator, questions, prepareBatch, readBatch, undoRepair, captureInputs, assessFit, readFit, materials, exports, drafts, flushEvents,
+    recordPreparationProgress: (jobId: string, progress: Parameters<typeof recordProgress>[1]) => recordProgress(jobId, progress),
+    getPreparationProgress: (jobId: string) => progressMap.get(jobId) ?? null,
     subscribeCorpus(listener: (event: { revision: number; update_ids: string[] }) => void) { monitor(); corpusListeners.add(listener); return () => { corpusListeners.delete(listener); }; },
     subscribe(listener: (event: C.JobEvent) => void) { monitor(); listeners.add(listener); return () => { listeners.delete(listener); }; },
     initialize() { monitor(); service.initialize(); coordinator.initialize(); },
@@ -238,5 +311,24 @@ export function jobDetail(runtime: JobsRuntime, id: string) {
   const proposal_review = review.availability === 'available' ? { availability: review.availability, review_id: review.review.id, revision: review.review.revision, status: review.review.validation.status, blocking_count: review.review.validation.issues.filter(i => i.details.some(d => d.severity === 'block')).length, input_stale: review.input_stale } : { availability: review.availability, recoverable: review.recoverable };
   const activeAttemptId = job.current_attempt_id ?? (job.artifact_version_ids.length > 0 ? r.getArtifact(job.artifact_version_ids[job.artifact_version_ids.length - 1]).attempt_id : null);
   const activeInput = activeAttemptId ? r.getExecutionInput(r.getAttempt(activeAttemptId).input_snapshot_id) : null;
-  return publicJobsResult({ job, activity: activeInput && activeInput.schema_version !== 1 ? activeInput.activity : 'resume', proposal_review, answers: [...r.listAnswers({ kind: 'candidate' }), ...(job.employer_id ? r.listAnswers({ kind: 'employer', employer_id: job.employer_id }) : []), ...r.listAnswers({ kind: 'job', job_id: id })], ...runtime.artifacts.preparationContext(activeAttemptId), posting: job.posting_snapshot_id ? r.getPostingSnapshot(job.posting_snapshot_id) : null, attempt: job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : null, artifacts: job.artifact_version_ids.map(id => runtime.artifacts.getArtifact(id)), events: r.listEvents(id) });
+  const trackedProgress = runtime.getPreparationProgress(id);
+  const prepProgress = trackedProgress ?? job.preparation_progress ?? (job.preparation_state === 'preparing' && job.current_attempt_id ? (() => {
+    const att = r.getAttempt(job.current_attempt_id);
+    const stage = att.current_stage;
+    const phase: C.JobPreparationProgress['phase'] = stage === 'compile' ? 'rendering_pdf' : stage === 'preflight' || stage === 'analysis' || stage === 'alignment' || stage === 'proposals' ? 'preparing_resume' : 'checking_support';
+    const activeInp = r.getExecutionInput(att.input_snapshot_id) as any;
+    const model = activeInp?.runner_configuration?.model ?? 'runner-default';
+    return {
+      phase,
+      phase_started_at: att.started_at,
+      elapsed_seconds: Math.max(0, Math.floor((Date.now() - new Date(att.started_at).getTime()) / 1000)),
+      current_operation: stage ?? undefined,
+      usage: {
+        model,
+        api_calls: att.resource_usage.model_calls,
+        tokens: null,
+      },
+    };
+  })() : null);
+  return publicJobsResult({ job, activity: activeInput && activeInput.schema_version !== 1 ? activeInput.activity : 'resume', proposal_review, answers: [...r.listAnswers({ kind: 'candidate' }), ...(job.employer_id ? r.listAnswers({ kind: 'employer', employer_id: job.employer_id }) : []), ...r.listAnswers({ kind: 'job', job_id: id })], ...runtime.artifacts.preparationContext(activeAttemptId), posting: job.posting_snapshot_id ? r.getPostingSnapshot(job.posting_snapshot_id) : null, attempt: job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : null, artifacts: job.artifact_version_ids.map(id => runtime.artifacts.getArtifact(id)), events: r.listEvents(id), preparation: prepProgress });
 }

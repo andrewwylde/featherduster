@@ -98,6 +98,24 @@ export function isQueued(job: Job): boolean {
   return job.preparation_state === 'queued' && !isNeedsInput(job);
 }
 
+export function formatPreparationPhase(phase?: string | null): string {
+  if (!phase) return 'Preparing';
+  switch (phase) {
+    case 'preparing_resume': return 'Preparing resume';
+    case 'checking_support': return 'Checking support';
+    case 'rendering_pdf': return 'Rendering PDF';
+    case 'needs_answer': return 'Needs answer';
+    case 'needs_retry': return 'Needs retry';
+    case 'ready_to_review': return 'Ready to review';
+    default:
+      return phase
+        .split('_')
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+  }
+}
+
+
 export function getJobPriority(job: Job): number {
   if (isNeedsInput(job)) return 0;
   if (isQueued(job)) return 1;

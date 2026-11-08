@@ -2,7 +2,7 @@
 import { finishPreview } from './fixtures/rendered-preview.js';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import type { ArtifactVersion, Job, ResumeSpec } from '@featherduster/core';
 import { apiClient, ApiError, type JobReview, type JobsControl, type JobsDetail } from '../src/api/client.js';
 import { JobsView, filters, matchesJobFilter, getJobPriority, compareJobs, isNeedsInput, isQueued } from '../src/views/jobs/JobsView.js';
@@ -925,4 +925,76 @@ it('formats max-only compensation with Up to and omits position details when emp
   });
   expect(screen.queryByTestId('position-details-section')).not.toBeInTheDocument();
 });
+
+function renderJobDetailWithProgress(options: {
+  preparation?: any;
+  jobPatch?: Partial<Job>;
+  section?: import('../src/routing.js').JobSection;
+}) {
+  const testJob = job({
+    preparation_state: 'preparing',
+    ...options.jobPatch,
+    ...(options.preparation ? { preparation_progress: options.preparation } : {}),
+  });
+  const testDetail: JobsDetail = {
+    ...detail(testJob),
+    preparation: options.preparation,
+  };
+  vi.mocked(apiClient.getJob).mockResolvedValue(testDetail);
+  const navigate = vi.fn();
+  render(<JobDetail id={testJob.id} section={options.section ?? 'posting'} navigate={navigate} />);
+  return { navigate, testJob, testDetail };
+}
+
+it('displays phase name, elapsed time, and truthful runner usage without inventing token counts', async () => {
+  renderJobDetailWithProgress({
+    preparation: {
+      status: 'active',
+      phase: 'checking_support',
+      started_at: new Date(Date.now() - 45000).toISOString(),
+      active_checkpoint: 'semantic_classification_batch_2',
+      recorded_usage: {
+        model: 'runner-default',
+        calls: 3,
+        tokens: null, // explicitly unrecorded
+      },
+    },
+  });
+
+  expect(await screen.findByTestId('prep-phase-title')).toHaveTextContent('Checking support');
+  expect(screen.getByTestId('prep-elapsed-time')).toHaveTextContent('0:45');
+  expect(screen.getByTestId('prep-usage-model')).toHaveTextContent('runner-default');
+  expect(screen.getByTestId('prep-usage-tokens')).toHaveTextContent('Not recorded');
+});
+
+it('ticks elapsed time client-side and formats non-null token count without refetching', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  const now = Date.now();
+  const startTime = new Date(now - 75000).toISOString();
+  renderJobDetailWithProgress({
+    preparation: {
+      status: 'active',
+      phase: 'rendering_pdf',
+      started_at: startTime,
+      recorded_usage: {
+        model: 'custom-runner',
+        calls: 5,
+        tokens: 1250,
+      },
+    },
+  });
+
+  expect(await screen.findByTestId('prep-phase-title')).toHaveTextContent('Rendering PDF');
+  expect(screen.getByTestId('prep-elapsed-time')).toHaveTextContent('1:15');
+  expect(screen.getByTestId('prep-usage-model')).toHaveTextContent('custom-runner');
+  expect(screen.getByTestId('prep-usage-tokens')).toHaveTextContent('1250');
+
+  const getJobCallCount = vi.mocked(apiClient.getJob).mock.calls.length;
+  act(() => {
+    vi.advanceTimersByTime(3000);
+  });
+  expect(screen.getByTestId('prep-elapsed-time')).toHaveTextContent('1:18');
+  expect(vi.mocked(apiClient.getJob).mock.calls.length).toBe(getJobCallCount);
+});
+
 

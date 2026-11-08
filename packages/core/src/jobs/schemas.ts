@@ -56,6 +56,55 @@ export const JobPostingMetadataSchema = z.object({
   captured_at: z.string(),
 }).strict();
 export type JobPostingMetadata = z.infer<typeof JobPostingMetadataSchema>;
+
+export const JobPreparationUsageSchema = z.object({
+  model: z.string().default('runner-default'),
+  api_calls: z.number().int().nonnegative(),
+  tokens: z.number().int().nullable().default(null),
+}).strict();
+export type JobPreparationUsage = z.infer<typeof JobPreparationUsageSchema>;
+
+export const RawJobPreparationProgressSchema = z.object({
+  phase: z.enum(['preparing_resume', 'checking_support', 'rendering_pdf', 'needs_answer', 'needs_retry', 'ready_to_review']),
+  phase_started_at: z.string(),
+  elapsed_seconds: z.number().int().nonnegative().optional(),
+  current_operation: z.string().optional(),
+  usage: JobPreparationUsageSchema.optional(),
+}).strict();
+
+export const JobPreparationProgressSchema = z.preprocess((val: any) => {
+  if (!val || typeof val !== 'object') return val;
+  const out = { ...val };
+  if (!out.phase_started_at && out.started_at) {
+    out.phase_started_at = out.started_at;
+    delete out.started_at;
+  }
+  if (!out.current_operation && out.active_checkpoint) {
+    out.current_operation = out.active_checkpoint;
+    delete out.active_checkpoint;
+  }
+  if (!out.usage && out.recorded_usage) {
+    out.usage = {
+      model: out.recorded_usage.model ?? 'runner-default',
+      api_calls: out.recorded_usage.api_calls ?? out.recorded_usage.calls ?? 0,
+      tokens: out.recorded_usage.tokens ?? null,
+    };
+    delete out.recorded_usage;
+  }
+  if (out.usage && out.usage.calls !== undefined && out.usage.api_calls === undefined) {
+    out.usage = { ...out.usage, api_calls: out.usage.calls };
+    delete out.usage.calls;
+  }
+  delete out.status;
+  return out;
+}, RawJobPreparationProgressSchema);
+export type JobPreparationProgress = z.infer<typeof RawJobPreparationProgressSchema>;
+
+export function normalizeJobPreparationProgress(data: unknown): JobPreparationProgress | null {
+  const result = JobPreparationProgressSchema.safeParse(data);
+  return result.success ? result.data : null;
+}
+
 export const JobSchema = z.object({
   ...entity, recovery: JobRecoverySchema.optional(), revision: count, kind: z.enum(['job', 'discovery']),
   original_url: z.string().url().nullable(), canonical_url: z.string().url().nullable(),
@@ -65,6 +114,7 @@ export const JobSchema = z.object({
   context_url: z.string().url().refine(url => /^https?:\/\//i.test(url), 'Use an HTTP or HTTPS link').nullable().optional(),
   parent_discovery_id: uuid.nullable(), posting_snapshot_id: uuid.nullable(),
   posting_metadata: JobPostingMetadataSchema.optional(),
+  preparation_progress: JobPreparationProgressSchema.optional(),
   preparation_state: PreparationStateSchema, application_lifecycle: ApplicationLifecycleSchema,
   preparation_stage: PreparationStageSchema.nullable(), base_resume_id: text.nullable(), template_id: text.nullable(),
   runner: text.nullable(), policy_fingerprint: text.nullable(), current_attempt_id: uuid.nullable(),
