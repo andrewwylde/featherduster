@@ -39,6 +39,27 @@ beforeEach(() => {
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 
+it('keeps selection and actions when switching views and remembers the chosen view', async () => {
+  localStorage.removeItem('jobs-view-mode');
+  vi.mocked(apiClient.getJobs).mockResolvedValue({ jobs: [job({ preparation_state: 'saved' })] });
+  const navigate = vi.fn();
+  const view = render(<JobsView navigate={navigate} />);
+  fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Acme Engineer' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Table' }));
+  const table = screen.getByRole('table');
+  expect(within(table).getByRole('checkbox')).toBeChecked();
+  expect(within(table).getByRole('button', { name: 'Mark applied' })).toBeEnabled();
+  expect(within(table).getByRole('button', { name: 'Archive job' })).toBeEnabled();
+  fireEvent.click(within(table).getByRole('link', { name: /Acme/ }));
+  expect(navigate).toHaveBeenCalledWith(`/jobs/${id}`);
+  view.unmount();
+  render(<JobsView navigate={navigate} />);
+  expect(await screen.findByRole('table')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Cards' }));
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  localStorage.removeItem('jobs-view-mode');
+});
+
 it('shows actual current inputs and captures a fresh selection only on explicit preparation', async () => {
   const data = detail(job({ preparation_state: 'needs_input', recovery: { kind: 'stale_inputs', subject: {}, action: 'refresh_inputs' } }));
   data.posting = { text: 'Current saved posting text' } as JobsDetail['posting'];
@@ -285,7 +306,7 @@ it('sorts jobs by needs_input, queued, then others, sub-sorted by created date',
   const headings = screen
     .getAllByRole('heading', { level: 2 })
     .map(h => h.textContent)
-    .filter(t => t !== 'Save a job' && t !== 'Prepare selected resumes');
+    .filter(t => t !== 'Save a job' && t !== 'Prepare selected resumes' && t !== 'Shared factual corrections');
   expect(headings[0]).toContain('Epsilon Tech — Engineer 5');
   expect(headings[1]).toContain('Delta Co — Engineer 4');
   expect(headings[2]).toContain('Gamma LLC — Engineer 3');
@@ -296,7 +317,7 @@ it('sorts jobs by needs_input, queued, then others, sub-sorted by created date',
   const toggledHeadings = screen
     .getAllByRole('heading', { level: 2 })
     .map(h => h.textContent)
-    .filter(t => t !== 'Save a job' && t !== 'Prepare selected resumes');
+    .filter(t => t !== 'Save a job' && t !== 'Prepare selected resumes' && t !== 'Shared factual corrections');
   expect(toggledHeadings[0]).toContain('Epsilon Tech — Engineer 5');
   expect(toggledHeadings[1]).toContain('Gamma LLC — Engineer 3');
   expect(toggledHeadings[2]).toContain('Delta Co — Engineer 4');
@@ -340,6 +361,17 @@ it('offers explicit preparation for a saved job without generating on entry', as
   expect(await screen.findByRole('button', { name: 'Tailor resume' })).toBeInTheDocument();
   expect(apiClient.prepareJob).not.toHaveBeenCalled();
   expect(apiClient.controlJobs).not.toHaveBeenCalled();
+});
+
+it('starts tailoring directly from the posting instead of navigating to another start button', async () => {
+  vi.mocked(apiClient.getJob).mockResolvedValue(detail(job({ preparation_state: 'saved' })));
+  vi.spyOn(apiClient, 'captureJobInputs').mockResolvedValue({ input_snapshot: { id: 'input' } } as never);
+  const navigate = vi.fn();
+  render(<JobDetail id={id} section="posting" navigate={navigate} />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Tailor resume' }));
+  await waitFor(() => expect(apiClient.prepareJob).toHaveBeenCalledWith(id, 'prepare', expect.objectContaining({ input_snapshot_id: 'input' })));
+  await waitFor(() => expect(navigate).toHaveBeenCalledWith(`/jobs/${id}/resume`));
+  expect(screen.queryByRole('button', { name: 'Prepare resume' })).not.toBeInTheDocument();
 });
 
 
@@ -526,7 +558,7 @@ it('starts preparation explicitly for a recovered capture with the resume action
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
   vi.spyOn(apiClient, 'captureJobInputs').mockResolvedValue({ input_snapshot: { id: 'input' } } as never);
   render(<JobDetail id={id} section="resume" navigate={vi.fn()} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Prepare resume' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Tailor resume' }));
   await waitFor(() => expect(apiClient.prepareJob).toHaveBeenCalledWith(id, 'resume', expect.objectContaining({ input_snapshot_id: 'input' })));
 });
 it('never shows raw reason codes while a capture still needs posting text', async () => {
@@ -648,9 +680,9 @@ it('explains what stopped in the job header during focused proposal review', asy
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
   const navigate = vi.fn();
   render(<JobDetail id={id} section="resume" navigate={navigate} />);
-  const stoppedLine = await screen.findByText('Preparation stopped — proposal review needs your input.');
+  const stoppedLine = await screen.findByText('Your draft needs your input before the PDF can be generated.');
   expect(stoppedLine).not.toHaveClass('hidden');
-  fireEvent.click(screen.getByRole('button', { name: 'Review facts (1)' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Review wording (1)' }));
   expect(navigate).toHaveBeenCalledWith(`/jobs/${id}/proposals`);
   expect(jobsViewForPath(`/jobs/${id}/proposals`)).toEqual({ id, section: 'proposals' });
 });

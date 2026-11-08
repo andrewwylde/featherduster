@@ -69,6 +69,7 @@ export type UnifiedReviewSummary = z.infer<typeof UnifiedReviewSummarySchema>;
 export function computeUnifiedReviewSummary(params: {
   facts?: JobFacts;
   issues?: ProposalIssue[];
+  wordingIssuesCount?: number;
   isChecking?: boolean;
   hasPdf?: boolean;
   isApproved?: boolean;
@@ -80,9 +81,11 @@ export function computeUnifiedReviewSummary(params: {
     f => !f.resolution && (f.state === 'needs_clarification' || f.state === 'contradicted')
   ).length;
 
-  const wording_issues_count = params.issues?.filter(
-    i => !i.details || i.details.length === 0 || i.details.some(d => d.severity === 'block')
-  ).length ?? 0;
+  const wording_issues_count = params.wordingIssuesCount ?? (
+    params.issues?.filter(
+      i => !i.details || i.details.length === 0 || i.details.some(d => d.severity === 'block')
+    ).length ?? 0
+  );
 
   const batchFailures = params.facts?.failures?.length ?? 0;
   const unavailableFacts = factsList.filter(f => !f.resolution && f.state === 'unavailable').length;
@@ -104,7 +107,7 @@ export function computeUnifiedReviewSummary(params: {
   } else if (wording_issues_count > 0) {
     primary_next_action = 'fix_wording';
   } else if (!params.hasPdf) {
-    primary_next_action = 'review_pdf';
+    primary_next_action = 'wait_checking';
   } else if (!params.isApproved) {
     primary_next_action = 'ready_to_approve';
   } else {

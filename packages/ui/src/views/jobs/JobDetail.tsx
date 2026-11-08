@@ -119,33 +119,21 @@ export function JobDetail({
     return () => { alive = false; };
   }, [id, hasReview, data?.job.revision]);
   const canRecover = data?.proposal_review?.availability === 'missing_output' && data.proposal_review.recoverable;
-  const issues = data?.proposal_review?.availability === 'available' && data.proposal_review.blocking_count > 0
-    ? Array.from({ length: data.proposal_review.blocking_count }, (_, i) => ({
-        id: `blocker-${i}`,
-        subject: { kind: 'proposal' as const, proposal_id: `p-${i}` },
-        group: 'grounding',
-        action: 'edit_proposal' as const,
-        details: [{ severity: 'block' as const, kind: 'unsupported_experience', message: 'Blocker' }],
-      }))
-    : undefined;
   const unifiedSummary = computeUnifiedReviewSummary({
     facts: factsData ?? undefined,
-    issues,
+    wordingIssuesCount: data?.proposal_review?.availability === 'available' ? data.proposal_review.blocking_count : 0,
     hasPdf: !!job?.artifact_version_ids?.length,
   });
-  const unresolvedFactsCount = factsData
-    ? unifiedSummary.unresolved_facts_count
-    : (data?.proposal_review?.availability === 'available' ? data.proposal_review.blocking_count : 0);
+  const unresolvedFactsCount = unifiedSummary.unresolved_facts_count;
   const wordingBlockersCount = unifiedSummary.wording_issues_count;
-  const reviewButtonLabel = factsData
-    ? unresolvedFactsCount > 0 && wordingBlockersCount > 0
+  const reviewButtonLabel =
+    unresolvedFactsCount > 0 && wordingBlockersCount > 0
       ? `Review draft (${unresolvedFactsCount} ${unresolvedFactsCount === 1 ? 'fact' : 'facts'}, ${wordingBlockersCount} wording)`
       : unresolvedFactsCount > 0
       ? `Review facts (${unresolvedFactsCount})`
       : wordingBlockersCount > 0
       ? `Review wording (${wordingBlockersCount})`
-      : 'Review draft'
-    : `Review facts${data?.proposal_review?.availability === 'available' && data.proposal_review.blocking_count > 0 ? ` (${data.proposal_review.blocking_count})` : ''}`;
+      : 'Review draft';
 
   const focusedCorrection = section === 'resume' && hasReview && state === 'needs_input' && job?.recovery?.kind !== 'stale_inputs';
   const setup = job?.recovery?.kind === 'setup';
