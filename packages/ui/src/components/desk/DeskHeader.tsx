@@ -1,27 +1,119 @@
 import React, { useState } from 'react';
-import { Search, Sun, Moon, ShieldCheck, AlertTriangle, Folder, X } from 'lucide-react';
+import { Search, Sun, Moon, ShieldCheck, AlertTriangle, Folder, X, RefreshCw, AlertCircle } from 'lucide-react';
 import { useTheme } from '../../theme/ThemeContext';
 import type { IntegrityCheckResponse } from '../../api/client';
 
-interface DeskHeaderProps {
-  searchQuery: string;
-  onSearchChange: (query: string) => void;
-  integrityReport: IntegrityCheckResponse | null;
-  integrityLoading: boolean;
-  onOpenIntegrityModal: () => void;
+export interface WorkspaceAuditState {
+  status: 'idle' | 'checking' | 'ready' | 'error' | 'stale';
+  issuesCount?: number;
+  lastChecked?: string;
+  error?: string;
+}
+
+export interface DeskHeaderProps {
+  searchQuery?: string;
+  onSearchChange?: (query: string) => void;
+  integrityReport?: IntegrityCheckResponse | null;
+  integrityLoading?: boolean;
+  onOpenIntegrityModal?: () => void;
   workspaceDir?: string;
+  workspaceAudit?: WorkspaceAuditState;
+  auditState?: WorkspaceAuditState;
+  jobBlockersCount?: number;
+  onRetryAudit?: () => void;
 }
 
 export const DeskHeader: React.FC<DeskHeaderProps> = ({
-  searchQuery,
-  onSearchChange,
-  integrityReport,
-  integrityLoading,
-  onOpenIntegrityModal,
+  searchQuery = '',
+  onSearchChange = () => {},
+  integrityReport = null,
+  integrityLoading = false,
+  onOpenIntegrityModal = () => {},
   workspaceDir,
+  workspaceAudit,
+  auditState,
+  jobBlockersCount,
+  onRetryAudit,
 }) => {
   const { resolvedTheme, toggleTheme } = useTheme();
   const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
+
+  const audit: WorkspaceAuditState = workspaceAudit ?? auditState ?? (
+    integrityLoading
+      ? { status: 'checking' }
+      : integrityReport
+      ? {
+          status: 'ready',
+          issuesCount: integrityReport.issues?.length ?? 0,
+        }
+      : { status: 'idle' }
+  );
+
+  const status = audit.status;
+  const issuesCount = audit.issuesCount ?? integrityReport?.issues?.length ?? 0;
+
+  const renderAuditBadgeContent = () => {
+    switch (status) {
+      case 'checking':
+        return {
+          text: 'Workspace audit: Checking...',
+          icon: <RefreshCw className="w-3.5 h-3.5 text-slate-400 animate-spin" />,
+          classes:
+            'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300',
+          retry: false,
+        };
+      case 'error':
+        return {
+          text: 'Workspace audit: unavailable',
+          icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />,
+          classes:
+            'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300 hover:bg-rose-100/60 dark:hover:bg-rose-950/40',
+          retry: true,
+        };
+      case 'stale':
+        return {
+          text:
+            issuesCount === 0
+              ? 'Workspace clean (stale)'
+              : `${issuesCount} Workspace issues (stale)`,
+          icon:
+            issuesCount === 0 ? (
+              <ShieldCheck className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+            ) : (
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" />
+            ),
+          classes:
+            'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-800/40 dark:bg-amber-950/20 dark:text-amber-300 hover:bg-amber-100/60 dark:hover:bg-amber-950/40',
+          retry: false,
+        };
+      case 'ready':
+        if (issuesCount === 0) {
+          return {
+            text: 'Workspace clean',
+            icon: <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />,
+            classes:
+              'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/20 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40',
+            retry: false,
+          };
+        }
+        return {
+          text: `${issuesCount} Workspace issues`,
+          icon: <AlertTriangle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />,
+          classes:
+            'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300 hover:bg-rose-100/60 dark:hover:bg-rose-950/40',
+          retry: false,
+        };
+      case 'idle':
+      default:
+        return {
+          text: 'Workspace audit: idle',
+          icon: <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />,
+          classes:
+            'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
+          retry: false,
+        };
+    }
+  };
 
   const compactWorkspace = workspaceDir
     ? workspaceDir.split(/[/\\]/).slice(-2).join('/')
@@ -108,21 +200,36 @@ export const DeskHeader: React.FC<DeskHeaderProps> = ({
               </div>
             )}
 
+            {/* Job-local blockers badge */}
+            {typeof jobBlockersCount === 'number' && (
+              <div
+                data-testid="job-blockers-badge"
+                aria-label="Current job blockers"
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border border-amber-300 dark:border-amber-700/50 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300"
+              >
+                <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                <span>{`${jobBlockersCount} ${jobBlockersCount === 1 ? 'Job blocker' : 'Job blockers'}`}</span>
+              </div>
+            )}
+
             {/* Mobile compact integrity indicator button */}
             <button
               type="button"
+              data-testid="mobile-workspace-audit-badge"
               onClick={onOpenIntegrityModal}
-              aria-label="Mobile Integrity Status"
+              aria-label="Entire career repository audit"
               className={`sm:hidden p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-desk border transition-colors ${
-                integrityReport?.isClean
+                status === 'ready' && issuesCount === 0
                   ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/20 dark:text-emerald-300'
-                  : integrityReport
+                  : status === 'error' || (status === 'ready' && issuesCount > 0)
                   ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300'
                   : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300'
               }`}
-              title="Integrity & Privacy Pre-Flight Audit"
+              title="Entire career repository audit"
             >
-              {integrityReport?.isClean ? (
+              {status === 'checking' ? (
+                <RefreshCw className="w-4 h-4 text-slate-400 animate-spin" />
+              ) : status === 'ready' && issuesCount === 0 ? (
                 <ShieldCheck className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               ) : (
                 <AlertTriangle className="w-4 h-4 text-rose-500 dark:text-rose-400" />
@@ -130,30 +237,49 @@ export const DeskHeader: React.FC<DeskHeaderProps> = ({
             </button>
 
             {/* Desktop integrity status pill */}
-            <button
-              onClick={onOpenIntegrityModal}
-              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors focus-visible:ring-2 focus-visible:ring-vermilion-500 focus-visible:outline-none ${
-                integrityReport?.isClean
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/40 dark:bg-emerald-950/20 dark:text-emerald-300 hover:bg-emerald-100/60 dark:hover:bg-emerald-950/40'
-                  : integrityReport
-                  ? 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/40 dark:bg-rose-950/20 dark:text-rose-300 hover:bg-rose-100/60 dark:hover:bg-rose-950/40'
-                  : 'border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-              }`}
-              title="Integrity & Privacy Pre-Flight Audit"
-            >
-              {integrityReport?.isClean ? (
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-              ) : (
-                <AlertTriangle className="w-3.5 h-3.5 text-rose-500 dark:text-rose-400" />
-              )}
-              <span>
-                {integrityLoading
-                  ? 'Auditing...'
-                  : integrityReport?.isClean
-                  ? 'Integrity: Clean'
-                  : `${integrityReport?.issues.length ?? 0} Issues`}
-              </span>
-            </button>
+            {(() => {
+              const badge = renderAuditBadgeContent();
+              return (
+                <button
+                  type="button"
+                  data-testid="workspace-audit-badge"
+                  onClick={onOpenIntegrityModal}
+                  aria-label="Entire career repository audit"
+                  className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors focus-visible:ring-2 focus-visible:ring-vermilion-500 focus-visible:outline-none ${badge.classes}`}
+                  title={audit.error ? `Entire career repository audit: ${audit.error}` : 'Entire career repository audit'}
+                >
+                  {badge.icon}
+                  <span>
+                    {badge.text}
+                    {badge.retry && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onRetryAudit) {
+                            onRetryAudit();
+                          } else {
+                            onOpenIntegrityModal();
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation();
+                            if (onRetryAudit) onRetryAudit();
+                            else onOpenIntegrityModal();
+                          }
+                        }}
+                        className="ml-1 underline cursor-pointer hover:opacity-80"
+                        aria-label="Retry workspace audit"
+                      >
+                        (retry)
+                      </span>
+                    )}
+                  </span>
+                </button>
+              );
+            })()}
 
             {/* Theme Toggle Button */}
             <button

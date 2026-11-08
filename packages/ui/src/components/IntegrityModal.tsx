@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { ShieldCheck, AlertTriangle, X, RefreshCw, AlertCircle, FileText } from 'lucide-react';
 import type { IntegrityCheckResponse } from '../api/client';
+import type { WorkspaceAuditState } from './desk/DeskHeader';
 import { useModalA11y } from '../hooks/useModalA11y';
 
 interface IntegrityModalProps {
@@ -9,6 +10,8 @@ interface IntegrityModalProps {
   report: IntegrityCheckResponse | null;
   loading: boolean;
   onRefresh: () => void;
+  auditState?: WorkspaceAuditState;
+  error?: string | null;
 }
 
 export const IntegrityModal: React.FC<IntegrityModalProps> = ({
@@ -17,11 +20,18 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
   report,
   loading,
   onRefresh,
+  auditState,
+  error,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   useModalA11y({ isOpen, onClose, containerRef: modalRef });
 
   if (!isOpen) return null;
+
+  const isError =
+    auditState?.status === 'error' ||
+    (!report && !loading && Boolean(auditState?.error || error));
+  const errorMessage = auditState?.error ?? error;
 
   const errorCount = report?.errors
     ? report.errors.length
@@ -29,7 +39,7 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
   const warningCount = report?.warnings
     ? report.warnings.length
     : (report?.issues.filter((i) => i.severity === 'warning').length ?? 0);
-  const isClean = report ? (report.isClean ?? errorCount === 0) : false;
+  const isClean = !isError && report ? (report.isClean ?? errorCount === 0) : false;
 
   return (
     <div
@@ -47,13 +57,23 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
         {/* Modal Header */}
         <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-800 bg-slate-950/60">
           <div className="flex items-center space-x-3">
-            <div className={`p-2 rounded-lg ${isClean ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+            <div className={`p-2 rounded-lg ${
+              isError
+                ? 'bg-rose-500/10 text-rose-400'
+                : isClean
+                ? 'bg-emerald-500/10 text-emerald-400'
+                : 'bg-rose-500/10 text-rose-400'
+            }`}>
               {isClean ? <ShieldCheck className="w-5 h-5" /> : <AlertTriangle className="w-5 h-5" />}
             </div>
             <div>
               <h2 id="integrity-audit-title" className="text-lg font-semibold text-slate-100 flex items-center gap-2">
                 Integrity & Privacy Audit
-                {report && (
+                {isError ? (
+                  <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                    AUDIT UNAVAILABLE
+                  </span>
+                ) : report ? (
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                     isClean 
                       ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' 
@@ -63,7 +83,7 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
                       ? (warningCount > 0 ? `PASSED (0 Violations, ${warningCount} Advisory)` : 'PASSED (0 Violations)')
                       : `${errorCount} VIOLATION${errorCount === 1 ? '' : 'S'}`}
                   </span>
-                )}
+                ) : null}
               </h2>
               <p className="text-xs text-slate-400">
                 Audits dangling citations, unverified metric tokens, and banned privacy leaks.
@@ -95,6 +115,27 @@ export const IntegrityModal: React.FC<IntegrityModalProps> = ({
             <div className="flex flex-col items-center justify-center py-12 text-slate-400">
               <RefreshCw className="w-8 h-8 animate-spin text-emerald-500 mb-3" />
               <p className="text-sm">Auditing workspace integrity...</p>
+            </div>
+          ) : isError ? (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-950/20 p-6 text-center space-y-3">
+              <div className="inline-flex p-3 rounded-full bg-rose-500/20 text-rose-400">
+                <AlertTriangle className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-semibold text-rose-300">Workspace Audit Unavailable</h3>
+              <p className="text-sm text-slate-300 max-w-md mx-auto">
+                {errorMessage || 'Unable to complete workspace integrity audit. Check connection or try again.'}
+              </p>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={onRefresh}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                  <span>Retry Audit</span>
+                </button>
+              </div>
             </div>
           ) : isClean ? (
             <div className="space-y-4">

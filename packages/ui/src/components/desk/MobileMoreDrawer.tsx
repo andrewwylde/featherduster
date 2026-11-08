@@ -8,6 +8,7 @@ import {
   Compass,
 } from 'lucide-react';
 import type { DeskTab } from './DeskSidebar';
+import type { WorkspaceAuditState } from './DeskHeader';
 import type { IntegrityCheckResponse } from '../../api/client';
 import { useModalA11y } from '../../hooks/useModalA11y';
 
@@ -18,6 +19,7 @@ interface MobileMoreDrawerProps {
   onOpenOnboarding: () => void;
   onOpenIntegrityModal: () => void;
   integrityReport: IntegrityCheckResponse | null;
+  auditState?: WorkspaceAuditState;
   workspaceDir?: string;
 }
 
@@ -28,6 +30,7 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
   onOpenOnboarding,
   onOpenIntegrityModal,
   integrityReport,
+  auditState,
   workspaceDir,
 }) => {
   const drawerRef = useRef<HTMLDivElement | null>(null);
@@ -117,12 +120,20 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
             className="w-full flex items-center justify-between p-3 rounded-desk border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 hover:bg-slate-100 dark:hover:bg-slate-800/80 transition-colors text-left"
           >
             <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${
-                integrityReport?.isClean
-                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
-              }`}>
-                {integrityReport?.isClean ? (
+              <div
+                className={`p-2 rounded-lg ${
+                  auditState?.status === 'ready' &&
+                  (integrityReport?.isClean ?? auditState.issuesCount === 0)
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : auditState?.status === 'error'
+                    ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                    : integrityReport?.isClean
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
+                }`}
+              >
+                {integrityReport?.isClean ||
+                (auditState?.status === 'ready' && auditState.issuesCount === 0) ? (
                   <ShieldCheck className="w-4 h-4" />
                 ) : (
                   <AlertTriangle className="w-4 h-4" />
@@ -133,9 +144,16 @@ export const MobileMoreDrawer: React.FC<MobileMoreDrawerProps> = ({
                   Integrity Pre-Flight Audit
                 </span>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  {integrityReport?.isClean
+                  {auditState?.status === 'checking'
+                    ? 'Auditing workspace integrity...'
+                    : auditState?.status === 'error'
+                    ? 'Workspace audit unavailable'
+                    : integrityReport?.isClean ||
+                      (auditState?.status === 'ready' && auditState.issuesCount === 0)
                     ? 'All citations and privacy checks clean'
-                    : `${integrityReport?.issues.length ?? 0} issues require review`}
+                    : `${
+                        auditState?.issuesCount ?? integrityReport?.issues.length ?? 0
+                      } issues require review`}
                 </span>
               </div>
             </div>

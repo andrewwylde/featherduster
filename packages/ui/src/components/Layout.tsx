@@ -3,7 +3,7 @@ import { apiClient, type IntegrityCheckResponse } from '../api/client';
 import { useLiveSync } from '../hooks/useLiveSync';
 import { IntegrityModal } from './IntegrityModal';
 import { DeskSidebar, type DeskTab } from './desk/DeskSidebar';
-import { DeskHeader } from './desk/DeskHeader';
+import { DeskHeader, type WorkspaceAuditState } from './desk/DeskHeader';
 import { OnboardingModal } from './desk/OnboardingModal';
 import { MobileBottomNav } from './desk/MobileBottomNav';
 import { MobileMoreDrawer } from './desk/MobileMoreDrawer';
@@ -20,6 +20,9 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
   const [workspaceDir, setWorkspaceDir] = useState<string>('');
   const [integrityReport, setIntegrityReport] = useState<IntegrityCheckResponse | null>(null);
   const [integrityLoading, setIntegrityLoading] = useState(false);
+  const [auditState, setAuditState] = useState<WorkspaceAuditState>({
+    status: 'checking',
+  });
   const [isIntegrityModalOpen, setIsIntegrityModalOpen] = useState(false);
   const [isOnboardingModalOpen, setIsOnboardingModalOpen] = useState(false);
   const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
@@ -55,12 +58,30 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
 
       try {
         setIntegrityLoading(true);
+        setAuditState((prev) => ({
+          ...prev,
+          status: 'checking',
+          error: undefined,
+        }));
         const integrity = await apiClient.getIntegrityCheck();
         if (!controller.signal.aborted) {
           setIntegrityReport(integrity);
+          setAuditState({
+            status: 'ready',
+            issuesCount: integrity?.issues?.length ?? 0,
+            lastChecked: new Date().toISOString(),
+          });
         }
-      } catch {
-        // Ignore integrity fetch error
+      } catch (err: unknown) {
+        if (!controller.signal.aborted) {
+          const message = err instanceof Error ? err.message : 'Integrity check timed out';
+          setAuditState((prev) => ({
+            status: 'error',
+            error: message,
+            issuesCount: prev.issuesCount,
+            lastChecked: prev.lastChecked,
+          }));
+        }
       } finally {
         if (!controller.signal.aborted) {
           setIntegrityLoading(false);
@@ -112,6 +133,9 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
           onSearchChange={setSearchQuery}
           integrityReport={integrityReport}
           integrityLoading={integrityLoading}
+          workspaceAudit={auditState}
+          auditState={auditState}
+          onRetryAudit={fetchWorkspaceAndIntegrity}
           onOpenIntegrityModal={() => setIsIntegrityModalOpen(true)}
           workspaceDir={workspaceDir}
         />
@@ -138,6 +162,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
         onOpenOnboarding={() => setIsOnboardingModalOpen(true)}
         onOpenIntegrityModal={() => setIsIntegrityModalOpen(true)}
         integrityReport={integrityReport}
+        auditState={auditState}
         workspaceDir={workspaceDir}
       />
 
@@ -147,6 +172,7 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
         onClose={() => setIsIntegrityModalOpen(false)}
         report={integrityReport}
         loading={integrityLoading}
+        auditState={auditState}
         onRefresh={fetchWorkspaceAndIntegrity}
       />
 

@@ -8,6 +8,9 @@ import { JobDetail } from '../src/views/jobs/JobDetail.js';
 import { JobProposalReview } from '../src/views/jobs/JobProposalReview.js';
 import { WorkerControls } from '../src/views/jobs/WorkerControls.js';
 import { formatDateTime, pluralize } from '../src/views/jobs/job-utils.js';
+import { DeskHeader, type DeskHeaderProps } from '../src/components/desk/DeskHeader.js';
+import { IntegrityModal } from '../src/components/IntegrityModal.js';
+import { ThemeProvider } from '../src/theme/ThemeContext.js';
 
 vi.mock('../src/api/events.js', () => ({ sseClient: { onJobs: vi.fn(() => () => {}), onStatus: vi.fn(() => () => {}) } }));
 const id = '11111111-1111-4111-8111-111111111111';
@@ -68,7 +71,7 @@ it('explains how to restart when a start is refused because processing is stoppe
   vi.spyOn(apiClient, 'captureJobInputs').mockResolvedValue({ input_snapshot: { id: 'snapshot' } } as never);
   vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue({ availability: 'missing_output', recoverable: false, input_snapshot_id: null, latest_input_snapshot_id: null });
   render(<JobDetail id={id} section="resume" navigate={vi.fn()} />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Prepare resume' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Tailor resume' }));
   const alert = await screen.findByText(/Start prevented/);
   expect(alert.closest('[role="alert"]')).toHaveTextContent('Open Automatic work controls and choose Start automatic preparation, then try again.');
 });
@@ -121,3 +124,96 @@ it('offers Pause only while automatic work is on and not already pausing', async
     view.unmount();
   }
 });
+
+function renderDeskHeader(props: Partial<DeskHeaderProps> = {}) {
+  const defaultProps: DeskHeaderProps = {
+    searchQuery: '',
+    onSearchChange: vi.fn(),
+    integrityReport: null,
+    integrityLoading: false,
+    onOpenIntegrityModal: vi.fn(),
+    ...props,
+  };
+  return render(
+    <ThemeProvider>
+      <DeskHeader {...defaultProps} />
+    </ThemeProvider>
+  );
+}
+
+it('distinguishes workspace audit checking, failure, and scope from current job blockers', () => {
+  const onRetry = vi.fn();
+  const { unmount } = renderDeskHeader({
+    workspaceAudit: { status: 'error', error: 'Integrity check timed out' },
+    jobBlockersCount: 2,
+    onRetryAudit: onRetry,
+  });
+
+  const auditBadge = screen.getByTestId('workspace-audit-badge');
+  expect(auditBadge).toHaveTextContent('Workspace audit: unavailable');
+  expect(auditBadge).not.toHaveTextContent('0 Issues');
+  expect(auditBadge).toHaveAttribute('aria-label', expect.stringContaining('Entire career repository audit'));
+
+  const jobBadge = screen.getByTestId('job-blockers-badge');
+  expect(jobBadge).toHaveTextContent('2 Job blockers');
+
+  // Trigger retry
+  const retryBtn = within(auditBadge).getByRole('button', { name: /retry/i });
+  fireEvent.click(retryBtn);
+  expect(onRetry).toHaveBeenCalledTimes(1);
+
+  unmount();
+
+  // Checking state
+  const checking = renderDeskHeader({
+    workspaceAudit: { status: 'checking' },
+  });
+  expect(screen.getByTestId('workspace-audit-badge')).toHaveTextContent('Workspace audit: Checking...');
+  checking.unmount();
+
+  // Ready clean state
+  const clean = renderDeskHeader({
+    workspaceAudit: { status: 'ready', issuesCount: 0 },
+  });
+  expect(screen.getByTestId('workspace-audit-badge')).toHaveTextContent('Workspace clean');
+  clean.unmount();
+
+  // Ready issues state
+  const issues = renderDeskHeader({
+    workspaceAudit: { status: 'ready', issuesCount: 3 },
+  });
+  expect(screen.getByTestId('workspace-audit-badge')).toHaveTextContent('3 Workspace issues');
+  issues.unmount();
+
+  // Stale state
+  const stale = renderDeskHeader({
+    workspaceAudit: { status: 'stale', issuesCount: 1 },
+  });
+  expect(screen.getByTestId('workspace-audit-badge')).toHaveTextContent('1 Workspace issues (stale)');
+  stale.unmount();
+});
+
+it('renders error state and retry in IntegrityModal when audit fails', () => {
+  const onRefresh = vi.fn();
+  const onClose = vi.fn();
+  render(
+    <IntegrityModal
+      isOpen={true}
+      onClose={onClose}
+      report={null}
+      loading={false}
+      onRefresh={onRefresh}
+      auditState={{ status: 'error', error: 'Workspace index unreachable' }}
+    />
+  );
+
+  expect(screen.getByText('AUDIT UNAVAILABLE')).toBeInTheDocument();
+  expect(screen.getByText('Workspace Audit Unavailable')).toBeInTheDocument();
+  expect(screen.getByText('Workspace index unreachable')).toBeInTheDocument();
+  expect(screen.queryByText(/0 VIOLATIONS/i)).not.toBeInTheDocument();
+
+  const retryBtn = screen.getByRole('button', { name: /retry audit/i });
+  fireEvent.click(retryBtn);
+  expect(onRefresh).toHaveBeenCalledTimes(1);
+});
+
