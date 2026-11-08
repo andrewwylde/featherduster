@@ -3,6 +3,13 @@ import { z } from 'zod';
 import { DraftResumeSpecSchema } from './draft-content.js';
 export const DraftIssueSchema = z.object({
   path: z.string(), code: z.string(), severity: z.enum(['block', 'warn']), message: z.string(),
+  target: z.object({
+    scope: z.enum(['retained_baseline', 'draft_candidate', 'generated_patch']),
+    text: z.string(),
+    text_fingerprint: z.string(),
+    span: z.tuple([z.number(), z.number()]).optional(),
+    revision: z.number().int().nonnegative(),
+  }).strict().optional(),
 }).strict();
 export type DraftIssue = z.infer<typeof DraftIssueSchema>;
 export const DraftBindingSchema = z.object({

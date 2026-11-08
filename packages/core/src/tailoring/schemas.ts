@@ -51,6 +51,13 @@ export const ValidationIssueSchema = z.object({
   severity: z.enum(['block', 'warn']),
   kind: z.string(),
   message: z.string(),
+  target: z.object({
+    scope: z.enum(['retained_baseline', 'draft_candidate', 'generated_patch']),
+    text: z.string(),
+    text_fingerprint: z.string(),
+    span: z.tuple([z.number(), z.number()]).optional(),
+    revision: z.number().int().nonnegative(),
+  }).strict().optional(),
 });
 export type ValidationIssue = z.infer<typeof ValidationIssueSchema>;
 
@@ -77,6 +84,7 @@ export type AlignmentMatrix = z.infer<typeof AlignmentMatrixSchema>;
 export const PROPOSAL_TYPES = [
   'summary.rewrite',
   'bullet.rewrite',
+  'bullet.consolidate',
   'bullet.add',
   'bullet.drop',
   'bullet.reorder',
@@ -112,6 +120,10 @@ export const ProposalSchema = z.object({
   citations: z.array(z.string()).default([]),
   requirement_ids: z.array(z.string()).default([]),
   rationale: z.string().default(''),
+  /** Original targets in target.experience_index, captured before any operation. */
+  source_bullets: z.array(z.object({ bullet_index: z.number().int().nonnegative(), before: z.string().min(1) }).strict()).optional(),
+  /** Literal clauses and the evidence supporting each, never human confirmation. */
+  claim_bindings: z.array(z.object({ text: z.string().min(1), citations: z.array(z.string().min(1)).min(1) }).strict()).optional(),
   decision: ProposalDecisionSchema.default('pending'),
   /** User-edited replacement for `after`. */
   edited_after: z.string().optional(),
@@ -284,6 +296,8 @@ export const PROPOSALS_JSON_SCHEMA: JsonSchema = obj({
       citations: strArr,
       requirement_ids: strArr,
       rationale: str,
+      source_bullets: { type: 'array', items: obj({ bullet_index: { type: 'integer' }, before: str }) },
+      claim_bindings: { type: 'array', items: obj({ text: str, citations: strArr }) },
     }),
   },
 });

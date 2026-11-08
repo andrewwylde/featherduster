@@ -6,7 +6,7 @@ import path from 'node:path';
 import yaml from 'js-yaml';
 import * as C from '@featherduster/core';
 import { ProposalRepository } from '../src/jobs/proposal-repository.js';
-import { ProposalService, claimFingerprint } from '../src/jobs/proposal-service.js';
+import { ProposalService, claimFingerprint, bindReviewFinding } from '../src/jobs/proposal-service.js';
 import { CorpusRepository } from '../src/corpus/repository.js';
 import { CorpusService } from '../src/corpus/service.js';
 import { sourceFingerprint } from '../src/corpus/load.js';
@@ -37,12 +37,12 @@ function fixture() {
   const service = new JobsService({ ...deps, automaticDrain: false });
   const reviews = new ProposalService(repo, proposals, artifacts, corpus, service);
   cleanups.push(async () => { await service.dispose(); db.close(); rmSync(root, { recursive: true, force: true }); });
-  function seed(timeout = 10000) {
+  function seed(timeout = 10000, base?: C.ResumeSpec) {
     const now = new Date().toISOString();
     const job: Job = { schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, revision: 0, kind: 'job', original_url: null, canonical_url: null, employer_id: null, external_job_id: null, company: 'Acme', role: 'Engineer', parent_discovery_id: null, posting_snapshot_id: null, preparation_state: 'queued', application_lifecycle: 'not_started', preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null, current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null, created_at: now, updated_at: now };
     repo.createJob(job, randomUUID());
     const posting = repo.savePostingSnapshot({ schema_version: 1, id: randomUUID(), workspace_id: job.workspace_id, job_id: job.id, source_kind: 'text', original_url: null, final_url: null, retrieved_at: null, captured_at: now, text: 'Build things', content_fingerprint: fingerprint('Build things') });
-    const input = artifacts.captureInputs({ job_id: job.id, posting_id: posting.id, base_resume: yaml.dump({ profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' }, experiences: [], education: [], skills: [] }), selected_evidence: evidence.getAll().map(e => ({ source_id: e.id, bytes: C.serializeEvidenceMarkdown(e.entry, e.narrative) })), privacy_rules: {}, template: getLatexTemplate('default'), runner_configuration: { runner: 'fake', model: 'fake' }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: 1, max_model_calls: 4, timeout_ms: timeout, max_repair_attempts: 0, model_retry_count: 0 } });
+    const input = artifacts.captureInputs({ job_id: job.id, posting_id: posting.id, base_resume: yaml.dump(base ?? { profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' }, experiences: [], education: [], skills: [] }), selected_evidence: evidence.getAll().map(e => ({ source_id: e.id, bytes: C.serializeEvidenceMarkdown(e.entry, e.narrative) })), privacy_rules: {}, template: getLatexTemplate('default'), runner_configuration: { runner: 'fake', model: 'fake' }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: 1, max_model_calls: 4, timeout_ms: timeout, max_repair_attempts: 0, model_retry_count: 0 } });
     inputs.set(job.id, input.id); return { job, input };
   }
   const request = (j: ReturnType<typeof seed>) => ({ job_id: j.job.id, expected_revision: repo.getJob(j.job.id).revision, input_snapshot_id: j.input.id, idempotency_key: randomUUID() });
@@ -247,3 +247,51 @@ it('returns the durable latest snapshot on reads without executing or rewriting 
   expect(f.proposals.getActive(f.seeded.job.id)).toEqual(before);
   expect(f.run).toHaveBeenCalledTimes(calls);
 });
+
+
+it('persists a user omission, rejects stale targets, and restores the exact generated accomplishment without model calls', async () => {
+  const f = fixture();
+  const base: C.ResumeSpec = { profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' }, experiences: [{ company: 'Acme', role: 'Engineer', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Migrated LinkedUp tests.' }, { text: 'Shipped UI.' }] }], skills: [], education: [] };
+  const seeded = f.seed(10000, base);
+  const rewrite = C.ProposalSchema.parse({ id: 'rewrite', type: 'bullet.rewrite', target: { experience_index: 0, bullet_index: 0 }, before: base.experiences[0].bullets[0].text, after: 'Migrated Kafka tests for LinkedUp.', citations: ['ev-1'], requirement_ids: ['r1'] });
+  f.run.mockResolvedValueOnce(analysis as any).mockResolvedValueOnce({ rows: [] } as any).mockResolvedValueOnce({ proposals: [rewrite] } as any);
+  f.service.prepare(f.request(seeded)); await f.service.worker.whenIdle();
+  const view = f.reviews.read(seeded.job.id); if (view.availability !== 'available') throw Error(JSON.stringify(f.repo.getAttempt(f.repo.getJob(seeded.job.id).current_attempt_id!)));
+  const binding = () => ({ job_id: seeded.job.id, review_id: view.review.id, expected_job_revision: f.repo.getJob(seeded.job.id).revision, expected_review_revision: f.proposals.getActive(seeded.job.id)!.revision, input_fingerprint: seeded.input.fingerprint });
+  const omit = C.makeAccomplishmentOmission(base, [rewrite], 'experiences.0.bullets.0.text', rewrite.after, randomUUID());
+  const request = { ...binding(), patches: [omit], groundings: [], feedback_kind: 'wording' as const, explanation: 'Leave out for this job', idempotency_key: randomUUID() };
+  const calls = f.run.mock.calls.length;
+  expect(() => f.reviews.save({ ...request, patches: [{ ...omit, omission: { ...omit.omission!, anchor: { ...omit.omission!.anchor, company: 'Other' } } }], idempotency_key: randomUUID() })).toThrow(/targets changed/);
+  const saved = f.reviews.save(request);
+  expect(saved.result.review.candidate_preview.experiences[0].bullets.map(b => b.text)).toEqual(['Shipped UI.']);
+  expect(saved.result.review.validation.issues.some(i => i.subject.kind === 'proposal' && i.subject.proposal_id === rewrite.id)).toBe(false);
+  expect(f.reviews.save(request).replayed).toBe(true);
+  expect(() => f.reviews.save({ ...request, idempotency_key: randomUUID() })).toThrow(/Stale/);
+  const read = f.reviews.read(seeded.job.id); if (read.availability !== 'available') throw Error('Missing review');
+  expect(read.review.patches).toEqual([omit]); expect(read.captured.base_resume).toEqual(base);
+  const restored = f.reviews.save({ ...request, ...binding(), patches: [{ proposal_id: omit.proposal_id, decision: 'rejected' }], idempotency_key: randomUUID() });
+  const effective = C.applyProposalPatches(read.generation.proposals.proposals, [], restored.result.review.patches).proposals;
+  expect(effective.find(p => p.id === rewrite.id)?.after).toBe(rewrite.after);
+  expect(effective.find(p => p.id === rewrite.id)?.decision).toBe('pending');
+  expect(f.run).toHaveBeenCalledTimes(calls);
+});
+
+it('binds finding to exact wording and distinguishes retained baseline from replacement preview', () => {
+  const finding = bindReviewFinding({
+    issueKey: 'metric_unverified',
+    message: 'Numbers not supported by cited verified evidence: 11.',
+    target: {
+      scope: 'retained_baseline',
+      text: 'Senior Software Engineer with 11 years experience...',
+      text_fingerprint: 'fp_base_11',
+      span: [30, 32],
+    },
+    draft_revision: 2,
+    preview_text: 'Senior Software Engineer with deep experience...',
+  });
+
+  expect(finding.target.scope).toBe('retained_baseline');
+  expect(finding.target.text).toContain('11 years');
+  expect(finding.is_stale_for_preview).toBe(true);
+});
+

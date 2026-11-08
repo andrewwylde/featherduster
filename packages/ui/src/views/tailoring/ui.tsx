@@ -1,5 +1,5 @@
 import React from 'react';
-import type { RunState, StepStatus, ValidationIssue } from '@featherduster/core';
+import { isFindingStaleForPreview, type RunState, type StepStatus, type ValidationIssue } from '@featherduster/core';
 import { AlertTriangle, Ban, Info } from 'lucide-react';
 
 export const cardClass =
@@ -63,11 +63,33 @@ export const StatusPill: React.FC<{ status: StepStatus | 'needs_review' | 'compl
   );
 };
 
-export const IssueList: React.FC<{ issues?: ValidationIssue[] }> = ({ issues }) => {
+export const IssueList: React.FC<{ issues?: ValidationIssue[]; currentText?: string }> = ({ issues, currentText }) => {
   if (!issues || issues.length === 0) return null;
   return (
     <ul className="mt-2 space-y-1">
       {issues.map((issue, idx) => {
+        const target = issue.target;
+        const isRetained = target?.scope === 'retained_baseline';
+        const isStale = currentText !== undefined && target ? isFindingStaleForPreview(target, currentText) : false;
+
+        if (isRetained && isStale) {
+          return (
+            <li
+              key={`${issue.kind}-${idx}`}
+              className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400 italic"
+            >
+              <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-slate-400" aria-hidden="true" />
+              <span>
+                <span className="font-semibold not-italic text-slate-700 dark:text-slate-300">Retained baseline finding (resolved by your pending edit):</span> {issue.message}
+              </span>
+            </li>
+          );
+        }
+
+        if (isStale) {
+          return null;
+        }
+
         const block = issue.severity === 'block';
         const Icon = block ? Ban : issue.kind.startsWith('deslop') ? Info : AlertTriangle;
         return (

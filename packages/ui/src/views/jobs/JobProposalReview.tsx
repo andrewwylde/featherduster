@@ -1,11 +1,18 @@
+import { JobFacts } from './JobFacts.js';
+import { ResumeDraftSurface, resumeReviewRows, type ResumeReviewNavigation } from './ResumeDraftSurface.js';
 import { JobStartingResumeCorrection } from './JobStartingResumeCorrection.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   applyProposalPatches,
+  applyProposals,
+  originalPassagePath,
+  makeAccomplishmentOmission,
   baseText,
   compileMarkdownResume,
   effectiveBaseResume,
   sameFact,
+  SYNTHESIS_POLICY,
+  isFindingStaleForPreview,
   type CorpusScope,
   type Job,
   type JobFacts as Facts,
@@ -79,6 +86,9 @@ function Editor({
   const [support, setSupport] = useState<'direct' | 'transferable' | 'unsupported'>('direct');
   const pending = useRef(false);
   const focusRequested = useRef(false);
+  const focusSaveRequested = useRef(false);
+  const saveDraftButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => { if (focusSaveRequested.current) { focusSaveRequested.current = false; saveDraftButton.current?.focus(); saveDraftButton.current?.scrollIntoView?.({ block: 'center' }); } }, [draft]);
   const key = useIntentKey();
   const dirty = draft.patches.length > 0 || draft.groundings.length > 0 || !!draft.explanation || !!draft.removedGroundings?.length;
   useEffect(() => { if (!dirty && job.revision > revision) setRevision(job.revision); }, [dirty, job.revision, revision]);
@@ -96,18 +106,38 @@ function Editor({
   // Drawer and Semantic Facts state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [factsData, setFactsData] = useState<Facts | null>(null);
+  const resumeNavigation = useRef<ResumeReviewNavigation>(null);
   const [confirmedFacts, setConfirmedFacts] = useState<Record<string, boolean>>({});
+  const factReadSequence = useRef(0);
+  const factsBinding = useRef({ job: job.id, review: base.review.id, revision: base.review.revision });
+  factsBinding.current = { job: job.id, review: base.review.id, revision: base.review.revision };
+  useEffect(() => () => { factReadSequence.current++; }, []);
+
+  const acceptFacts = useCallback((f: Facts) => {
+    if (f.target?.kind === 'review' && (f.target.review_id !== factsBinding.current.review || f.target.review_revision !== factsBinding.current.revision)) return;
+    setFactsData(previous => previous && previous.input_fingerprint === f.input_fingerprint && previous.candidate_fingerprint === f.candidate_fingerprint && previous.semantic_revision > f.semantic_revision ? previous : f);
+  }, []);
 
   const reloadFacts = useCallback(async () => {
+    const sequence = ++factReadSequence.current;
     try {
       const f = await apiClient.getJobFacts(job.id);
-      setFactsData(f);
+      if (sequence !== factReadSequence.current || job.id !== factsBinding.current.job
+        || f.target?.kind === 'review' && (f.target.review_id !== factsBinding.current.review || f.target.review_revision !== factsBinding.current.revision)) return;
+      acceptFacts(f);
     } catch { /* optional facts */ }
   }, [job.id]);
 
   useEffect(() => {
+    setFactsData(null);
     void reloadFacts();
   }, [reloadFacts, base.review.revision]);
+
+  useEffect(() => {
+    if (factsData?.execution !== 'checking') return;
+    const timer = setTimeout(() => void reloadFacts(), 2000);
+    return () => clearTimeout(timer);
+  }, [factsData, reloadFacts]);
 
   useEffect(() => { if (selectTarget) { setSelectedProposal(selectTarget.id); focusRequested.current = true; } }, [selectTarget]);
   useEffect(() => {
@@ -139,6 +169,15 @@ function Editor({
   }, [dirty]);
 
   const patch = (value: ProposalPatch) => setDraft(d => ({ ...d, patches: [...d.patches.filter(p => p.proposal_id !== value.proposal_id), { ...d.patches.find(p => p.proposal_id === value.proposal_id), ...value }], groundings: value.edited_after !== undefined || value.citations !== undefined ? d.groundings.filter(g => g.proposal_id !== value.proposal_id) : d.groundings }));
+  const omitAccomplishment = (path: string, text: string) => {
+    try {
+      const omission = makeAccomplishmentOmission(startingResume, overlay.proposals, path, text, crypto.randomUUID());
+      const existing = overlay.patches.find(p => p.omission && JSON.stringify(p.omission) === JSON.stringify(omission.omission));
+      patch(existing ? { proposal_id: existing.proposal_id, decision: 'pending' } : omission);
+      focusSaveRequested.current = true;
+      setMessage('Accomplishment left out of this draft. Save draft to apply it. You can restore it under Changes.');
+    } catch (e) { setMessage(e instanceof Error ? e.message : 'Could not identify this accomplishment.'); }
+  };
   const binding = { expected_job_revision: revision, expected_review_revision: base.review.revision, input_fingerprint: base.review.input_fingerprint };
   const memoryGrounding = draft.groundings.find(g => g.proposal_id === memoryProposal);
   const scope: CorpusScope = scopeKind === 'workspace' ? { kind: 'workspace' } : { kind: scopeKind, key: scopeKind === 'job' ? job.id : scopeKey };
@@ -213,7 +252,7 @@ function Editor({
         ? ('blocker' as const)
         : fact && fact.state !== 'supported' && !confirmedFacts[fact.claim.id]
         ? ('fact_needed' as const)
-        : ('passing' as const);
+        : fact?.resolution ? ('passing' as const) : ('fact_needed' as const);
       return {
         id: group.proposals[0]?.id ?? group.id,
         label: group.label,
@@ -271,8 +310,96 @@ function Editor({
     });
   };
 
+  const autoContinued = useRef('');
+  const autoChecked = useRef('');
+  const unified = base.generation.generation_policy === SYNTHESIS_POLICY;
+  const recheckInFlight = useRef<Promise<void>>();
+  const [refreshingChecks, setRefreshingChecks] = useState(false);
+  const recheckSaved = () => {
+    if (recheckInFlight.current) return recheckInFlight.current;
+    setRefreshingChecks(true);
+    const run = async () => {
+    const latest = await apiClient.getJob(job.id);
+    const view = await apiClient.getJobProposals(job.id);
+    if (view.availability !== 'available') return;
+    const result = await apiClient.recheckJobProposals(job.id, view.review.id, { expected_job_revision: latest.job.revision,
+      expected_review_revision: view.review.revision, input_fingerprint: view.review.input_fingerprint });
+    setBase({ ...view, review: result.review }); setRevision(latest.job.revision); setDraftBaseRevision(result.review.revision);
+    await reloadFacts(); onSaved(); await refresh();
+    };
+    recheckInFlight.current = run().finally(() => { recheckInFlight.current = undefined; setRefreshingChecks(false); });
+    return recheckInFlight.current;
+  };
+  useEffect(() => {
+    if (!unified || busy || dirty || stale || active || !factsData || job.preparation_state !== 'needs_input') return;
+    const identity = `${base.review.id}:${factsData.support_fingerprint}:${factsData.execution}`;
+    if (autoChecked.current === identity || factsData.execution === 'checking' || factsData.execution === 'unavailable') return;
+    autoChecked.current = identity;
+    if (factsData.execution === 'unchecked') {
+      void apiClient.startJobFactCheck(job.id, { target: factsData.target, input_fingerprint: factsData.input_fingerprint,
+        expected_job_revision: factsData.job_revision, expected_semantic_revision: factsData.semantic_revision,
+        reason: 'edit', idempotency_key: key({ check: identity }) }).then(reloadFacts).catch(e => setMessage(`Saved. Checking needs retry: ${e.message}`));
+    } else if (base.review.validation.status !== 'ready' && factsData.facts.length && factsData.facts.every(f => f.resolution)) {
+      void recheckSaved().catch(e => setMessage(`Saved. Resume checks need retry: ${e.message}`));
+    }
+  }, [unified, base.review, factsData, busy, dirty, stale, active, job.preparation_state]);
+  useEffect(() => {
+    if (base.generation.generation_policy !== SYNTHESIS_POLICY || busy || dirty || stale || active || job.preparation_state !== 'needs_input'
+      || base.review.validation.status !== 'ready' || !factsData?.facts.length || !factsData.facts.every(f => f.resolution)) return;
+    const identity = `${base.review.id}:${base.review.revision}`;
+    if (autoContinued.current === identity) return;
+    autoContinued.current = identity;
+    void generatePdfAction();
+  }, [base.review, factsData, busy, dirty, stale, active, job.preparation_state]);
+
+  const unifiedResume = unified ? applyProposals(startingResume, overlay.proposals.map(p => ({ ...p, checks: [], decision: p.decision === 'rejected' ? 'rejected' : 'accepted' }))) : startingResume;
+  const reviewRows = unified ? resumeReviewRows(unifiedResume, overlay.proposals, dirty ? null : factsData, base.review.validation.issues) : [];
+  const hasRetainedAnswers = reviewRows.some(r => r.status === 'Needs saving');
+  const hasQuestions = reviewRows.some(r => r.status === 'Needs your answer');
+  const changeCount = reviewRows.filter(r => r.status === 'Needs changes').length;
+  const hasChanges = changeCount > 0;
+  const factsComplete = factsData?.execution === 'complete' && factsData.facts.length > 0 && factsData.facts.every(f => !!f.resolution);
+  const hasRetry = reviewRows.some(r => r.status === 'Needs retry');
+  const checkingFacts = refreshingChecks || !factsData || factsData.execution === 'checking';
+  if (unified) return <section aria-label="Resume review" className="space-y-4">
+    <div role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-4 space-y-2 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+      <h2 className="font-semibold">{active ? 'Generating your PDF' : dirty ? 'Save your changes to continue' : base.review.validation.status === 'ready' ? 'Your draft is ready for PDF generation' : hasRetainedAnswers ? 'Finish saving your earlier answers' : hasQuestions ? 'Your draft has unanswered factual questions' : checkingFacts ? 'Checking the saved facts' : hasChanges ? factsComplete ? 'Factual answers complete; wording or evidence needs attention' : 'Wording or evidence needs attention' : hasRetry ? 'Evidence checks need retry' : 'Resume checks need an update'}</h2>
+      <p className="text-sm">{active ? 'Your required checks passed. The PDF will appear here when it is ready.' : dirty ? 'Your edits are kept in this browser. Choose Save draft to check the updated wording.' : base.review.validation.status === 'ready' ? 'The PDF will be generated automatically after the final evidence checks.' : hasRetainedAnswers ? 'Earlier answers are retained, but still need saving or confirmation. Open the existing answer below; you do not need to enter it again.' : hasQuestions ? 'Your saved confirmations are retained. Open the next unanswered question below. Your PDF follows when all required checks pass.' : checkingFacts ? 'Wait for the evidence checks to finish. Saved answers are retained.' : hasChanges ? `${changeCount} ${changeCount === 1 ? 'passage still needs' : 'passages still need'} changes. Choose Review remaining changes to open the affected wording and its evidence. You do not need to answer the completed questions again.` : hasRetry ? 'Choose Review evidence checks to open the check that needs retrying. Your saved answers are retained.' : 'Choose Update resume checks below to check this saved draft again. Your saved answers are retained.'}</p>
+      {message && <p className="text-sm">{message}</p>}
+      {!active && !dirty && !checkingFacts && base.review.validation.status !== 'ready' && (hasRetainedAnswers || hasQuestions || hasChanges || hasRetry) && <button className={secondaryButton} disabled={busy || stale} onClick={() => resumeNavigation.current?.reviewNext()}>{hasRetainedAnswers ? 'Finish saving answers' : hasQuestions ? 'Review the next question' : hasChanges ? 'Review remaining changes' : 'Review evidence checks'}</button>}
+      {!active && !dirty && !checkingFacts && !hasRetainedAnswers && !hasQuestions && !hasChanges && !hasRetry && base.review.validation.status !== 'ready' && <div className="space-y-2">
+        {blockers.flatMap(i => i.details).filter(d => d.severity === 'block').map((d, i) => <p key={i}>{d.message}</p>)}
+        <button className={secondaryButton} disabled={busy || stale} onClick={() => void recheckSaved().catch(e => setMessage(`Resume checks need retry: ${e.message}`))}>Update resume checks</button>
+      </div>}
+    </div>
+    {(loadError || overlayError) && <p role="alert">{loadError || overlayError}</p>}
+    {stale && <p role="alert">The saved review changed. Your local edits are retained. <button className={secondaryButton} onClick={() => { setBase(data); setRevision(job.revision); setDraftBaseRevision(data.review.revision); }}>Reconcile current review and keep edits</button></p>}
+    <button ref={saveDraftButton} className={primaryButton} disabled={busy || active || stale || !dirty} onClick={() => void save(false)}>Save draft</button>
+    <ResumeDraftSurface ref={resumeNavigation} resume={unifiedResume}
+      proposals={overlay.proposals} omissions={overlay.patches.filter(p => p.omission)} facts={dirty ? null : factsData} issues={base.review.validation.issues} evidence={base.captured.evidence} workspaceId={job.workspace_id}
+      disabled={busy || active || stale} onSelect={setSelectedProposal} onToggle={(id, rejected) => patch({ proposal_id: id, decision: rejected ? 'rejected' : 'pending' })}
+      renderResolution={(id, path, text, navigation) => {
+        const proposal = overlay.proposals.find(p => p.id === id);
+        const originalPath = originalPassagePath(startingResume, path, text);
+        return <div className="space-y-3">
+          {dirty ? <p>Save draft to check the changed wording and evidence.</p> : !active && !stale && <JobFacts jobId={job.id} passagePath={path} passageText={text} focusRequest={navigation.focusRequest} wordingChangesRequired={navigation.action === 'Needs changes'} checksPending={refreshingChecks} onFactsChanged={acceptFacts} onResolved={recheckSaved} />}
+          <details key={`${id}:${navigation.focusRequest}`} open={navigation.action === 'Needs changes'}><summary className="cursor-pointer font-medium underline">Edit wording or evidence instead</summary>
+          {path.startsWith('experiences.') && <div className="space-y-2 py-2"><button className={secondaryButton} disabled={busy || active || stale} onClick={() => omitAccomplishment(path, text)}>Leave out of this draft</button><p className="text-xs">Removes this whole accomplishment from this job’s resume. Restore it later under Changes.</p></div>}
+          {proposal ? <JobProposalEditor proposal={proposal} position={{ index: 1, total: 1 }} evidence={base.captured.evidence} support={base.captured.skillSupport}
+            disabled={busy || active || stale} onPatch={patch} onSave={() => void save(false)} saveDisabled={stale}
+            issues={base.review.validation.issues.filter(i => i.subject.kind === 'proposal' && i.subject.proposal_id === id)}
+            requirements={base.captured.analysis.requirements.filter(r => proposal.requirement_ids.includes(r.id)).map(r => r.text)}
+            grounding={draft.groundings.find(g => g.proposal_id === id)} onGrounding={g => setDraft(d => ({ ...d, groundings: [...d.groundings.filter(v => v.proposal_id !== id), ...(g ? [g] : [])] }))} />
+            : originalPath ? <JobStartingResumeCorrection key={originalPath} job={{ ...job, revision }} review={base.review} resume={startingResume} path={originalPath} evidence={base.captured.evidence} disabled={busy || active || stale || dirty}
+              onSaved={result => { setBase(b => ({ ...b, review: result.review })); setRevision(result.job.revision); setDraftBaseRevision(result.review.revision); void reloadFacts(); onSaved(); void refresh(); }} /> : <p>This wording has multiple possible original targets. Undo the associated change before editing it.</p>}
+          </details>
+        </div>;
+      }} />
+    {base.review.validation.status === 'ready' && !active && !dirty && <button className={secondaryButton} disabled={busy || stale} onClick={() => void generatePdfAction()}>Retry PDF generation</button>}
+  </section>;
+
   return (
-    <section aria-label="Proposal resolution" className={`${cardClass} p-4 space-y-4 min-w-0 break-words`}>
+    <section aria-label="Proposal resolution" className={`${cardClass} proposal-review text-slate-900 dark:text-slate-100 p-4 sm:p-6 space-y-5 min-w-0 break-words`}>
       {loadError && <p role="alert">{loadError} Showing the last successfully loaded review; it will refresh when the host responds.</p>}
       {overlayError && <p role="alert">{overlayError}. Showing the captured starting resume; this saved correction cannot be checked or continued.</p>}
 
@@ -307,7 +434,7 @@ function Editor({
               className={`${secondaryButton} text-xs py-1.5 px-2.5 inline-flex items-center gap-1.5`}
             >
               <FileText className="h-3.5 w-3.5 text-slate-500" />
-              <span>All Passages ({drawerItems.length})</span>
+              <span>All passages ({drawerItems.length})</span>
             </button>
           </div>
         </div>
@@ -340,20 +467,32 @@ function Editor({
           <p className="text-xs">The saved review passes validation. Continue preparation when you are ready; PDF approval comes later.</p>
         )}
 
-        {currentPassage?.required && (
-          <p className="text-xs text-amber-700 dark:text-amber-300">
-            {blockers.find(issue => issue.subject.kind === 'proposal' && currentPassage.proposals.some(p => issue.subject.kind === 'proposal' && p.id === issue.subject.proposal_id))?.details.find(d => d.severity === 'block')?.message} Edit this passage using supported experience, then choose <strong>Save for this job</strong>.
-          </p>
-        )}
+        {currentPassage?.required && (() => {
+          const activeIssue = blockers.find(issue => issue.subject.kind === 'proposal' && currentPassage.proposals.some(p => issue.subject.kind === 'proposal' && p.id === issue.subject.proposal_id));
+          const matchingProposal = currentPassage.proposals.find(p => activeIssue?.subject.kind === 'proposal' && p.id === activeIssue.subject.proposal_id);
+          const previewText = matchingProposal ? (matchingProposal.edited_after ?? matchingProposal.after) : '';
+          const detail = activeIssue?.details.find(d => {
+            if (d.severity !== 'block') return false;
+            const target = d.target ?? activeIssue.target;
+            if (target && isFindingStaleForPreview(target, previewText)) return false;
+            return true;
+          });
+          if (!detail) return null;
+          return (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              {detail.message} Edit this passage using supported experience, then choose <strong>Save for this job</strong>.
+            </p>
+          );
+        })()}
       </header>
 
       {/* Next Step Banner */}
-      <section aria-label="Next step" className="rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-2 text-xs text-slate-900 dark:border-sky-800 dark:bg-sky-950 dark:text-slate-100">
+      <section aria-label="Next step" className="rounded-desk border border-slate-200 bg-slate-50 p-4 space-y-2 text-sm leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-300">
         <h3 className="font-semibold">{active ? 'Preparation is running' : stale ? 'Review changed inputs first' : blockers.length ? 'Next: resolve the highlighted wording' : 'Next: continue preparation'}</h3>
         {active ? <p>Wait for preparation to finish, then return to Resume to review the PDF.</p> : stale ? <p>Your saved review is out of date. Use the revision or input recovery controls below before continuing.</p> : blockers.length ? <>
-          <p>For a generated change, revise <strong>Proposed wording</strong> to match your evidence, or uncheck <strong>Include this change</strong> to keep the original wording. Choose <strong>Save for this job</strong>; the next unresolved passage opens automatically.</p>
-          <p>For starting-resume wording, edit the highlighted field and choose <strong>Save starting resume for this job</strong>. Once the checks pass, choose <strong>Continue preparation</strong> to generate the PDF.</p>
-          <button className={primaryButton} disabled={busy} onClick={() => { advance(base.review); focusBlocker(); document.getElementById(proposalBlockers.size ? 'proposal-edits' : 'starting-resume')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }}>Go to next required correction</button>
+          {proposalBlockers.size > 0 && <p>Revise the proposed wording or keep the original, then choose <strong>Save for this job</strong>.</p>}
+          {candidateBlockers.length > 0 && <p>Confirm the facts with supporting details, or revise the starting wording. Save each correction to recheck it.</p>}
+          <button className={primaryButton} disabled={busy} onClick={() => { advance(base.review); focusBlocker(); document.getElementById(proposalBlockers.size ? 'proposal-edits' : 'starting-resume')?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' }); }}>Go to next required correction</button>
         </> : <p>Your saved corrections pass checks. Choose <strong>Continue preparation</strong> below to generate the PDF, then return to Resume. Saving alone does not start preparation.</p>}
       </section>
 
@@ -407,7 +546,6 @@ function Editor({
                 fact={matchingFact}
                 factConfirmed={factConfirmed}
                 onConfirmFact={handleConfirmFact}
-                onAdvanceNext={() => void save(false)}
               />
             ))}
           </section>
@@ -439,15 +577,31 @@ function Editor({
               {startingFields.map(path => {
                 const issues = blockers.filter(i => i.subject.kind === 'candidate' && i.subject.path === path);
                 const currentText = baseText(startingResume, path);
+                const activeProposal = overlay.proposals.find(p => p.decision !== 'rejected' && ((p.type === 'summary.rewrite' && path === 'summary') || (p.target.experience_index !== undefined && path === `experiences.${p.target.experience_index}.bullets.${p.target.bullet_index}.text`)));
+                const previewText = activeProposal ? (activeProposal.edited_after ?? activeProposal.after) : currentText;
                 return (
-                  <div key={path} className="rounded-lg border border-amber-300 dark:border-amber-900 bg-white dark:bg-slate-900 p-3 space-y-1.5">
+                  <div key={path} className={`${cardClass} p-4 space-y-4`}>
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-medium">
                       <span>{candidateFieldLabel(path)} · {pluralize(issues.reduce((n, i) => n + i.details.filter(d => d.severity === 'block').length, 0), 'finding')}</span>
                       {currentText !== undefined && <span className="text-slate-600 dark:text-slate-300">Starting wording: “{currentText}”</span>}
                     </div>
-                    <IssueList issues={issues.flatMap(i => i.details)} />
+                    <IssueList issues={issues.flatMap(i => i.details.map(d => ({ ...d, target: d.target ?? i.target })))} currentText={previewText} />
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Confirm what you did and add supporting details, or revise this passage to match your experience.</p>
+                    <details>
+                      <summary className={`${secondaryButton} cursor-pointer`}>Confirm facts or add supporting evidence</summary>
+                      <div className="pt-3">
+                        {busy || active || stale || dirty ? <p role="status">Save pending proposal changes and finish active preparation before reviewing these facts.</p> : <JobFacts jobId={job.id} passagePath={path} onResolved={async () => {
+                          const latest = await apiClient.getJob(job.id);
+                          const result = await apiClient.recheckJobProposals(job.id, base.review.id, { ...binding, expected_job_revision: latest.job.revision });
+                          setBase(b => ({ ...b, review: result.review }));
+                          setRevision(latest.job.revision);
+                          setDraftBaseRevision(result.review.revision);
+                          await reloadFacts(); onSaved(); await refresh();
+                        }} />}
+                      </div>
+                    </details>
                     <details open={selectedProposal === `base:${path}`}>
-                      <summary className="cursor-pointer text-xs font-medium underline text-vermilion-600" onClick={e => { e.preventDefault(); setSelectedProposal(`base:${path}`); }}>
+                      <summary className={`${secondaryButton} cursor-pointer`} onClick={e => { e.preventDefault(); setSelectedProposal(previous => previous === `base:${path}` ? '' : `base:${path}`); }}>
                         Edit starting wording for this job
                       </summary>
                       <div className="pt-2">
@@ -575,6 +729,7 @@ export function JobProposalReview({ job, onSaved }: { job: Job; onSaved: () => v
   if (!data) return <p role="status">Loading proposal review…</p>;
 
   if (data.availability === 'available') {
+    if (data.generation.generation_policy === SYNTHESIS_POLICY) return <Editor key={`${job.workspace_id}:${job.id}:${data.generation.id}`} job={job} data={data} onSaved={onSaved} refresh={refresh} loadError={error ?? undefined} />;
     return (
       <div className="space-y-4">
         {message && <p role="status">{message}</p>}

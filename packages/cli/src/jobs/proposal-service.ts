@@ -24,11 +24,12 @@ export const SaveReviewSchema = ReviewBindingSchema.extend({
   idempotency_key: text,
 }).strict();
 export const ContinueReviewSchema = ReviewBindingSchema.extend({ validation_fingerprint: text, idempotency_key: text }).strict();
-export const CorrectBaseSchema = ReviewBindingSchema.extend({ review_id: uuid, path: z.string().regex(C.BASE_TEXT_PATH), text: text.max(C.BASE_TEXT_MAX), idempotency_key: text }).strict();
+export const CorrectBaseSchema = ReviewBindingSchema.extend({ review_id: uuid, path: z.string().regex(C.BASE_TEXT_PATH), text: text.max(C.BASE_TEXT_MAX), citations: z.array(text).optional(), idempotency_key: text }).strict();
 export const RecoverReviewSchema = z.object({ expected_job_revision: revision, input_snapshot_id: uuid, idempotency_key: text }).strict();
 type Binding = z.infer<typeof ReviewBindingSchema> & { job_id: string; review_id: string };
 export type SaveProposalReviewRequest = z.infer<typeof SaveReviewSchema> & { job_id: string; review_id: string };
 export const claimFingerprint = (p: C.Proposal) => fingerprint(canonical({ proposal_id: p.id, text: p.edited_after ?? p.after, citations: p.citations }));
+export { bindReviewFinding, isFindingStaleForPreview, createReviewFindingTarget, textFingerprint, ReviewFindingTargetSchema, type ReviewFindingTarget, BoundReviewFindingSchema, type BoundReviewFinding } from '@featherduster/core';
 
 /** No runners or renderer dependencies: editing and rechecking cannot execute models. */
 export class ProposalService {
@@ -78,6 +79,7 @@ export class ProposalService {
     const ctx = this.context(g);
     const corrections = review.base_corrections ?? [];
     const base = this.effectiveBase(ctx.captured.base_resume, review);
+    C.validateOmissionTargets(base, review.patches);
     const overlay = C.applyProposalPatches(g.proposals.proposals, [], review.patches);
     for (const grounding of review.groundings) {
       const p = overlay.proposals.find(p => p.id === grounding.proposal_id);
@@ -90,9 +92,10 @@ export class ProposalService {
     const supportFor = (p: C.Proposal): C.SkillSupport[] => [...ctx.captured.skillSupport, ...review.groundings.filter(x => x.proposal_id === p.id).map(x => ({ skill: x.term, facet: x.term, permitted_terms: [x.term], support: 'direct' as const, scope: { kind: 'job' as const, key: g.job_id }, sources: x.sources, explanation: x.explanation }))];
     const intended = C.applyProposals(base, overlay.proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
     const semantic = semanticEnabled && this.semantic ? this.semantic.support(g.job_id, g.input_snapshot_id, intended, overlay.proposals) : undefined;
-    const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport, semanticSupport: semantic?.support }, ctx.rules, supportFor);
+    const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport, semanticSupport: semantic?.support }, ctx.rules, supportFor, review.revision);
     const automatic = this.jobs.database.db.prepare('SELECT 1 FROM preparation_members WHERE job_id=? AND input_snapshot_id=? LIMIT 1').get(g.job_id, g.input_snapshot_id);
-    if (automatic) for (const proposal of overlay.proposals.filter(p => p.decision !== 'rejected' && ['bullet.drop', 'skills.prune'].includes(p.type))) {
+    const userDropIds = new Set(review.patches.filter(p => p.omission && p.decision !== 'rejected').flatMap(p => p.omission!.source_bullets.map(source => `${p.proposal_id}:${source.bullet_index}`)));
+    if (automatic && g.generation_policy !== C.SYNTHESIS_POLICY) for (const proposal of overlay.proposals.filter(p => !userDropIds.has(p.id) && p.decision !== 'rejected' && ['bullet.drop', 'skills.prune'].includes(p.type))) {
       const original = base.experiences[proposal.target.experience_index ?? -1]?.bullets[proposal.target.bullet_index ?? -1];
       const duplicate = proposal.type === 'bullet.drop' && original
         && base.experiences[proposal.target.experience_index!].bullets.filter(b => b.text === original.text && canonical(b.citations ?? []) === canonical(original.citations ?? [])).length > 1
@@ -124,6 +127,7 @@ export class ProposalService {
   }
   /** Worker-only overlay path: never writes human feedback or shared corpus updates. */
   automaticPatches(review: C.ProposalReviewRevision, patches: C.ProposalPatch[], fence: OwnershipFence, baseEdits: { path: string; before: string; after: string }[] = []) {
+    if (patches.some(p => p.omission || p.proposal_id.startsWith('user-omission:'))) this.fail('Accomplishment omissions require an explicit user action.');
     if (!this.jobs.isAttemptCurrent(fence)) throw new RepositoryError('invalid_ownership', 'Automatic repair lost ownership.');
     const generation = this.proposals.getGeneration(review.generation_id);
     const overlay = C.applyProposalPatches(generation.proposals.proposals, review.patches, patches, review.groundings);
@@ -177,15 +181,22 @@ export class ProposalService {
     return this.jobs.withReceipt('correct_starting_resume', request.idempotency_key, request, () => {
       const { job, review, generation } = this.bound(request);
       if (['queued', 'preparing'].includes(job.preparation_state)) throw new RepositoryError('ineligible', 'Stop preparation before correcting its starting resume');
-      const captured = this.context(generation).captured.base_resume;
+      const context = this.context(generation).captured;
+      const captured = context.base_resume;
       const before = C.baseText(captured, request.path);
       if (before === undefined) this.fail('Starting-resume location does not exist');
-      const current = C.baseText(this.effectiveBase(captured, review), request.path);
-      if (request.text === current) this.fail('Starting-resume wording is unchanged');
+      const effective = this.effectiveBase(captured, review), current = C.baseText(effective, request.path);
+      const match = C.BASE_TEXT_PATH.exec(request.path)!;
+      const originalCitations = request.path !== 'summary' ? captured.experiences[Number(match[2])].bullets[Number(match[3])].citations ?? [] : [];
+      const currentCitations = request.path !== 'summary' ? effective.experiences[Number(match[2])].bullets[Number(match[3])].citations ?? [] : [];
+      const citations = request.citations ?? currentCitations;
+      if (request.citations && (request.path === 'summary' || new Set(citations).size !== citations.length || citations.some(id => !context.evidence.get(id) || context.evidence.get(id)?.confidence === 'retracted'))) this.fail('Select distinct captured, active sources for this bullet.');
+      if (request.text === current && canonical(citations) === canonical(currentCitations)) this.fail('Starting-resume wording is unchanged');
       const recorded_at = new Date().toISOString();
       const others = (review.base_corrections ?? []).filter(c => c.path !== request.path);
       const anchor = C.experienceAnchor(captured, request.path);
-      const base_corrections = request.text === before ? others : [...others, { path: request.path, before, after: request.text, ...(anchor ? { anchor } : {}), recorded_by: 'local-human', recorded_at }];
+      const base_corrections = request.text === before && canonical(citations) === canonical(originalCitations) ? others : [...others, { path: request.path, before, after: request.text, ...(anchor ? { anchor } : {}),
+        ...(canonical(citations) !== canonical(originalCitations) ? { before_citations: originalCitations, citations } : {}), recorded_by: 'local-human', recorded_at }];
       const draft = { ...review, revision: review.revision + 1, base_corrections, created_at: recorded_at, groundings: review.groundings.map(g => ({ ...g, review_revision: review.revision + 1 })) };
       const { candidate_preview, validation } = this.evaluate(generation, draft);
       const feedback: C.FeedbackEvent = { schema_version: 1, id: randomUUID(), workspace_id: job.workspace_id, job_id, proposal_id: null, review_revision: draft.revision, kind: 'wording', before: current ?? '', after: request.text, explanation: `Job-local starting-resume correction at ${request.path}`, scope: { kind: 'job', key: job_id }, recorded_by: 'local-human', recorded_at };
@@ -213,7 +224,10 @@ export class ProposalService {
     return this.jobs.database.db.transaction(() => {
       const { review, generation } = this.bound(request);
       const result = this.evaluate(generation, review);
-      if (canonical(result.validation) !== canonical(review.validation) || canonical(result.candidate_preview) !== canonical(review.candidate_preview)) throw new RepositoryError('corrupt_data', 'Saved validation does not match its inputs');
+      if (canonical(result.validation) !== canonical(review.validation) || canonical(result.candidate_preview) !== canonical(review.candidate_preview)) {
+        if (this.semantic) return { review: this.refreshFacts(review) };
+        throw new RepositoryError('corrupt_data', 'Saved validation does not match its inputs');
+      }
       return { review };
     }).immediate();
   }

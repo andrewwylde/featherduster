@@ -4,7 +4,7 @@ import type { EvidenceRecord, JobFact, Proposal, ProposalIssue, ProposalPatch, S
 import { cardClass, CitationChip, inputClass, IssueList, primaryButton, secondaryButton } from '../tailoring/ui.js';
 import { wordDiff } from '../tailoring/wordDiff.js';
 import { JobEvidenceChooser } from './JobEvidenceChooser.js';
-import { Sparkles, CheckCircle2, ShieldCheck, ArrowRight } from 'lucide-react';
+import { Sparkles, CheckCircle2, ShieldCheck } from 'lucide-react';
 
 export interface GroundingDraft { proposal_id: string; term: string; evidence_id: string; quote: string; explanation: string }
 const issueGroupNames: Record<string, string> = { grounding: 'Evidence grounding', wording: 'Wording', citation: 'Citations', fact: 'Facts', unsupported: 'Unsupported claims', relevance: 'Relevance', conflict: 'Conflicting edits' };
@@ -37,7 +37,6 @@ export function JobProposalEditor({
   fact,
   factConfirmed,
   onConfirmFact,
-  onAdvanceNext,
 }: {
   /** Only needed when one passage shows several changes; keeps accessible names unique. */
   position?: { index: number; total: number };
@@ -83,7 +82,7 @@ export function JobProposalEditor({
         ))}
         <details className="text-slate-500 dark:text-slate-400">
           <summary className="cursor-pointer">Original wording</summary>
-          <p className="mt-1 p-2 bg-slate-50 dark:bg-slate-900 rounded">{p.before || '(new content)'}</p>
+          <p className="mt-1 p-2 bg-slate-50 dark:bg-slate-900 rounded">{p.source_bullets?.map(s => s.before).join(' / ') || p.before || '(new content)'}</p>
         </details>
         <details className="text-slate-500 dark:text-slate-400">
           <summary className="cursor-pointer">Generated wording</summary>
@@ -139,7 +138,7 @@ export function JobProposalEditor({
               onChange={e => onPatch({ proposal_id: p.id, edited_after: e.target.value })}
             />
           </label>
-          {isRejected && <span className="text-xs text-slate-500 italic block">Rejected — original content retained.</span>}
+          {isRejected && <span className="text-xs text-slate-500 italic block">Original wording will be kept.</span>}
         </div>
       </div>
 
@@ -151,7 +150,7 @@ export function JobProposalEditor({
               {issueGroupLabel(issue.group)}
             </summary>
             <div className="mt-1">
-              <IssueList issues={issue.details} />
+              <IssueList issues={issue.details.map(d => ({ ...d, target: d.target ?? issue.target }))} currentText={isRejected ? p.before : (p.edited_after ?? p.after)} />
             </div>
           </details>
         ))}
@@ -162,7 +161,7 @@ export function JobProposalEditor({
         <div className="rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/50 dark:bg-amber-950/30 p-3 space-y-2 text-xs">
           <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-white">
             <ShieldCheck className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-            <span>Factual Evidence & Privacy Attestation</span>
+            <span>Confirm this claim</span>
           </div>
           <p className="text-slate-600 dark:text-slate-300">
             {fact?.question ?? 'Does this claim accurately describe your work? This wording requires verification before sending.'}
@@ -178,7 +177,7 @@ export function JobProposalEditor({
                 type="button"
                 disabled={disabled}
                 onClick={onConfirmFact}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 text-xs font-semibold shadow-sm transition-all"
+                className={secondaryButton}
               >
                 <CheckCircle2 className="h-4 w-4" />
                 <span>Confirm accuracy as written (I did this work)</span>
@@ -197,18 +196,7 @@ export function JobProposalEditor({
               disabled={disabled || saveDisabled}
               onClick={onSave}
             >
-              Save for this job
-            </button>
-          )}
-          {onAdvanceNext && (
-            <button
-              type="button"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-3.5 py-1.5 text-xs font-semibold shadow-sm transition-all"
-              disabled={disabled || saveDisabled}
-              onClick={onAdvanceNext}
-            >
-              <span>Accept & Next Passage</span>
-              <ArrowRight className="h-3.5 w-3.5" />
+              {disabled ? 'Saving or checking…' : 'Save for this job'}
             </button>
           )}
           <button
