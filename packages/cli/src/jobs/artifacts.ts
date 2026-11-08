@@ -22,12 +22,18 @@ export interface CaptureInputsRequest {
   runner_configuration: { runner: string; model: string };
   policy: C.PreparationPolicy;
   corpus_knowledge?: C.CorpusSnapshot;
+  resume_id?: string;
+  resume_path?: string;
+  resume_fingerprint?: string;
 }
 const inputManifest = z.object({
   schema_version: z.literal(1), snapshot: C.InputSnapshotSchema.omit({ fingerprint: true }),
   posting_file: C.ImmutableReferenceSchema, policy_file: C.ImmutableReferenceSchema,
   evidence_sources: z.array(z.string().min(1)),
   job_scope: z.object({ company: z.string().nullable(), role: z.string().nullable(), employer_id: z.string().nullable() }).optional(),
+  resume_id: z.string().optional(),
+  resume_path: z.string().optional(),
+  resume_fingerprint: z.string().optional(),
 }).strict();
 const artifactManifest = z.object({
   schema_version: z.literal(1), artifact: C.ArtifactVersionSchema.innerType().omit({ version_fingerprint: true }),
@@ -76,7 +82,7 @@ export class JobArtifactsService {
         privacy_rules: add('privacy-rules.json', canonical(request.privacy_rules)), template: add('template.json', canonical(C.LatexTemplateProfileSchema.parse(request.template))),
         runner_configuration: add('runner-configuration.json', canonical(runner)), policy, policy_fingerprint: fingerprint(canonical(policy)),
       };
-      const manifest = inputManifest.parse({ schema_version: 1, snapshot, job_scope: { company: job.company, role: job.role, employer_id: job.employer_id }, posting_file: add('posting.txt', posting.text), policy_file: add('policy.json', canonical(policy)), evidence_sources: request.selected_evidence.map(e => e.source_id) });
+      const manifest = inputManifest.parse({ schema_version: 1, snapshot, job_scope: { company: job.company, role: job.role, employer_id: job.employer_id }, posting_file: add('posting.txt', posting.text), policy_file: add('policy.json', canonical(policy)), evidence_sources: request.selected_evidence.map(e => e.source_id), ...(request.resume_id ? { resume_id: request.resume_id } : {}), ...(request.resume_path ? { resume_path: request.resume_path } : {}), ...(request.resume_fingerprint ? { resume_fingerprint: request.resume_fingerprint } : {}) });
       const bytes = canonical(manifest); bundle['manifest.json'] = bytes;
       const input = C.InputSnapshotSchema.parse({ ...snapshot, fingerprint: fingerprint(bytes) });
       files.writeBundle('snapshots', job.id, id, bundle);
@@ -115,7 +121,7 @@ export class JobArtifactsService {
           && (!binding.source_status || (binding.source_status.confidence === record.confidence && binding.source_status.in_flight === record.in_flight));
       }));
       const manifest = inputManifest.parse(JSON.parse(read({ id: `${this.repository.database.files.bundlePath('snapshots', input.job_id, input.id)}/manifest.json`, fingerprint: input.fingerprint })));
-      return { input, job_scope: manifest.job_scope, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport };
+      return { input, job_scope: manifest.job_scope, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport, resume_id: manifest.resume_id, resume_path: manifest.resume_path, resume_fingerprint: manifest.resume_fingerprint };
     });
   }
   publishCandidate(request: { draft_id: string; expected_draft_revision: number; fence: OwnershipFence; source: Bytes; pdf?: Bytes; previews?: Bytes[]; validation_report?: Bytes; validation_result: C.ArtifactVersion['validation_result']; semantic_binding?: C.ArtifactVersion['semantic_binding'] }): C.ArtifactVersion {

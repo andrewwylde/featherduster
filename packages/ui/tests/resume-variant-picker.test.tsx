@@ -39,3 +39,47 @@ it('retains a missing selected source and supports escape/no-results', () => {
   expect(input).toHaveAttribute('aria-expanded', 'false');
 });
 
+it('filters by directory path, file extension, and displays metadata', () => {
+  const richOptions = [
+    {
+      id: 'tailored/main:yaml',
+      name: 'Main Resume',
+      type: 'tailored',
+      filePath: 'resumes/tailored/main.yaml',
+      extension: 'yaml',
+      modifiedAt: '2026-11-01T12:00:00.000Z',
+    },
+    {
+      id: 'tailored/main:tex',
+      name: 'Main Resume LaTeX',
+      type: 'tailored',
+      filePath: 'resumes/tailored/main.tex',
+      extension: 'tex',
+      modifiedAt: '2026-11-02T12:00:00.000Z',
+    },
+    {
+      id: 'archive/old:yaml',
+      name: 'Archived Role',
+      type: 'template',
+      filePath: 'resumes/archive/old.yaml',
+      extension: 'yaml',
+      modifiedAt: '2025-01-01T12:00:00.000Z',
+    },
+  ];
+
+  // Directory search
+  expect(rankResumeVariants(richOptions, 'archive').map(x => x.id)).toEqual(['archive/old:yaml']);
+
+  // Extension search
+  expect(rankResumeVariants(richOptions, 'tex').map(x => x.id)).toEqual(['tailored/main:tex']);
+
+  // Rendering displays path, extension, and date
+  render(<ResumeVariantPicker options={richOptions} value="tailored/main:yaml" onSelect={() => {}} />);
+  const input = screen.getByRole('combobox');
+  fireEvent.focus(input);
+
+  expect(screen.getByText('resumes/tailored/main.yaml')).toBeInTheDocument();
+  expect(screen.getByText('resumes/tailored/main.tex')).toBeInTheDocument();
+  expect(screen.getByText('(tailored · .yaml)')).toBeInTheDocument();
+  expect(screen.getByText('(tailored · .tex)')).toBeInTheDocument();
+});

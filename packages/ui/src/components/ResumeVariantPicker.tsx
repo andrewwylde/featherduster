@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { rankResumeVariants, type VariantOption } from './resume-variant-search.js';
-export function ResumeVariantPicker({ options, value, onSelect }: {
-  options: readonly VariantOption[]; value: string; onSelect(id: string): void;
+
+export function ResumeVariantPicker({ options, value, onSelect, ariaLabel = 'Select resume variant' }: {
+  options: readonly VariantOption[]; value: string; onSelect(id: string): void; ariaLabel?: string;
 }) {
   const id = useId(), root = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false), [query, setQuery] = useState('');
@@ -17,7 +18,7 @@ export function ResumeVariantPicker({ options, value, onSelect }: {
   return <div ref={root} className="relative" onBlur={e => {
     if (!e.currentTarget.contains(e.relatedTarget as Node | null)) close();
   }}>
-    <input role="combobox" aria-label="Select resume variant" aria-autocomplete="list"
+    <input role="combobox" aria-label={ariaLabel} aria-autocomplete="list"
       aria-expanded={open} aria-controls={`${id}-list`}
       aria-activedescendant={open && results[active] ? `${id}-${active}` : undefined}
       value={open ? query : label} placeholder="Search resumes…"
@@ -35,15 +36,27 @@ export function ResumeVariantPicker({ options, value, onSelect }: {
       }} />
     {open && <div className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-slate-700 bg-slate-950 text-white shadow-lg">
       <ul id={`${id}-list`} role="listbox" aria-label="Resume variants">
-        {results.map((option, index) => <li key={option.id} id={`${id}-${index}`} role="option"
-          aria-selected={option.id === value} data-active={index === active}
-          className={`cursor-pointer px-3 py-2 text-sm ${index === active ? 'bg-slate-700' : ''}`}
-          onMouseDown={e => e.preventDefault()} onMouseMove={() => setActive(index)} onClick={() => choose(option)}>
-          {option.name} ({option.type})
-        </li>)}
+        {results.map((option, index) => {
+          const ext = option.extension || (option.filePath ? option.filePath.split('.').pop() : undefined);
+          const formattedDate = option.modifiedAt ? new Date(option.modifiedAt).toLocaleDateString() : undefined;
+          return <li key={option.id} id={`${id}-${index}`} role="option"
+            aria-selected={option.id === value} data-active={index === active}
+            className={`cursor-pointer px-3 py-2 text-sm ${index === active ? 'bg-slate-700' : ''}`}
+            onMouseDown={e => e.preventDefault()} onMouseMove={() => setActive(index)} onClick={() => choose(option)}>
+            <div className="flex items-center justify-between">
+              <span className="font-medium">{option.name}</span>
+              <span className="text-xs text-slate-400">({option.type}{ext ? ` · .${ext}` : ''})</span>
+            </div>
+            {(option.filePath || formattedDate) && (
+              <div className="mt-0.5 flex items-center justify-between text-xs text-slate-400">
+                {option.filePath && <span className="truncate" title={option.filePath}>{option.filePath}</span>}
+                {formattedDate && <span className="ml-2 shrink-0">{formattedDate}</span>}
+              </div>
+            )}
+          </li>;
+        })}
       </ul>
       {!results.length && <p role="status" className="p-3 text-sm">No matching resumes</p>}
     </div>}
   </div>;
 }
-

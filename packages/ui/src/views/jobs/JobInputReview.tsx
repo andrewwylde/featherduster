@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { apiClient, type JobsDetail, type ResumeRecord } from '../../api/client.js';
 import { useIntentKey } from '../../hooks/useJobsData.js';
+import { ResumeVariantPicker } from '../../components/ResumeVariantPicker.js';
 import { cardClass, inputClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 
 /** Review is read-only until the user explicitly requests a new preparation. */
@@ -52,12 +53,26 @@ export function JobInputReview({ data, navigate }: { data: JobsDetail; navigate(
       <div><dt className="font-semibold">Template</dt><dd>{job.template_id ?? 'Default template'}</dd></div>
       <div><dt className="font-semibold">Runner</dt><dd>{job.runner ?? 'Current workspace runner'}</dd></div>
     </dl>
-    <label className="block text-sm font-semibold">Starting resume
-      <select className={inputClass} value={baseId} disabled={busy} onChange={e => setBaseId(e.target.value)}>
-        <option value="">Select a saved starting resume</option>
-        {resumes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-      </select>
-    </label>
+    <div className="space-y-1">
+      <label className="block text-sm font-semibold">Starting resume
+        <select className="sr-only" aria-label="Starting resume" value={baseId} disabled={busy} onChange={e => setBaseId(e.target.value)}>
+          <option value="">Select a saved starting resume</option>
+          {resumes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        </select>
+      </label>
+      <ResumeVariantPicker
+        options={resumes.map(r => ({
+          id: r.id,
+          name: r.name,
+          type: r.type,
+          filePath: r.filePath,
+          extension: r.filePath ? r.filePath.split('.').pop() : undefined,
+          modifiedAt: (r as any).modifiedAt,
+        }))}
+        value={baseId}
+        onSelect={setBaseId}
+      />
+    </div>
     {selected && <details><summary>Preview starting resume</summary><p className="whitespace-pre-wrap">{selected.spec.profile.name} — {selected.spec.profile.title}</p><p>{selected.spec.summary}</p></details>}
     <div><h3 className="font-semibold">Current posting and context</h3><p className="whitespace-pre-wrap max-h-64 overflow-y-auto text-sm">{posting?.text ?? 'No saved posting. Add posting text before preparing.'}</p></div>
     <p className="text-sm">Preparation uses current evidence and support for this job, current privacy rules, and the selected starting resume.</p>

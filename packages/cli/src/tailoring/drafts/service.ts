@@ -13,6 +13,7 @@ import { DraftRepository, DraftRepositoryError } from './repository.js';
 import { DraftOperationRunner, type DraftOperation } from './operations.js';
 import { mergeDraftResume, mergedManual, rebaseProposals } from './upstream.js';
 import { applyProposals, mergeEqual, DraftRunArtifactsSchema, type MergeChoice } from '@featherduster/core';
+import { resolveResume } from '../../resumes/variants.js';
 
 export const DraftSeedSchema = z.discriminatedUnion('kind', [
   z.object({ id: z.string().uuid(), kind: z.literal('setup'), payload: SetupPayloadSchema, context: DraftContextSchema.optional() }).strict(),
@@ -57,8 +58,8 @@ export class DraftService {
   }
   upstream(id: string) {
     const { record } = this.get(id);
-    const matches = this.dependencies.loadResumes().filter(item => item.id === record.base?.resumeId);
-    const source = matches.length === 1 ? matches[0] : undefined;
+    const resolution = resolveResume(this.dependencies.loadResumes() as any, record.base?.resumeId ?? '');
+    const source = resolution.resume;
     const fingerprint = source ? createHash('sha256').update(canonicalJson(source.spec)).digest('hex') : null;
     return { record, fingerprint, missing: !source, changed: !!fingerprint && fingerprint !== record.base?.fingerprint };
   }
@@ -67,9 +68,9 @@ export class DraftService {
     if (canonicalJson(draft.token) !== canonicalJson(expected)) throw new DraftRepositoryError(409, 'stale_revision', 'Draft changed before upstream sync');
     if (record.lifecycle !== 'draft' || !record.base) throw new DraftRepositoryError(409, 'invalid_lifecycle', 'Only an editable draft with a pinned base can sync');
     const sources: NonNullable<DraftOperation['sources']> = [];
-    const matches = this.dependencies.loadResumes().filter(item => item.id === record.base!.resumeId);
-    if (matches.length !== 1) throw new DraftRepositoryError(409, 'missing_upstream', 'Live source is missing or ambiguous. Your pinned snapshot and edits are retained.');
-    const upstream = matches[0];
+    const resolution = resolveResume(this.dependencies.loadResumes() as any, record.base!.resumeId);
+    if (!resolution.resume || resolution.ambiguous) throw new DraftRepositoryError(409, 'missing_upstream', 'Live source is missing or ambiguous. Your pinned snapshot and edits are retained.');
+    const upstream = resolution.resume;
     if (!upstream.filePath) throw new DraftRepositoryError(409, 'missing_upstream_path', 'Live source cannot be checked safely because its file path is unavailable.');
     const sourcePath = upstream.filePath.replace(/\\/g, '/');
     const fullPath = path.resolve(this.dependencies.workspaceDir, sourcePath);
@@ -160,8 +161,9 @@ export class DraftService {
   }
   private captureBase(resumeId: string): DraftBase | null {
     if (!resumeId) return null;
-    const resume = this.dependencies.loadResumes().find((item) => item.id === resumeId);
-    if (!resume) throw new DraftRepositoryError(400, 'invalid_base', 'Selected resume does not exist');
+    const resolution = resolveResume(this.dependencies.loadResumes() as any, resumeId);
+    const resume = resolution.resume;
+    if (!resume || resolution.ambiguous) throw new DraftRepositoryError(400, 'invalid_base', 'Selected resume does not exist');
     const spec = structuredClone(resume.spec);
     return { resumeId, spec, fingerprint: createHash('sha256').update(canonicalJson(spec)).digest('hex') };
   }

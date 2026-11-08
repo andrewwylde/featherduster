@@ -315,88 +315,23 @@ export function loadRubrics(workspaceDir: string): LevelingRubric[] {
   return rubrics;
 }
 
-export interface ResumeRecord {
-  id: string;
-  name: string;
-  type: 'template' | 'tailored';
-  filePath: string;
-  spec: ResumeSpec;
-}
+import {
+  ResumeRecord,
+  ResolveResumeResult,
+  normalizeResumeId,
+  loadResumeSpecsFromPaths,
+  resolveResume,
+  loadResumeSpecs,
+} from './resumes/variants.js';
 
-export function loadResumeSpecs(workspaceDir: string, includeStarter = true): ResumeRecord[] {
-  const records: ResumeRecord[] = [];
-  const directories: Array<{ dir: string; type: 'template' | 'tailored' }> = [
-    { dir: path.join(workspaceDir, 'resumes', 'templates'), type: 'template' },
-    { dir: path.join(workspaceDir, 'resumes', 'tailored'), type: 'tailored' },
-  ];
-
-  for (const { dir, type } of directories) {
-    if (!fs.existsSync(dir)) continue;
-    const files = findFiles(dir, ['.yaml', '.yml', '.json', '.md', '.tex']);
-    for (const file of files) {
-      try {
-        const raw = fs.readFileSync(file, 'utf-8');
-        const ext = path.extname(file).toLowerCase();
-        let parsed: any;
-        if (ext === '.json') {
-          parsed = JSON.parse(raw);
-        } else if (ext === '.yaml' || ext === '.yml') {
-          parsed = yaml.load(raw);
-        } else if (ext === '.tex') {
-          parsed = parseLatexResume(raw);
-        } else if (ext === '.md') {
-          const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-          if (match) {
-            parsed = yaml.load(match[1]);
-          } else {
-            parsed = yaml.load(raw);
-          }
-        }
-        if (parsed && typeof parsed === 'object') {
-          if (!parsed.profile && parsed.candidate) {
-            parsed.profile = parsed.candidate;
-          }
-        }
-        const validated = ResumeSpecSchema.safeParse(parsed);
-        if (validated.success) {
-          const baseName = path.basename(file, ext);
-          const rel = path.relative(workspaceDir, file).replace(/\\/g, '/');
-          records.push({
-            id: `${type}-${baseName}`,
-            name: baseName,
-            type,
-            filePath: rel,
-            spec: validated.data,
-          });
-        }
-      } catch {
-        // Skip files that fail to parse
-      }
-    }
-  }
-
-  // If no templates exist, provide a default starter template conforming to ResumeSpec
-  if (includeStarter && records.filter((r) => r.type === 'template').length === 0) {
-    records.unshift({
-      id: 'template-starter',
-      name: 'Starter Template',
-      type: 'template',
-      filePath: 'resumes/templates/starter.yaml',
-      spec: DEFAULT_STARTER_RESUME,
-    });
-  }
-
-  // Sort: templates first (with master priority 1, main priority 2), then tailored
-  records.sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'template' ? -1 : 1;
-    const aPriority = a.name.toLowerCase() === 'master' ? 1 : a.name.toLowerCase() === 'main' ? 2 : 3;
-    const bPriority = b.name.toLowerCase() === 'master' ? 1 : b.name.toLowerCase() === 'main' ? 2 : 3;
-    if (aPriority !== bPriority) return aPriority - bPriority;
-    return a.name.localeCompare(b.name);
-  });
-
-  return records;
-}
+export {
+  ResumeRecord,
+  ResolveResumeResult,
+  normalizeResumeId,
+  loadResumeSpecsFromPaths,
+  resolveResume,
+  loadResumeSpecs,
+};
 
 /**
  * Validates whether the given Host header is permitted.

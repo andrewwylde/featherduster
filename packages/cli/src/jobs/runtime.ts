@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+import { resolveResume } from '../resumes/variants.js';
 import { PreparationBatchRepository } from './preparation-batch-repository.js';
 import { PreparationCoordinator } from './preparation-coordinator.js';
 import { JobDraftRepository } from '../tailoring/drafts/repository.js';
@@ -87,8 +89,23 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
     if (!job.posting_snapshot_id) return invalid('Capture posting text first');
     const resumes = deps.loadResumes().filter(r => fs.existsSync(path.resolve(workspace, r.filePath)) && !!r.filePath);
     const baseId = selection.base_resume_id ?? job.base_resume_id;
-    const base = baseId ? resumes.find(r => r.id === baseId) : resumes.find(r => r.type === 'template');
+    let base: typeof resumes[0] | undefined;
+    if (baseId) {
+      const resolution = resolveResume(resumes as any, baseId);
+      if (resolution.ambiguous) {
+        return invalid(`Resume selection "${baseId}" is ambiguous (${resolution.matchingIds?.join(', ')}). Select a specific resume variant.`);
+      }
+      base = resolution.resume;
+    } else {
+      base = resumes.find(r => r.type === 'template');
+    }
     if (!base) return invalid('Select a saved base resume');
+    const fullResumePath = path.resolve(workspace, base.filePath);
+    const resumeSha256 = fs.existsSync(fullResumePath)
+      ? createHash('sha256').update(fs.readFileSync(fullResumePath)).digest('hex')
+      : createHash('sha256').update(yaml.dump(base.spec)).digest('hex');
+    const resumeFingerprint = `sha256:${resumeSha256}`;
+    const resumePath = base.filePath.replace(/\\/g, '/');
     let template: C.LatexTemplateProfile;
     try { template = getLatexTemplate(selection.template_id ?? job.template_id ?? 'default'); } catch { return invalid('Unknown installed template'); }
     const config = loadTailoringConfig(workspace).runner;
@@ -98,7 +115,7 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
     const view = corpus.read({ job_id: job.id, employer: job.employer_id ?? undefined, role: job.role ?? undefined });
     const { evidence, knowledge } = selectJobSkillset(view, selection.evidence_ids);
     const limits = selection.automatic ? loadAutomaticPreparationLimits(workspace) : { max_model_calls: 4, max_repair_attempts: 0 };
-    return artifacts.captureInputs({ corpus_knowledge: knowledge, job_id: job.id, posting_id: job.posting_snapshot_id, base_resume: yaml.dump(base.spec), selected_evidence: evidence.map(e => ({ source_id: e.id, bytes: C.serializeEvidenceMarkdown(e, e.narrative) })), privacy_rules: deps.loadPrivacyRules(), template, runner_configuration: { runner: runner.id, model: runner.model }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: template.page_budget, max_model_calls: limits.max_model_calls, max_repair_attempts: limits.max_repair_attempts, model_retry_count: 0, timeout_ms: config.step_timeout_seconds * 4000 } });
+    return artifacts.captureInputs({ corpus_knowledge: knowledge, job_id: job.id, posting_id: job.posting_snapshot_id, base_resume: yaml.dump(base.spec), resume_id: base.id, resume_path: resumePath, resume_fingerprint: resumeFingerprint, selected_evidence: evidence.map(e => ({ source_id: e.id, bytes: C.serializeEvidenceMarkdown(e, e.narrative) })), privacy_rules: deps.loadPrivacyRules(), template, runner_configuration: { runner: runner.id, model: runner.model }, policy: { schema_version: 1, mode: 'candidate', output_format: 'latex', page_budget: template.page_budget, max_model_calls: limits.max_model_calls, max_repair_attempts: limits.max_repair_attempts, model_retry_count: 0, timeout_ms: config.step_timeout_seconds * 4000 } });
   }).immediate();
   const fit = new JobFit(repository);
   const materials = new JobMaterials(repository, artifacts, (id, ids) => selectFit(id, ids), deps.loadPrivacyRules);
