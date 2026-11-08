@@ -63,6 +63,7 @@ export class PostingIntakeService {
         if (metadata) {
           metadata.captured_at = time;
           job.posting_metadata = metadata;
+          if (item.job) item.job.posting_metadata = metadata;
         }
         if (job.kind === 'discovery') {
           job.preparation_state = 'needs_input'; job.state_reason = 'Select an opening before preparation';

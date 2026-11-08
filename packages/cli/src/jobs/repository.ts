@@ -103,7 +103,7 @@ export class JobsRepository {
       }
       if (snapshot) {
         this.savePostingSnapshot(snapshot);
-        saved = this.updateJob({ ...saved, posting_snapshot_id: snapshot.id, missing_inputs: fallback ? saved.missing_inputs.filter(q => q.key !== 'posting_text') : saved.missing_inputs }, saved.revision);
+        saved = this.updateJob({ ...saved, posting_snapshot_id: snapshot.id, missing_inputs: fallback ? saved.missing_inputs.filter(q => q.key !== 'posting_text') : saved.missing_inputs, ...(job.posting_metadata || saved.posting_metadata ? { posting_metadata: job.posting_metadata ?? saved.posting_metadata } : {}) }, saved.revision);
       }
       return { job: saved, disposition: 'saved' as const };
     });

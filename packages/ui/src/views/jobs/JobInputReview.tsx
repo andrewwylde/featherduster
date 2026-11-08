@@ -98,7 +98,7 @@ export function JobInputReview({ data, navigate, initialResumes }: {
         )}
       </div>
     )}
-    {metadata && (
+    {metadata && Boolean(metadata.locations?.length || metadata.employment_type || metadata.remote_policy || metadata.compensation?.length) && (
       <div data-testid="position-details-section" className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 p-4 space-y-2 text-sm">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Position details</h3>
         <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -129,7 +129,9 @@ export function JobInputReview({ data, navigate, initialResumes }: {
                     ? `${comp.min.toLocaleString()} - ${comp.max.toLocaleString()} ${comp.currency}`
                     : comp.min !== undefined
                       ? `${comp.min.toLocaleString()} ${comp.currency}`
-                      : comp.currency;
+                      : comp.max !== undefined
+                        ? `Up to ${comp.max.toLocaleString()} ${comp.currency}`
+                        : comp.currency;
                   const label = `${comp.region ? `${comp.region}: ` : ''}${range} (${comp.period})`;
                   return (
                     <div key={idx} title={comp.raw_text} className="text-xs text-slate-800 dark:text-slate-200 font-mono">

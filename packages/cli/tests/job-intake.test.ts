@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { extractPostingMetadata } from '../src/jobs/posting-extractor.js';
+import { openJobsDatabase } from '../src/jobs/database.js';
+import { JobsRepository } from '../src/jobs/repository.js';
+import { PostingIntakeService } from '../src/jobs/intake.js';
 
 describe('structured posting metadata extraction', () => {
   it('extracts multi-region compensation and location metadata with source text and provenance', async () => {
@@ -81,5 +87,101 @@ describe('structured posting metadata extraction', () => {
     expect(parsed.compensation).toEqual([
       { currency: 'USD', min: 75, max: 95, period: 'hourly', raw_text: '$75 - $95 / hr' },
     ]);
+  });
+
+  it('filters false-positive salary labels from region fields', async () => {
+    const html = `
+      <html>
+        <div class="salary">Salary: $150,000 - $180,000 USD | Base Pay: $120,000 - $140,000 USD</div>
+      </html>
+    `;
+    const parsed = await extractPostingMetadata(html);
+    expect(parsed.compensation).toEqual([
+      { currency: 'USD', min: 150000, max: 180000, period: 'annual', raw_text: '$150,000 - $180,000 USD' },
+      { currency: 'USD', min: 120000, max: 140000, period: 'annual', raw_text: '$120,000 - $140,000 USD' },
+    ]);
+    expect(parsed.compensation[0].region).toBeUndefined();
+    expect(parsed.compensation[1].region).toBeUndefined();
+  });
+
+  it('extracts metadata line-by-line from plain text postings', async () => {
+    const text = `
+      Principal Software Engineer
+      Location: Remote - US, Canada
+      Employment Type: Full-time
+      Salary: $180,000 - $220,000 USD
+      We are looking for an experienced engineer...
+    `;
+    const parsed = await extractPostingMetadata(text);
+    expect(parsed.remote_policy).toBe('Remote');
+    expect(parsed.employment_type).toBe('Full-time');
+    expect(parsed.locations).toEqual(['US', 'Canada']);
+    expect(parsed.compensation).toEqual([
+      { currency: 'USD', min: 180000, max: 220000, period: 'annual', raw_text: '$180,000 - $220,000 USD' },
+    ]);
+  });
+
+  it('retains posting_metadata on job and snapshot during text fallback intake', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'intake-fallback-'));
+    const db = openJobsDatabase(dir);
+    const repo = new JobsRepository(db);
+    try {
+      const service = new PostingIntakeService(repo);
+      const initial = repo.createJob({
+        schema_version: 1,
+        id: '11111111-1111-4111-8111-111111111111',
+        workspace_id: db.workspaceId,
+        revision: 0,
+        kind: 'job',
+        original_url: 'https://example.com/blocked',
+        canonical_url: 'https://example.com/blocked',
+        employer_id: null,
+        external_job_id: null,
+        company: 'Acme',
+        role: 'Engineer',
+        parent_discovery_id: null,
+        posting_snapshot_id: null,
+        preparation_state: 'needs_input',
+        application_lifecycle: 'not_started',
+        preparation_stage: null,
+        base_resume_id: null,
+        template_id: null,
+        runner: null,
+        policy_fingerprint: null,
+        current_attempt_id: null,
+        artifact_version_ids: [],
+        missing_inputs: [{ key: 'posting_text', question: 'Paste posting text', scope: { kind: 'job', job_id: '11111111-1111-4111-8111-111111111111' }, reason: 'blocked' }],
+        confirmation_provenance: [],
+        state_reason: 'blocked',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }, 'init').result;
+
+      const fallbackText = `
+        Location: Remote - US
+        Salary: $150,000 - $180,000 USD
+        Employment Type: Full-time
+      `;
+      const preview = await service.preview({
+        mode: 'text',
+        input: fallbackText,
+        fallback_job_id: initial.id,
+        expected_revision: initial.revision,
+      });
+
+      expect(preview.items[0]?.job?.posting_metadata).toBeDefined();
+      expect(preview.items[0]?.snapshot?.posting_metadata).toBeDefined();
+
+      const committed = service.commit(preview, 'fallback-batch');
+      expect(committed[0]?.disposition).toBe('saved');
+
+      const updatedJob = repo.getJob(initial.id);
+      expect(updatedJob.posting_metadata).toBeDefined();
+      expect(updatedJob.posting_metadata?.remote_policy).toBe('Remote');
+      expect(updatedJob.posting_metadata?.compensation[0]?.min).toBe(150000);
+    } finally {
+      db.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

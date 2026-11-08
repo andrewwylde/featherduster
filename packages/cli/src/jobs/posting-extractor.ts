@@ -87,6 +87,57 @@ function parsePeriod(text: string, amount?: number): 'annual' | 'monthly' | 'hou
   return 'unknown';
 }
 
+function parseCompensationSegment(seg: string): JobPostingMetadata['compensation'][number] | null {
+  if (!/\d/.test(seg)) return null;
+  const regionMatch = seg.match(/^([A-Za-z\s]{2,20})\s*[:\-–—]\s*(.*)$/);
+  let region: string | undefined;
+  let raw_text = seg;
+  if (regionMatch) {
+    const label = regionMatch[1].trim();
+    const isLabelOrCurrency = /^(USD|GBP|EUR|CAD|AUD|CHF|JPY|NZD|SGD|HKD|SEK|NOK|DKK|INR|salary|compensation|base\s*pay|pay\s*range|salary\s*range|range|rate|pay)$/i.test(label);
+    if (!isLabelOrCurrency) {
+      region = label;
+      raw_text = regionMatch[2].trim();
+    } else {
+      raw_text = regionMatch[2].trim();
+    }
+  }
+  const currMatch = raw_text.match(/\b(USD|GBP|EUR|CAD|AUD|CHF|JPY|NZD|SGD|HKD|SEK|NOK|DKK|INR)\b/i);
+  let currency = 'USD';
+  if (currMatch) {
+    currency = currMatch[1].toUpperCase();
+  } else if (raw_text.includes('£')) {
+    currency = 'GBP';
+  } else if (raw_text.includes('€')) {
+    currency = 'EUR';
+  } else if (raw_text.includes('¥')) {
+    currency = 'JPY';
+  }
+  const rangeMatch = raw_text.match(/([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)\s*(?:-|–|—|to)\s*([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)/);
+  let min: number | undefined;
+  let max: number | undefined;
+  if (rangeMatch) {
+    min = parseNum(rangeMatch[1]);
+    max = parseNum(rangeMatch[2]);
+  } else {
+    const single = raw_text.match(/[$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?/);
+    if (single) {
+      min = parseNum(single[0]);
+      max = min;
+    }
+  }
+  if (min === undefined && max === undefined) return null;
+  const period = parsePeriod(raw_text, min ?? max);
+  return {
+    ...(region ? { region } : {}),
+    currency,
+    ...(min !== undefined ? { min } : {}),
+    ...(max !== undefined ? { max } : {}),
+    period,
+    raw_text,
+  };
+}
+
 function parseLocations(text: string): string[] {
   if (!text) return [];
   if (text.includes('|') || text.includes(';')) {
@@ -214,60 +265,59 @@ export async function extractPostingMetadata(html: string, url?: string): Promis
       const salText = $(el).text().trim();
       const segments = salText.split(/[|\n;]+/).map(s => s.trim()).filter(Boolean);
       for (const seg of segments) {
-        if (!/\d/.test(seg)) continue;
-        const regionMatch = seg.match(/^([A-Za-z\s]{2,20})\s*[:\-–—]\s*(.*)$/);
-        let region: string | undefined;
-        let raw_text = seg;
-        if (regionMatch && !/^(USD|GBP|EUR|CAD|AUD|CHF|JPY|NZD|SGD|HKD|SEK|NOK|DKK|INR)$/i.test(regionMatch[1].trim())) {
-          region = regionMatch[1].trim();
-          raw_text = regionMatch[2].trim();
-        }
-        const currMatch = raw_text.match(/\b(USD|GBP|EUR|CAD|AUD|CHF|JPY|NZD|SGD|HKD|SEK|NOK|DKK|INR)\b/i);
-        let currency = 'USD';
-        if (currMatch) {
-          currency = currMatch[1].toUpperCase();
-        } else if (raw_text.includes('£')) {
-          currency = 'GBP';
-        } else if (raw_text.includes('€')) {
-          currency = 'EUR';
-        } else if (raw_text.includes('¥')) {
-          currency = 'JPY';
-        }
-        const rangeMatch = raw_text.match(/([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)\s*(?:-|–|—|to)\s*([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)/);
-        let min: number | undefined;
-        let max: number | undefined;
-        if (rangeMatch) {
-          min = parseNum(rangeMatch[1]);
-          max = parseNum(rangeMatch[2]);
-        } else {
-          const single = raw_text.match(/[$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?/);
-          if (single) {
-            min = parseNum(single[0]);
-            max = min;
-          }
-        }
-        const period = parsePeriod(raw_text, min ?? max);
-        compensation.push({
-          ...(region ? { region } : {}),
-          currency,
-          ...(min !== undefined ? { min } : {}),
-          ...(max !== undefined ? { max } : {}),
-          period,
-          raw_text,
-        });
+        const comp = parseCompensationSegment(seg);
+        if (comp) compensation.push(comp);
       }
     });
   }
 
   const fullText = plain(html);
+  const lines = fullText.split('\n').map(l => l.trim()).filter(Boolean);
+
+  if (locations.length === 0) {
+    for (const line of lines) {
+      const locMatch = line.match(/^(?:location|job\s*location)\s*[:\-–—]\s*(.*)$/i);
+      if (locMatch) {
+        const cleanedLoc = locMatch[1].replace(/^(remote|hybrid|on-site|onsite|in-office)\s*[-:—–]\s*/i, '').trim();
+        if (cleanedLoc) locations = parseLocations(cleanedLoc);
+        break;
+      }
+    }
+  }
+
+  if (compensation.length === 0) {
+    for (const line of lines) {
+      if (!/\d/.test(line)) continue;
+      const looksLikeSalary = /^(?:salary|compensation|base\s*pay|pay\s*range|salary\s*range|rate)\s*[:\-–—]/i.test(line) ||
+        /[$£€¥]|\b(?:USD|GBP|EUR|CAD|AUD)\b/i.test(line);
+      if (looksLikeSalary) {
+        const segments = line.split(/[|\n;]+/).map(s => s.trim()).filter(Boolean);
+        for (const seg of segments) {
+          const comp = parseCompensationSegment(seg);
+          if (comp) compensation.push(comp);
+        }
+        if (compensation.length > 0) break;
+      }
+    }
+  }
+
   if (!remote_policy) {
     if (/\bhybrid\b/i.test(fullText)) remote_policy = 'Hybrid';
     else if (/\bremote\b/i.test(fullText)) remote_policy = 'Remote';
     else if (/\b(on-site|onsite|in-office)\b/i.test(fullText)) remote_policy = 'On-site';
   }
   if (!employment_type) {
-    const m = fullText.match(/\b(Full-time Employee|Full-time|Part-time Employee|Part-time|Contractor|Contract|Internship)\b/i);
-    if (m) employment_type = m[1];
+    for (const line of lines) {
+      const empMatch = line.match(/^(?:employment\s*type|job\s*type)\s*[:\-–—]\s*(.*)$/i);
+      if (empMatch) {
+        employment_type = empMatch[1].trim();
+        break;
+      }
+    }
+    if (!employment_type) {
+      const m = fullText.match(/\b(Full-time Employee|Full-time|Part-time Employee|Part-time|Contractor|Contract|Internship)\b/i);
+      if (m) employment_type = m[1];
+    }
   }
 
   let validSourceUrl: string | undefined;

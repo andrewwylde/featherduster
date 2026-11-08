@@ -901,3 +901,28 @@ it('renders position details section with location, employment type, remote poli
   expect(ukCompensation).toBeInTheDocument();
 });
 
+it('formats max-only compensation with Up to and omits position details when empty', () => {
+  renderJobInputReview({
+    postingMetadata: {
+      compensation: [
+        { max: 150000, currency: 'USD', period: 'annual', raw_text: 'Up to $150k' },
+      ],
+      captured_at: new Date().toISOString(),
+    },
+  });
+
+  const compensation = screen.getByTestId('position-compensation');
+  expect(compensation).toHaveTextContent('Up to 150,000 USD (annual)');
+  expect(screen.queryByTestId('position-location')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('position-remote-policy')).not.toBeInTheDocument();
+  expect(screen.queryByTestId('position-employment-type')).not.toBeInTheDocument();
+
+  cleanup();
+  renderJobInputReview({
+    postingMetadata: {
+      captured_at: new Date().toISOString(),
+    },
+  });
+  expect(screen.queryByTestId('position-details-section')).not.toBeInTheDocument();
+});
+
