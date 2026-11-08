@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { PROPOSALS_JSON_SCHEMA, ALIGNMENT_JSON_SCHEMA, normalizeGenerationProposals, originalPassagePath, proposalForPassage } from '../src/index.js';
+import { PROPOSALS_JSON_SCHEMA, ALIGNMENT_JSON_SCHEMA, normalizeGenerationProposals, originalPassagePath, proposalForPassage, synthesizeExperienceBullets } from '../src/index.js';
 import { replaceSelectedPassages, restoreAccomplishmentInDraft, undoProposalInDraft, tightenResumeWording, clarificationCorrections, knownClarificationConflicts } from '../src/index.js';
 import { DEFAULT_STARTER_RESUME, ProposalSchema, applyProposals, applyProposalPatches, detectProposalConflicts, validateProposal, validateProposalClaimCoverage, reusableClarifications, correctedClarificationIds, type CorpusSnapshot } from '../src/index.js';
 
@@ -164,4 +164,48 @@ it('flags exact uncovered span offsets when connective text is missing evidence 
     { span: [72, 73], text: '.' },
   ]);
   expect(validation.issues[0].message).toContain('Uncovered wording: "Experience spans "');
+});
+
+it('ranks frontend visualization higher for frontend role and narrows unsupported component coupling claims', () => {
+  const candidate = synthesizeExperienceBullets({
+    role_requirements: ['frontend observability', 'data visualization', 'test isolation'],
+    experience: {
+      employer: 'Parable',
+      accomplishments: [
+        { id: 'acc-1', topic: 'general administration', evidence_supported: true },
+        { id: 'acc-2', topic: 'time spend visualization and drilldown', evidence_supported: true },
+        { id: 'acc-3', topic: 'internal build scripting', evidence_supported: true },
+      ],
+    },
+  });
+
+  // Visualization accomplishment ranked first
+  expect(candidate.bullets[0].accomplishment_id).toBe('acc-2');
+  // Does not claim adoption/metrics without cited support
+  expect(candidate.bullets[0].text).not.toMatch(/improved team velocity by \d+%/);
+});
+
+it('narrows unsupported pluralizations and unproven speculative metrics', () => {
+  const result = synthesizeExperienceBullets({
+    role_requirements: ['SDK development'],
+    experience: {
+      employer: 'Parable',
+      accomplishments: [
+        {
+          id: 'acc-sdk',
+          topic: 'client SDK development',
+          text: 'Developed client SDKs across platforms, improved team velocity by 40%.',
+          evidence_supported: true,
+          evidence: [{ text: 'Built client SDK', count: 1, verified: true }],
+          unsupported_qualifiers: ['SDKs', 'platforms'],
+          metrics: [{ metric: 'improved team velocity by 40%', supported: false }],
+        },
+      ],
+    },
+  });
+
+  expect(result.bullets[0].accomplishment_id).toBe('acc-sdk');
+  expect(result.bullets[0].text).not.toMatch(/improved team velocity by \d+%/);
+  expect(result.bullets[0].text).not.toMatch(/SDKs/);
+  expect(result.bullets[0].text).toMatch(/client SDK/);
 });

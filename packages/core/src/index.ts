@@ -34,6 +34,7 @@ export * from './jobs/preparation.js';
 export * from './jobs/template.js';
 export * from './corpus/schemas.js';
 export * from './corpus/knowledge.js';
+export * from './corpus/clarifications.js';
 
 export * from './jobs/proposal-review.js';
 
@@ -56,4 +57,9 @@ export * from './jobs/semantic-transport.js';
 export * from './jobs/fact-review.js';
 
 export * from './jobs/automatic-preparation.js';
+export * from './jobs/synthesis.js';
+export * from './jobs/career-layout.js';
+export * from './jobs/selective-corrections.js';
+export * from './jobs/restoration.js';
+export * from './tailoring/operations.js';
 export * from './jobs/preparation-batch.js';
