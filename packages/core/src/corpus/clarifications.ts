@@ -7,12 +7,41 @@ export function activeCorpusUpdates(snapshot: CorpusSnapshot): CorpusUpdate[] {
   return snapshot.updates.filter(u => !inactive.has(u.id) && u.change.kind !== 'withdrawal');
 }
 
+export function employmentId(employer: string, period?: string): string {
+  const normEmployer = employer.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!period?.trim()) return normEmployer;
+  const normPeriod = period.trim().toLowerCase().replace(/\s+/g, ' ');
+  return `${normEmployer}:${normPeriod}`;
+}
+
 /** Exact work + predicate + qualifiers and immutable evidence bindings. Never reuse style as fact. */
 export function reusableClarifications(snapshot: CorpusSnapshot, facts: Fact[], sources: SemanticSource[]): Clarification[] {
   const active = activeCorpusUpdates(snapshot).filter(u => u.change.kind === 'clarification');
   return active.flatMap(u => {
     if (u.change.kind !== 'clarification') return [];
-    const { clarification: c, scope, sources: bindings } = u.change.value;
+    const { clarification: c, scope, sources: bindings, support_basis } = u.change.value;
+
+    if (support_basis === 'human_confirmation') {
+      const matches = facts.some(f => {
+        if (!f.predicate || f.predicate !== c.fact.predicate) return false;
+        if (scope.kind === 'employer') {
+          const scopeKeyNorm = scope.key.trim().toLowerCase();
+          const targetKeyNorm = f.work_id.trim().toLowerCase();
+          return targetKeyNorm === scopeKeyNorm
+            || targetKeyNorm.startsWith(`${scopeKeyNorm}:`)
+            || scopeKeyNorm.startsWith(`${targetKeyNorm}:`)
+            || targetKeyNorm.split(':')[0] === scopeKeyNorm.split(':')[0];
+        }
+        return scope.key === f.work_id;
+      });
+      if (!matches || c.confirmed !== true) return [];
+      if (active.some(other => other.id !== u.id && other.change.kind === 'clarification'
+        && other.change.value.clarification.fact.predicate === c.fact.predicate
+        && (other.change.value.scope.key === scope.key || other.change.value.clarification.fact.work_id === c.fact.work_id)
+        && other.change.value.clarification.assertion !== c.assertion)) return [];
+      return [{ ...c, support_basis: 'human_confirmation' as const }];
+    }
+
     if (scope.key !== c.fact.work_id || !facts.some(f => sameFact(f, c.fact)) || c.confirmed !== true) return [];
     if (active.some(other => other.id !== u.id && other.change.kind === 'clarification'
       && sameFact(other.change.value.clarification.fact, c.fact) && other.change.value.clarification.assertion !== c.assertion)) return [];

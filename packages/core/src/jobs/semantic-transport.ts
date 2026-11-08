@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DraftResumeSpecSchema } from './draft-content.js';
 import { FactSchema, SourceQuoteSchema, type ClaimResult, type Clarification, type SemanticPassage, type SemanticSource } from './semantic-evidence.js';
+import { HumanProvenanceSchema } from '../corpus/schemas.js';
 import type { ProposalIssue } from './proposal-review.js';
 const key = z.string().min(1), revision = z.number().int().nonnegative();
 export const SemanticTargetSchema = z.discriminatedUnion('kind', [
@@ -12,18 +13,27 @@ export const StartSemanticCheckSchema = z.object({ expected_job_revision: revisi
 export const SaveFactClarificationSchema = z.object({ target: SemanticTargetSchema,
   expected_job_revision: revision, expected_semantic_revision: revision, input_fingerprint: key, idempotency_key: key,
   claim_ids: z.array(key).min(1), fact: FactSchema, assertion: key, kind: z.enum(['confirmation', 'correction']),
-  corrected_assertion: key.optional(), effective_date: key.optional(), source_ids: z.array(key), supersedes: z.string().uuid().nullable().default(null),
+  corrected_assertion: key.optional(), effective_date: key.optional(), source_ids: z.array(key).default([]), supersedes: z.string().uuid().nullable().default(null),
   supporting_quotes: z.array(SourceQuoteSchema).optional(),
   confirmed: z.boolean().optional(),
-  reuse: z.enum(['job', 'project']).optional(),
+  reuse: z.enum(['job', 'project', 'employer']).optional(),
   expected_corpus_revision: revision.optional(),
   supersedes_shared: z.string().uuid().optional(),
+  support_basis: z.enum(['captured_evidence', 'human_confirmation', 'both']).optional(),
+  human_provenance: HumanProvenanceSchema.optional(),
+  employment_id: key.optional(),
+  employment: z.object({ employer: z.string(), period: z.string().optional() }).optional(),
 }).strict();
 export type SemanticTarget = z.infer<typeof SemanticTargetSchema>;
 export type StartSemanticCheck = z.infer<typeof StartSemanticCheckSchema>;
 export type SaveFactClarification = z.infer<typeof SaveFactClarificationSchema>;
-export interface JobFact extends ClaimResult { resolution: { provenance: 'model' | 'human'; explanation: string } | null;
-  passage: SemanticPassage; }
+export interface JobFact extends ClaimResult {
+  resolution: { provenance: 'model' | 'human'; explanation: string } | null;
+  passage: SemanticPassage;
+  status?: string;
+  support_label?: string;
+  support_basis?: 'captured_evidence' | 'human_confirmation' | 'both';
+}
 
 export const SemanticBatchFailureSchema = z.object({
   batch_index: z.number().int().nonnegative().optional(),

@@ -5,6 +5,7 @@ import { JobsRepository, RepositoryError } from '../jobs/repository.js';
 const stable = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
 export function semanticCorpusChange(change: C.CorpusChange): string {
   if (change.kind === 'withdrawal') return stable(change);
+  if (change.kind === 'clarification' || change.kind === 'writing_preference') return stable(change);
   const { explanation: _explanation, ...value } = change.value;
   if (change.kind === 'evidence_amendment') return stable({ kind: change.kind, value });
   const support = change.value;
@@ -14,6 +15,18 @@ export function semanticCorpusChange(change: C.CorpusChange): string {
     sources: support.sources.map(({ source_status: _status, ...s }) => s).sort((a,b) => stable(a).localeCompare(stable(b))) });
 }
 function contradicts(a: C.CorpusChange, b: C.CorpusChange): boolean {
+  if (a.kind === 'clarification' && b.kind === 'clarification') {
+    const aVal = a.value, bVal = b.value;
+    if (aVal.support_basis === 'human_confirmation' && bVal.support_basis === 'human_confirmation') {
+      const scopeMatches = aVal.scope.kind === bVal.scope.kind && aVal.scope.key.toLowerCase() === bVal.scope.key.toLowerCase();
+      const predicateMatches = aVal.clarification.fact.predicate === bVal.clarification.fact.predicate;
+      if (scopeMatches && predicateMatches) {
+        return aVal.clarification.assertion !== bVal.clarification.assertion;
+      }
+    }
+    return C.sameFact(aVal.clarification.fact, bVal.clarification.fact)
+      && aVal.clarification.assertion !== bVal.clarification.assertion;
+  }
   if (a.kind === 'evidence_amendment' && b.kind === a.kind) return a.value.evidence_id === b.value.evidence_id;
   if (a.kind !== 'skill_support' || b.kind !== 'skill_support') return false;
   return a.value.skill.toLowerCase() === b.value.skill.toLowerCase() && a.value.facet.toLowerCase() === b.value.facet.toLowerCase()
@@ -68,6 +81,17 @@ export class CorpusRepository {
       const inactive = new Set(snapshot.updates.flatMap(u => [...(u.supersedes ? [u.supersedes] : []), ...(u.change.kind === 'withdrawal' ? [u.change.update_id] : [])]));
       const active = snapshot.updates.filter(u => !inactive.has(u.id) && u.change.kind !== 'withdrawal');
       if (supersedes && !active.some(u => u.id === supersedes)) throw new RepositoryError('invalid_relationship', 'Supersession target is not active');
+      if (supersedes && change.kind === 'clarification') {
+        const previous = active.find(u => u.id === supersedes)!;
+        if (previous.change.kind !== 'clarification') throw new RepositoryError('invalid_relationship', 'Shared fact replacement requires an explicit correction of the same work and claim.');
+        const prevClar = previous.change.value.clarification;
+        const nextClar = change.value.clarification;
+        const isHumanConf = prevClar.support_basis === 'human_confirmation' || nextClar.support_basis === 'human_confirmation';
+        const sameTarget = isHumanConf
+          ? previous.change.value.scope.key.toLowerCase() === change.value.scope.key.toLowerCase() && prevClar.fact.predicate === nextClar.fact.predicate
+          : C.sameFact(prevClar.fact, nextClar.fact);
+        if (!sameTarget || nextClar.kind !== 'correction') throw new RepositoryError('invalid_relationship', 'Shared fact replacement requires an explicit correction of the same work and claim.');
+      }
       if (change.kind === 'withdrawal' && !active.some(u => u.id === (change as Extract<C.CorpusChange, {kind: 'withdrawal'}>).update_id)) throw new RepositoryError('invalid_relationship', 'Withdrawal target is not active');
       this.saveFeedback(feedback);
       const equivalent = active.find(u => semanticCorpusChange(u.change) === semanticCorpusChange(change));

@@ -48,8 +48,31 @@ export function validClaimBinding(result: ClaimResult, passage: SemanticPassage,
 }
 export function matchingClarification(result: ClaimResult, clarifications: Clarification[]): Clarification | undefined {
   const superseded = new Set(clarifications.flatMap(c => c.supersedes ? [c.supersedes] : []));
-  return clarifications.find(c => c.confirmed !== false && !superseded.has(c.id) && sameFact(c.fact, result.claim.fact)
-    && (result.state !== 'contradicted' || (c.kind === 'correction' && !!c.corrected_assertion
-      && result.evidence.every(q => c.source_ids.includes(q.evidence_id))
-      && result.evidence.some(q => q.quote.includes(c.corrected_assertion!)) )));
+  return clarifications.find(c => {
+    if (c.confirmed === false || superseded.has(c.id)) return false;
+    if (c.support_basis === 'human_confirmation') {
+      if (c.fact.predicate !== result.claim.fact.predicate) return false;
+      const cWorkNorm = c.fact.work_id.trim().toLowerCase();
+      const rWorkNorm = result.claim.fact.work_id.trim().toLowerCase();
+      const workMatches = cWorkNorm === rWorkNorm
+        || cWorkNorm.startsWith(`${rWorkNorm}:`)
+        || rWorkNorm.startsWith(`${cWorkNorm}:`)
+        || cWorkNorm.split(':')[0] === rWorkNorm.split(':')[0];
+      if (!workMatches) return false;
+      if (c.assertion.trim().toLowerCase() === result.claim.text.trim().toLowerCase()
+        || result.claim.text.toLowerCase().includes(c.assertion.trim().toLowerCase())
+        || c.assertion.toLowerCase().includes(result.claim.text.trim().toLowerCase())) {
+        return true;
+      }
+      if (c.confirmed_claims && c.confirmed_claims.includes(result.claim.text)) {
+        return true;
+      }
+      return false;
+    }
+    return sameFact(c.fact, result.claim.fact)
+      && (!c.confirmed_claims || c.confirmed_claims.includes(result.claim.text))
+      && (result.state !== 'contradicted' || (c.kind === 'correction' && !!c.corrected_assertion
+        && result.evidence.every(q => c.source_ids.includes(q.evidence_id))
+        && result.evidence.some(q => q.quote.includes(c.corrected_assertion!))));
+  });
 }

@@ -15,6 +15,7 @@ import { CorpusRepository } from '../src/corpus/repository.js';
 import { createJobsRuntime } from '../src/jobs/runtime.js';
 import { fingerprint } from '../src/jobs/files.js';
 import { getLatexTemplate } from '../src/jobs/templates.js';
+import { JobSemanticService } from '../src/jobs/semantic-service.js';
 const cleanups: (() => Promise<void>)[] = [];
 afterEach(async () => { for (const fn of cleanups.splice(0)) await fn(); });
 
@@ -367,5 +368,88 @@ it('bounds work and returns pagination cursor when duration budget is exceeded',
   const resumedExact = await affectedClarificationDrafts(fixture.runtime, { cursor: fixture.affectedJobId, maxDurationMs: 5000 });
   expect(resumedExact.jobs).toHaveLength(1);
   expect(resumedExact.jobs[0].job_id).toBe(fixture.affectedJobId);
+});
+
+it('allows confirming formal title without ledger quotation and reuses it for the same employment in another job', async () => {
+  const root = fs.mkdtempSync(path.join(tmpdir(), 'clarification-reuse-'));
+  const time = '2026-11-08T12:00:00.000Z';
+  const db = openJobsDatabase(root);
+  const fixtureRepo = new JobsRepository(db, { now: () => time });
+  const artifacts = new JobArtifactsService(fixtureRepo, { now: () => time });
+  const drafts = new JobDraftRepository(fixtureRepo);
+  cleanups.push(async () => {
+    if (db.db.open) db.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  const mockRunner = {
+    id: 'fake' as const,
+    model: 'fixture',
+    label: 'Fixture',
+    locality: 'local' as const,
+    detect: async () => ({ available: true, detail: '' }),
+    run: vi.fn(async () => ({ passages: [] })),
+  };
+
+  const specKong: C.ResumeSpec = {
+    profile: { name: 'Test', title: 'Senior Software Engineer', email: 'test@example.com' },
+    experiences: [{
+      company: 'Kong',
+      role: 'Senior Software Engineer',
+      startDate: '2021',
+      endDate: '2024',
+      bullets: [{ text: 'Built gateway plugin architecture.', citations: [] }],
+    }],
+    education: [],
+    skills: [],
+  };
+
+  const job1Id = randomUUID();
+  const job1: C.Job = {
+    schema_version: 1, id: job1Id, workspace_id: db.workspaceId, revision: 0, kind: 'job',
+    original_url: null, canonical_url: null, employer_id: null, external_job_id: null, company: 'Kong', role: 'Senior Software Engineer',
+    parent_discovery_id: null, posting_snapshot_id: null, preparation_state: 'saved', application_lifecycle: 'not_started',
+    preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null,
+    current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null,
+    created_at: time, updated_at: time,
+  };
+  fixtureRepo.createJob(job1, 'create:job-1');
+  const posting1 = fixtureRepo.savePostingSnapshot({ schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, job_id: job1Id, source_kind: 'text', original_url: null, final_url: null, retrieved_at: null, captured_at: time, text: 'Senior Software Engineer at Kong', content_fingerprint: fingerprint('Senior Software Engineer at Kong') });
+  const input1 = artifacts.captureInputs({ job_id: job1Id, posting_id: posting1.id, base_resume: yaml.dump(specKong), selected_evidence: [], privacy_rules: {}, template: getLatexTemplate('default'), runner_configuration: { runner: 'test', model: 'fixture' }, policy: { schema_version: 1 as const, mode: 'manual' as const, output_format: 'latex' as const, page_budget: 1, max_model_calls: 1, timeout_ms: 1000, max_repair_attempts: 0, model_retry_count: 0 } });
+  drafts.create({ schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, job_id: job1Id, revision: 0, input_snapshot_id: input1.id, parent_artifact_version_id: null, candidate: specKong, proposals: { proposals: [] }, created_at: time, updated_at: time });
+
+  const job2Id = randomUUID();
+  const job2: C.Job = {
+    schema_version: 1, id: job2Id, workspace_id: db.workspaceId, revision: 0, kind: 'job',
+    original_url: null, canonical_url: null, employer_id: null, external_job_id: null, company: 'Another Employer', role: 'Staff Engineer',
+    parent_discovery_id: null, posting_snapshot_id: null, preparation_state: 'saved', application_lifecycle: 'not_started',
+    preparation_stage: null, base_resume_id: null, template_id: null, runner: null, policy_fingerprint: null,
+    current_attempt_id: null, artifact_version_ids: [], missing_inputs: [], confirmation_provenance: [], state_reason: null,
+    created_at: time, updated_at: time,
+  };
+  fixtureRepo.createJob(job2, 'create:job-2');
+  const posting2 = fixtureRepo.savePostingSnapshot({ schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, job_id: job2Id, source_kind: 'text', original_url: null, final_url: null, retrieved_at: null, captured_at: time, text: 'Staff Engineer', content_fingerprint: fingerprint('Staff Engineer') });
+  const input2 = artifacts.captureInputs({ job_id: job2Id, posting_id: posting2.id, base_resume: yaml.dump(specKong), selected_evidence: [], privacy_rules: {}, template: getLatexTemplate('default'), runner_configuration: { runner: 'test', model: 'fixture' }, policy: { schema_version: 1 as const, mode: 'manual' as const, output_format: 'latex' as const, page_budget: 1, max_model_calls: 1, timeout_ms: 1000, max_repair_attempts: 0, model_retry_count: 0 } });
+  drafts.create({ schema_version: 1, id: randomUUID(), workspace_id: db.workspaceId, job_id: job2Id, revision: 0, input_snapshot_id: input2.id, parent_artifact_version_id: null, candidate: specKong, proposals: { proposals: [] }, created_at: time, updated_at: time });
+
+  const service = new JobSemanticService(fixtureRepo, mockRunner);
+
+  // 1. Confirm title at Kong with no ledger quotations
+  const answer = await service.saveHumanConfirmation({
+    job_id: job1Id,
+    employment: { employer: 'Kong', period: '2021 - 2024' },
+    question: 'Was Senior Software Engineer your formal title at Kong?',
+    confirmed_title: 'Senior Software Engineer',
+    scope: 'remember_for_employment',
+  });
+
+  expect(answer.support_basis).toBe('human_confirmation');
+  expect(answer.sources).toHaveLength(0);
+
+  // 2. Classify a second job with Kong employment
+  const secondJobResult = await service.resolveJobSupport(job2Id, { employer: 'Kong' });
+  const titleClaim = secondJobResult.passages.find(p => p.text.includes('Senior Software Engineer'));
+  expect(titleClaim?.status).toBe('supported');
+  expect(titleClaim?.support_label).toBe('Confirmed by you');
 });
 

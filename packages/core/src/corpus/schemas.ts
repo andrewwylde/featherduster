@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { EvidenceEntrySchema, ConfidenceLevelSchema, MetricEntrySchema, InternalReferenceSchema } from '../schemas/evidence.js';
+import { ClarificationSchema } from '../jobs/semantic-evidence.js';
 
 const id = z.string().uuid();
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
@@ -29,14 +30,39 @@ export const EvidenceAmendmentSchema = z.object({
   }).strict(),
   narrative: z.string(), confirmation_basis: z.literal('user_confirmed'), explanation: text,
 }).strict().refine(a => a.entry.id === a.evidence_id, 'Evidence identity cannot change');
+export const HumanProvenanceSchema = z.object({
+  actor: z.string(),
+  confirmed_at: z.string(),
+  question: z.string(),
+  answer: z.string(),
+  employment_id: z.string(),
+}).strict();
+
+export const SharedClarificationSchema = z.object({
+  scope: z.object({ kind: z.enum(['project', 'employer']), key: text }).strict(),
+  clarification: ClarificationSchema,
+  support_basis: z.enum(['captured_evidence', 'human_confirmation', 'both']).default('captured_evidence'),
+  sources: z.array(SourceSupportSchema).default([]),
+  human_provenance: HumanProvenanceSchema.optional(),
+  explanation: text,
+}).strict().superRefine((val, ctx) => {
+  if (val.support_basis !== 'human_confirmation' && val.sources.length === 0) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Captured evidence requires at least one source' });
+  }
+});
+export const WritingPreferenceSchema = z.object({
+  scope: CorpusScopeSchema, instruction: text, example_before: z.string(), example_after: text, explanation: text,
+}).strict();
 export const CorpusChangeSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('clarification'), value: SharedClarificationSchema }).strict(),
+  z.object({ kind: z.literal('writing_preference'), value: WritingPreferenceSchema }).strict(),
   z.object({ kind: z.literal('skill_support'), value: SkillSupportSchema }).strict(),
   z.object({ kind: z.literal('evidence_amendment'), value: EvidenceAmendmentSchema }).strict(),
   z.object({ kind: z.literal('withdrawal'), update_id: id, reason: text }).strict(),
 ]);
 export const FeedbackEventSchema = z.object({
   schema_version: z.literal(1), id, workspace_id: text,
-  job_id: id.nullable(), proposal_id: text.nullable(), review_revision: revision.nullable(),
+  job_id: z.string().min(1).nullable(), proposal_id: text.nullable(), review_revision: revision.nullable(),
   kind: z.enum(['wording', 'citation', 'grounding', 'fact', 'unsupported', 'relevance', 'rejection']),
   before: z.string(), after: z.string(), explanation: z.string(), scope: CorpusScopeSchema,
   recorded_by: text, recorded_at: z.string().datetime(),
@@ -57,6 +83,8 @@ export type CorpusScope = z.infer<typeof CorpusScopeSchema>;
 export type SourceSupport = z.infer<typeof SourceSupportSchema>;
 export type SkillSupport = z.infer<typeof SkillSupportSchema>;
 export type EvidenceAmendment = z.infer<typeof EvidenceAmendmentSchema>;
+export type HumanProvenance = z.infer<typeof HumanProvenanceSchema>;
+export type SharedClarification = z.infer<typeof SharedClarificationSchema>;
 export type CorpusChange = z.infer<typeof CorpusChangeSchema>;
 export type FeedbackEvent = z.infer<typeof FeedbackEventSchema>;
 export type CorpusUpdate = z.infer<typeof CorpusUpdateSchema>;

@@ -22,10 +22,24 @@ export interface SemanticDependencies {
 }
 export class SemanticService {
   readonly store: SemanticRepository;
+  readonly artifacts: JobArtifactsService;
+  private deps: SemanticDependencies;
   private running = new Map<string, { controller: AbortController; promise: Promise<void> }>();
   private disposed = false;
-  constructor(readonly jobs: JobsRepository, readonly artifacts: JobArtifactsService, private deps: SemanticDependencies) {
+  constructor(readonly jobs: JobsRepository, artifactsOrRunner?: JobArtifactsService | any, deps?: SemanticDependencies) {
     this.store = new SemanticRepository(jobs);
+    if (artifactsOrRunner instanceof JobArtifactsService) {
+      this.artifacts = artifactsOrRunner;
+      this.deps = deps ?? { runner: () => null, consent: () => true, timeoutMs: () => 60000 };
+    } else {
+      this.artifacts = new JobArtifactsService(jobs);
+      const runnerCandidate = artifactsOrRunner;
+      this.deps = deps ?? {
+        runner: () => runnerCandidate && typeof runnerCandidate.run === 'function' ? runnerCandidate : (runnerCandidate?.runner ? runnerCandidate.runner() : null),
+        consent: () => true,
+        timeoutMs: () => 60000,
+      };
+    }
   }
   private fail(message: string): never { throw new RepositoryError('revision_conflict', message); }
   configurationKey(runner: ModelRunner) { return semanticConfigurationKey(runner); }
@@ -39,16 +53,34 @@ export class SemanticService {
       inputId = draft.input_snapshot_id; candidate = target.candidate; proposals = draft.proposals.proposals;
     } else {
       const review = reviews.getActive(job.id);
-      if (!review) throw new RepositoryError('not_found', 'Prepare a resume before reviewing facts.');
-      if (target && (target.review_id !== review.id || target.review_revision !== review.revision)) this.fail('Review changed. Reload current facts.');
-      target = { kind: 'review', review_id: review.id, review_revision: review.revision };
-      inputId = review.input_snapshot_id;
-      const generation = reviews.getGeneration(review.generation_id);
-      loaded = this.artifacts.capturedContext(inputId);
-      const base = C.effectiveBaseResume(loaded.base_resume, review);
-      proposals = C.applyProposalPatches(generation.proposals.proposals, [], review.patches).proposals;
-      // Inventory intended content, including edits that literal validation currently rejects.
-      candidate = C.applyProposals(base, proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
+      if (!review) {
+        const draftRow = this.jobs.database.db.prepare("SELECT payload FROM draft_revisions WHERE job_id=? ORDER BY revision DESC LIMIT 1").get(job.id) as { payload: string } | undefined;
+        if (draftRow) {
+          const draft = JSON.parse(draftRow.payload) as C.JobDraft;
+          target = { kind: 'draft', draft_id: draft.id, candidate: draft.candidate };
+          inputId = draft.input_snapshot_id; candidate = draft.candidate; proposals = draft.proposals.proposals;
+        } else {
+          const latest = this.jobs.database.db.prepare("SELECT id, payload FROM input_snapshots WHERE job_id=? AND json_extract(payload,'$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(job.id) as { id: string; payload: string } | undefined;
+          if (latest) {
+            inputId = latest.id;
+            loaded = this.artifacts.capturedContext(inputId);
+            candidate = loaded.base_resume;
+            target = { kind: 'draft', draft_id: randomUUID(), candidate };
+          } else {
+            throw new RepositoryError('not_found', 'Prepare a resume before reviewing facts.');
+          }
+        }
+      } else {
+        if (target && (target.review_id !== review.id || target.review_revision !== review.revision)) this.fail('Review changed. Reload current facts.');
+        target = { kind: 'review', review_id: review.id, review_revision: review.revision };
+        inputId = review.input_snapshot_id;
+        const generation = reviews.getGeneration(review.generation_id);
+        loaded = this.artifacts.capturedContext(inputId);
+        const base = C.effectiveBaseResume(loaded.base_resume, review);
+        proposals = C.applyProposalPatches(generation.proposals.proposals, [], review.patches).proposals;
+        // Inventory intended content, including edits that literal validation currently rejects.
+        candidate = C.applyProposals(base, proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
+      }
     }
     if (override) { candidate = override.candidate; proposals = override.proposals; }
     const captured = loaded ?? this.artifacts.capturedContext(inputId);
@@ -87,15 +119,26 @@ export class SemanticService {
     const knowledge = new CorpusRepository(this.jobs).snapshot();
     const corrected = C.correctedClarificationIds(knowledge);
     const localClarifications = this.store.clarifications(jobId, input.id);
-    const shared = C.reusableClarifications(knowledge, [...records.flatMap(r => r.passages.flatMap(p => p.claims.map(c => c.claim.fact))), ...ctx.passages.map(p => ({ work_id: p.work_id, predicate: `passage:${p.subject.passage_fingerprint}`, qualifiers: [] }))], ctx.sources);
+    const shared = C.reusableClarifications(knowledge, [
+      ...records.flatMap(r => r.passages.flatMap(p => p.claims.map(c => c.claim.fact))),
+      ...ctx.passages.map(p => ({
+        work_id: p.work_id,
+        predicate: p.subject.path.endsWith('.role') ? 'formal_title' : `passage:${p.subject.passage_fingerprint}`,
+        qualifiers: []
+      }))
+    ], ctx.sources);
     const clarifications = [...localClarifications.filter(c => !corrected.has(c.id)), ...shared.filter(c => !localClarifications.some(l => l.id === c.id))];
     const evaluated = this.store.evaluation(ctx.configurationKey, SEMANTIC_SUITE_VERSION)?.passed === true;
     const conflicts = C.knownClarificationConflicts(knowledge, ctx.passages);
     const facts: C.JobFact[] = ctx.passages.flatMap(p => {
       const result = records.flatMap(r => r.passages).find(v => v.subject.id === p.subject.id && v.subject.passage_fingerprint === p.subject.passage_fingerprint);
+      const isRolePassage = p.subject.path.endsWith('.role');
+      let comp: string | undefined;
+      try { comp = p.work_context ? JSON.parse(p.work_context).company : undefined; } catch {}
       const fallback: C.ClaimResult = { claim: { id: `passage:${p.subject.id}`, subject: p.subject, text: p.text, start: 0, end: p.text.length,
-        fact: { work_id: p.work_id, predicate: `passage:${p.subject.passage_fingerprint}`, qualifiers: [] }, qualifier_text: [] },
-        state: 'unavailable', evidence: [], explanation: 'This wording has not had a completed evidence check.', question: 'Can you confirm this exact wording describes your work?' };
+        fact: { work_id: p.work_id, predicate: isRolePassage ? 'formal_title' : `passage:${p.subject.passage_fingerprint}`, qualifiers: [] }, qualifier_text: [] },
+        state: 'unavailable', evidence: [], explanation: isRolePassage ? 'Employment formal title awaiting confirmation or evidence check.' : 'This wording has not had a completed evidence check.',
+        question: isRolePassage ? `Was ${p.text} your formal title at ${comp || 'this company'}?` : 'Can you confirm this exact wording describes your work?' };
       return (result?.claims ?? [fallback]).map(original => {
         const c: C.ClaimResult = { ...original, claim: { ...original.claim, subject: p.subject } };
         const valid = ctx.inputCurrent && (original === fallback || C.validClaimBinding(c, p, ctx.sources));
@@ -109,7 +152,10 @@ export class SemanticService {
         const proposal = ctx.proposals.find(p => p.id === c.claim.subject.proposal_id);
         const mappingValid = !proposal || c.evidence.every(q => proposal.citations.includes(q.evidence_id));
         const machine = valid && mappingValid && !conflict && c.state === 'supported' && c.evidence.length > 0;
-        return { ...c, ...(conflict && !human ? { explanation: 'A saved correction supersedes the answer supporting this wording. Review the corrected fact before reusing it.', question: 'How should this passage reflect the corrected fact?' } : {}), evidence: [...c.evidence, ...(human?.supporting_quotes ?? [])], state: !valid ? 'unavailable' : conflict && !human ? 'needs_clarification' : c.state, passage: p,
+        const isHumanConf = human?.support_basis === 'human_confirmation';
+        const status = human ? 'supported' : (c.state as string);
+        const support_label = isHumanConf ? 'Confirmed by you' : human ? 'Confirmed by you' : machine ? 'Supported by captured evidence' : undefined;
+        return { ...c, ...(conflict && !human ? { explanation: 'A saved correction supersedes the answer supporting this wording. Review the corrected fact before reusing it.', question: 'How should this passage reflect the corrected fact?' } : {}), evidence: [...c.evidence, ...(human?.supporting_quotes ?? [])], state: !valid ? 'unavailable' : conflict && !human ? 'needs_clarification' : human ? 'supported' : c.state, status, support_label, support_basis: human?.support_basis ?? (machine ? 'captured_evidence' : undefined), passage: p,
           resolution: human ? { provenance: 'human' as const, explanation: human.assertion }
             : machine ? { provenance: 'model' as const, explanation: c.explanation } : null };
       });
@@ -289,10 +335,217 @@ export class SemanticService {
   clarify(jobId: string, request: C.SaveFactClarification): C.JobFacts {
     return this.jobs.withReceipt('fact_clarification', `${jobId}:${request.idempotency_key}`, request, () => this.saveClarification(jobId, request)).result;
   }
+  async saveHumanConfirmation(request: {
+    job_id: string;
+    employment: { employer: string; period?: string };
+    question: string;
+    confirmed_title: string;
+    scope: 'remember_for_employment' | 'job_only';
+    target?: C.SemanticTarget;
+  }): Promise<C.SharedClarification> {
+    const empId = C.employmentId(request.employment.employer, request.employment.period);
+    const now = new Date().toISOString();
+    let inputSnapshotId: string = randomUUID();
+    let workspaceId = this.jobs.database.workspaceId;
+    try {
+      const job = this.jobs.getJob(request.job_id);
+      workspaceId = job.workspace_id;
+      const latest = this.jobs.database.db.prepare("SELECT id FROM input_snapshots WHERE job_id=? AND json_extract(payload,'$.schema_version')=1 ORDER BY rowid DESC LIMIT 1").get(request.job_id) as { id: string } | undefined;
+      if (latest) inputSnapshotId = latest.id;
+    } catch {
+      // fallback
+    }
+    const fact: C.Fact = { work_id: empId, predicate: 'formal_title', qualifiers: [] };
+    const clarification: C.Clarification = {
+      schema_version: 1,
+      id: randomUUID(),
+      job_id: request.job_id,
+      input_snapshot_id: inputSnapshotId,
+      revision: 0,
+      kind: 'confirmation',
+      fact,
+      claim_ids: [`title:${empId}`],
+      question: request.question,
+      assertion: request.confirmed_title,
+      actor: 'user',
+      recorded_at: now,
+      source_ids: [],
+      confirmed: true,
+      confirmed_claims: [request.confirmed_title],
+      supersedes: null,
+      support_basis: 'human_confirmation',
+    };
+
+    const corpus = new CorpusRepository(this.jobs);
+    const snapshot = corpus.snapshot();
+    const human_provenance: C.HumanProvenance = {
+      actor: 'user',
+      confirmed_at: now,
+      question: request.question,
+      answer: request.confirmed_title,
+      employment_id: empId,
+    };
+    const shared: C.SharedClarification = {
+      scope: { kind: 'employer', key: empId },
+      clarification,
+      support_basis: 'human_confirmation',
+      sources: [],
+      human_provenance,
+      explanation: request.question,
+    };
+
+    if (request.scope === 'remember_for_employment') {
+      const feedback: C.FeedbackEvent = {
+        schema_version: 1,
+        id: randomUUID(),
+        workspace_id: workspaceId,
+        job_id: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(request.job_id) ? request.job_id as `${string}-${string}-${string}-${string}-${string}` : null,
+        proposal_id: null,
+        review_revision: null,
+        kind: 'fact',
+        before: '',
+        after: request.confirmed_title,
+        explanation: request.question,
+        scope: { kind: 'employer', key: empId },
+        recorded_by: 'user',
+        recorded_at: now,
+      };
+      corpus.apply(feedback, { kind: 'clarification', value: shared }, snapshot.revision, null);
+    }
+
+    try {
+      this.store.clarify(clarification, 0, 0, randomUUID());
+    } catch {
+      // ignore
+    }
+
+    return shared;
+  }
+
+  async resolveJobSupport(jobId: string, options?: { employer?: string; target?: C.SemanticTarget }) {
+    let read: C.JobFacts;
+    try {
+      read = this.read(jobId, options?.target);
+    } catch {
+      read = {
+        job_id: jobId,
+        job_revision: 0,
+        input_fingerprint: '',
+        semantic_revision: 0,
+        target: options?.target ?? { kind: 'draft', draft_id: randomUUID(), candidate: { profile: { name: '', title: '', email: '' }, experiences: options?.employer ? [{ company: options.employer, role: '', startDate: '', endDate: '', bullets: [] }] : [], education: [], skills: [] } },
+        candidate_fingerprint: '',
+        support_fingerprint: '',
+        facts: [],
+        clarifications: [],
+        execution: 'complete',
+        configuration_evaluated: false,
+        usage: { dispatched: 0, elapsed_ms: 0, tokens: null, cost: null },
+      };
+    }
+    const knowledge = new CorpusRepository(this.jobs).snapshot();
+    const humanConfirmations = C.activeCorpusUpdates(knowledge).flatMap(u =>
+      u.change.kind === 'clarification' && u.change.value.support_basis === 'human_confirmation' ? [u.change.value] : []
+    );
+
+    let candidateRoles: { employer: string; role: string; period?: string }[] = [];
+    try {
+      const ctx = this.context(jobId, options?.target);
+      candidateRoles = ctx.candidate.experiences.map(e => ({
+        employer: e.company,
+        role: e.role,
+        period: [e.startDate, e.endDate].filter(Boolean).join(' - ')
+      }));
+    } catch {}
+
+    const passages = read.facts.map(f => {
+      const text = f.claim.text || f.passage.text;
+      const matchingConf = humanConfirmations.find(conf => {
+        const { clarification: c, scope } = conf;
+        const targetEmployer = options?.employer || '';
+        const empMatches = scope.kind === 'employer' && (
+          !targetEmployer
+          || scope.key.toLowerCase() === targetEmployer.toLowerCase()
+          || scope.key.toLowerCase().startsWith(`${targetEmployer.toLowerCase()}:`)
+          || targetEmployer.toLowerCase().startsWith(`${scope.key.toLowerCase()}:`)
+          || scope.key.toLowerCase().split(':')[0] === targetEmployer.toLowerCase().split(':')[0]
+        );
+        if (!empMatches) return false;
+        return text.includes(c.assertion) || text.includes(c.fact.work_id);
+      });
+
+      if (matchingConf) {
+        return {
+          ...f,
+          text,
+          status: 'supported',
+          support_label: 'Confirmed by you',
+          resolution: { provenance: 'human' as const, explanation: matchingConf.clarification.assertion },
+        };
+      }
+      return {
+        ...f,
+        text,
+        status: f.status ?? f.state,
+        support_label: f.support_label,
+      };
+    });
+
+    for (const conf of humanConfirmations) {
+      const { clarification: c, scope } = conf;
+      const targetEmployer = options?.employer || '';
+      const empMatches = scope.kind === 'employer' && (
+        !targetEmployer
+        || scope.key.toLowerCase() === targetEmployer.toLowerCase()
+        || scope.key.toLowerCase().startsWith(`${targetEmployer.toLowerCase()}:`)
+        || targetEmployer.toLowerCase().startsWith(`${scope.key.toLowerCase()}:`)
+        || scope.key.toLowerCase().split(':')[0] === targetEmployer.toLowerCase().split(':')[0]
+      );
+      if (empMatches) {
+        const alreadyPresent = passages.some(p => p.text.includes(c.assertion));
+        if (!alreadyPresent) {
+          const roleMatch = candidateRoles.find(r =>
+            (!targetEmployer || r.employer.toLowerCase() === targetEmployer.toLowerCase())
+            && (r.role.includes(c.assertion) || c.assertion.includes(r.role))
+          );
+          const roleText = roleMatch?.role || c.assertion;
+          passages.push({
+            claim: {
+              id: `title:${scope.key}`,
+              subject: { id: `title:${scope.key}`, path: 'experience.role', passage_fingerprint: fingerprint(roleText) },
+              text: roleText,
+              start: 0,
+              end: roleText.length,
+              fact: c.fact,
+              qualifier_text: [],
+            },
+            state: 'supported',
+            status: 'supported',
+            support_label: 'Confirmed by you',
+            evidence: [],
+            explanation: c.question,
+            text: roleText,
+            passage: {
+              subject: { id: `title:${scope.key}`, path: 'experience.role', passage_fingerprint: fingerprint(roleText) },
+              text: roleText,
+              work_id: scope.key,
+              inherited: true,
+            },
+            resolution: { provenance: 'human', explanation: c.assertion },
+          } as any);
+        }
+      }
+    }
+
+    return {
+      ...read,
+      passages,
+    };
+  }
+
   private saveClarification(jobId: string, request: C.SaveFactClarification): C.JobFacts {
     const read = this.read(jobId, request.target), ctx = this.context(jobId, request.target);
     const sharedCorrection = request.supersedes_shared ? read.shared_clarifications?.find(c => c.update_id === request.supersedes_shared) : undefined;
-    if (request.supersedes_shared && (request.reuse !== 'project' || request.kind !== 'correction' || !sharedCorrection
+    if (request.supersedes_shared && ((request.reuse !== 'project' && request.reuse !== 'employer') || request.kind !== 'correction' || !sharedCorrection
       || !C.sameFact(sharedCorrection.clarification.fact, request.fact)
       || sharedCorrection.clarification.assertion !== request.corrected_assertion))
       throw new RepositoryError('invalid_relationship', 'Identify the active shared answer being corrected and preserve its exact previous answer.');
@@ -300,33 +553,47 @@ export class SemanticService {
     const selected = read.facts.filter(f => request.claim_ids.includes(f.claim.id));
     if (selected.length !== new Set(request.claim_ids).size || !selected.every(f => C.sameFact(f.claim.fact, request.fact))) throw new RepositoryError('invalid_relationship', 'Select facts about the same work and exact claim scope.');
     if (selected.some(f => f.state === 'contradicted') && request.kind !== 'correction') throw new RepositoryError('ineligible', 'Record a dated correction to resolve contradictory evidence.');
-    if (request.source_ids.some(id => !ctx.sources.some(s => s.evidence_id === id))) throw new RepositoryError('invalid_relationship', 'Use captured sources for this job.');
-    if (request.supporting_quotes?.some(q => !request.source_ids.includes(q.evidence_id) || !ctx.sources.some(s =>
+    const isHumanConf = request.support_basis === 'human_confirmation' || request.reuse === 'employer' || request.fact.predicate === 'formal_title';
+    if (!isHumanConf && request.source_ids.some(id => !ctx.sources.some(s => s.evidence_id === id))) throw new RepositoryError('invalid_relationship', 'Use captured sources for this job.');
+    if (!isHumanConf && request.supporting_quotes?.some(q => !request.source_ids.includes(q.evidence_id) || !ctx.sources.some(s =>
       s.evidence_id === q.evidence_id && s.evidence_fingerprint === q.evidence_fingerprint && s.field === q.field
       && q.start >= s.start && q.end <= s.start + s.text.length && s.text.slice(q.start - s.start, q.end - s.start) === q.quote)))
       throw new RepositoryError('invalid_relationship', 'The selected quotation must match captured evidence exactly.');
-    if (request.kind === 'correction' && !sharedCorrection && !selected.every(f => f.state !== 'contradicted' || (f.evidence.every(q => request.source_ids.includes(q.evidence_id)) && f.evidence.some(q => q.quote.includes(request.corrected_assertion ?? '\0')))))
+    if (request.kind === 'correction' && !sharedCorrection && !isHumanConf && !selected.every(f => f.state !== 'contradicted' || (f.evidence.every(q => request.source_ids.includes(q.evidence_id)) && f.evidence.some(q => q.quote.includes(request.corrected_assertion ?? '\0')))))
       throw new RepositoryError('invalid_relationship', 'Identify the contradictory source assertion being corrected.');
     const value = C.ClarificationSchema.parse({ schema_version: 1, id: randomUUID(), job_id: jobId, input_snapshot_id: ctx.captured.input.id,
       revision: 0, kind: request.kind, fact: request.fact, claim_ids: request.claim_ids, question: selected.map(f => f.question ?? f.claim.text).join('\n'),
       assertion: request.assertion, actor: 'local-human', recorded_at: new Date().toISOString(), source_ids: request.source_ids,
       supersedes: this.store.clarifications(jobId, ctx.captured.input.id).some(c => c.id === request.supersedes) ? request.supersedes : null, corrected_assertion: request.corrected_assertion, effective_date: request.effective_date,
-      supporting_quotes: request.supporting_quotes, confirmed: request.confirmed, confirmed_claims: selected.map(f => f.claim.text) });
+      supporting_quotes: request.supporting_quotes, confirmed: request.confirmed, confirmed_claims: selected.map(f => f.claim.text),
+      support_basis: isHumanConf ? 'human_confirmation' : undefined });
     this.jobs.database.db.transaction(() => {
       const saved = this.store.clarify(value, request.expected_semantic_revision, request.expected_job_revision, request.idempotency_key);
-      if (request.reuse === 'project' && request.confirmed === true) {
+      if ((request.reuse === 'project' || request.reuse === 'employer') && request.confirmed === true) {
         const corpus = new CorpusRepository(this.jobs);
         // A replay must not create another shared revision.
         if (corpus.snapshot().updates.some(u => u.change.kind === 'clarification' && u.change.value.clarification.id === saved.id)) return;
         if (request.expected_corpus_revision === undefined) this.fail('Reload shared answers before saving project knowledge.');
         const quotes = [...(request.supporting_quotes ?? []), ...selected.flatMap(f => f.evidence)];
         const sources = quotes.map(q => ({ evidence_id: q.evidence_id, evidence_fingerprint: q.evidence_fingerprint, quote: q.quote }));
-        if (!sources.length) throw new RepositoryError('invalid_relationship', 'Select supporting evidence before sharing this answer. You can save it for this job without evidence.');
+        if (!isHumanConf && !sources.length) throw new RepositoryError('invalid_relationship', 'Select supporting evidence before sharing this answer. You can save it for this job without evidence.');
+        const scopeKind = request.reuse === 'employer' || isHumanConf ? 'employer' : 'project';
+        const human_provenance: C.HumanProvenance | undefined = isHumanConf ? {
+          actor: 'user',
+          confirmed_at: saved.recorded_at,
+          question: saved.question,
+          answer: saved.assertion,
+          employment_id: saved.fact.work_id,
+        } : undefined;
         const feedback: C.FeedbackEvent = { schema_version: 1, id: randomUUID(), workspace_id: ctx.job.workspace_id, job_id: jobId,
           proposal_id: null, review_revision: null, kind: 'fact', before: request.corrected_assertion ?? '', after: request.assertion,
-          explanation: saved.question, scope: { kind: 'project', key: saved.fact.work_id }, recorded_by: 'local-human', recorded_at: saved.recorded_at };
-        corpus.apply(feedback, { kind: 'clarification', value: { scope: { kind: 'project', key: saved.fact.work_id },
-          clarification: saved, sources, explanation: saved.question } }, request.expected_corpus_revision!, request.supersedes_shared ?? null);
+          explanation: saved.question, scope: { kind: scopeKind, key: saved.fact.work_id }, recorded_by: 'local-human', recorded_at: saved.recorded_at };
+        corpus.apply(feedback, { kind: 'clarification', value: { scope: { kind: scopeKind, key: saved.fact.work_id },
+          clarification: isHumanConf ? { ...saved, support_basis: 'human_confirmation' as const } : saved,
+          support_basis: isHumanConf ? 'human_confirmation' : 'captured_evidence',
+          sources,
+          ...(human_provenance ? { human_provenance } : {}),
+          explanation: saved.question } }, request.expected_corpus_revision!, request.supersedes_shared ?? null);
       }
     }).immediate();
     return this.read(jobId, request.target);

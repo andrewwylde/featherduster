@@ -99,7 +99,8 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
   const totalResolved = data?.facts.filter(f => f.resolution).length ?? 0;
   const savedConfirmation = data?.clarifications.filter(c => c.confirmed && visibleFacts.some(f => f.resolution?.provenance === 'human' && sameFact(f.claim.fact, c.fact))).at(-1);
   const savedClaim = savedConfirmation && visibleFacts.find(f => f.resolution && sameFact(f.claim.fact, savedConfirmation.fact));
-  const persistedFeedback = savedClaim ? { error: false, text: `Saved and confirmed for this job: “${savedClaim.claim.text}”` } : undefined;
+  const isHumanConf = savedConfirmation?.support_basis === 'human_confirmation';
+  const persistedFeedback = savedClaim ? { error: false, text: isHumanConf ? 'Saved — confirmed by you for this employment' : `Saved and confirmed for this job: “${savedClaim.claim.text}”` } : undefined;
   const shownFeedback = saveFeedback ?? persistedFeedback;
   const feedback = shownFeedback && <p role={shownFeedback.error ? 'alert' : 'status'} className={`rounded border p-3 text-sm ${shownFeedback.error ? 'border-red-400 bg-red-50 dark:bg-red-950/30' : 'border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30'}`}>{shownFeedback.text}</p>;
   return <section aria-label="Facts to review" className={`${cardClass} p-4 space-y-3`}>
@@ -162,7 +163,7 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
           const resolved = group!.facts.filter(f => !f.resolution).every(saved => next.facts.some(f => f.claim.id === saved.claim.id && f.resolution));
           setSelected(next.facts.find(f => !f.resolution && (!passagePath || f.passage.subject.path === passagePath))?.claim.id);
           setSaveFeedback({ error: false, text: !confirmed ? 'Answer saved. This fact still needs confirmation or revised wording.' : resolved
-            ? `Saved and confirmed ${reuse === 'project' ? 'for this project' : 'for this job'}: “${fact.claim.text}”`
+            ? `Saved and confirmed ${reuse === 'employer' ? 'for this employment' : reuse === 'project' ? 'for this project' : 'for this job'}: “${fact.claim.text}”`
             : 'Answer saved, but this fact is still unresolved. Review the explanation and supporting evidence, or revise the wording.' });
           try {
             if (resolved || !confirmed) localStorage.removeItem(`fact-answer:${jobId}:${data.input_fingerprint}:${fact.passage.subject.id}:${fact.claim.id}`);
@@ -202,7 +203,15 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
       }}>Keep original wording</button>}
       {!!pendingGroups.length && <details><summary>Other facts ({pendingGroups.length})</summary><ul>{pendingGroups.map(g => <li key={g.id}><button className="text-left underline min-h-11" onClick={() => setSelected(g.id)}>{g.facts[0].claim.text}</button></li>)}</ul></details>}
       {!!resolvedCount && <details><summary>Resolved facts and supporting sources</summary>{visibleFacts.filter(f => f.resolution).map(f => <div key={f.claim.id} className="py-2">
-        <p>{f.claim.text}</p><p className="text-sm">{f.resolution?.provenance === 'human' ? 'Confirmed for this job' : 'Supported by captured evidence'}: {f.resolution?.explanation}</p>
+        <p>{f.claim.text}</p>
+        <div className="flex items-center gap-2">
+          {(f.support_label === 'Confirmed by you' || f.resolution?.provenance === 'human') && (
+            <span role="status" aria-label="Confirmed by you" className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+              Confirmed by you
+            </span>
+          )}
+          <p className="text-sm">{f.support_label ?? (f.resolution?.provenance === 'human' ? 'Confirmed by you' : 'Supported by captured evidence')}: {f.resolution?.explanation}</p>
+        </div>
         {f.evidence.map((q, i) => <blockquote key={i}>{sourceLabel(data.sources ?? [], q.evidence_id)}: {q.quote}</blockquote>)}
         {f.question && <p className="text-sm">Completed question: {f.question}</p>}
       </div>)}</details>}
@@ -213,14 +222,17 @@ export function JobFacts({ jobId, target, onResolved, onRevise, onKeepOriginal, 
     </>}
   </section>;
 }
-function FactEditor({ fact, related, sources, sharedAnswers, savedAnswer, recoveryKey, legacyRecoveryKey, disabled, inputsDisabled, feedback, checking, focusRequest, onSave }: { focusRequest: number; feedback?: import('react').ReactNode; checking: boolean; fact: JobFact; related: JobFact[]; sources: SemanticSource[]; sharedAnswers: NonNullable<Facts['shared_clarifications']>; savedAnswer?: string; recoveryKey: string; legacyRecoveryKey: string; disabled: boolean; inputsDisabled: boolean; onSave(assertion: string, date: string, correction: string, quotes: SourceQuote[], confirmed: boolean, reuse: 'job' | 'project', replaceShared: string): Promise<void> }) {
+function FactEditor({ fact, related, sources, sharedAnswers, savedAnswer, recoveryKey, legacyRecoveryKey, disabled, inputsDisabled, feedback, checking, focusRequest, onSave }: { focusRequest: number; feedback?: import('react').ReactNode; checking: boolean; fact: JobFact; related: JobFact[]; sources: SemanticSource[]; sharedAnswers: NonNullable<Facts['shared_clarifications']>; savedAnswer?: string; recoveryKey: string; legacyRecoveryKey: string; disabled: boolean; inputsDisabled: boolean; onSave(assertion: string, date: string, correction: string, quotes: SourceQuote[], confirmed: boolean, reuse: 'job' | 'project' | 'employer', replaceShared: string): Promise<void> }) {
+  const isTitleFact = fact.claim.fact.predicate === 'formal_title'
+    || fact.passage.subject.path.endsWith('.role')
+    || /formal title|title at/i.test(fact.question ?? '');
   const [restored] = useState(() => readFactAnswer(recoveryKey, legacyRecoveryKey, fact.claim.text));
   const retained = !!(restored.assertion?.trim() || savedAnswer?.trim());
   const [assertion, setAssertion] = useState<string>(restored.assertion ?? savedAnswer ?? ''), [date, setDate] = useState<string>(restored.date ?? ''), [correction, setCorrection] = useState<string>(restored.correction ?? '');
   const [sourceIndex, setSourceIndex] = useState(restored.sourceIndex ?? ''), [quote, setQuote] = useState(restored.quote ?? '');
-  const [reuse, setReuse] = useState<'job' | 'project'>(restored.reuse ?? (fact.evidence.length ? 'project' : 'job'));
+  const [reuse, setReuse] = useState<'job' | 'project' | 'employer'>((restored.reuse as 'job' | 'project' | 'employer') ?? (isTitleFact ? 'employer' : fact.evidence.length ? 'project' : 'job'));
   const [replaceShared, setReplaceShared] = useState<string>(sharedAnswers.some(c => c.update_id === restored.replaceShared) ? restored.replaceShared : '');
-  const validReplacement = reuse === 'project' && sharedAnswers.some(c => c.update_id === replaceShared) ? replaceShared : '';
+  const validReplacement = (reuse === 'project' || reuse === 'employer') && sharedAnswers.some(c => c.update_id === replaceShared) ? replaceShared : '';
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); if (focusRequest) heading.current?.scrollIntoView?.({ block: 'start' }); }, [focusRequest]);
   useEffect(() => { try { localStorage.setItem(recoveryKey, JSON.stringify({ assertion, date, correction, reuse, replaceShared, sourceIndex, quote, claimText: fact.claim.text })); } catch {} }, [recoveryKey, assertion, date, correction, reuse, replaceShared, sourceIndex, quote, fact.claim.text]);
@@ -246,8 +258,20 @@ function FactEditor({ fact, related, sources, sharedAnswers, savedAnswer, recove
       <label className="block">Captured source<SourcePicker label="Captured source" value={sourceIndex} disabled={inputsDisabled} onSelect={value => { setSourceIndex(value); setQuote(''); }} options={sources.map((s, i) => ({ id: String(i + 1), name: sourceLabel(sources, s.evidence_id), type: s.field }))} /></label>
       {source && <><blockquote>{source.text}</blockquote><label className="block">Exact supporting quotation<textarea className={inputClass} value={quote} disabled={inputsDisabled} onChange={e => setQuote(e.target.value)} /></label>{quote && start < 0 && <p role="alert">Copy an exact passage from this source.</p>}</>}
     </details>
-    <label className="block">Reuse this answer<select className={inputClass} value={reuse} onChange={e => setReuse(e.target.value as 'job' | 'project')} disabled={inputsDisabled}><option value="project">Matching work in this project</option><option value="job">This job only</option></select></label>
-    {reuse === 'project' && sharedAnswers.length > 0 && <label className="block">Correct an earlier answer about this claim (optional)<select className={inputClass} value={validReplacement} onChange={e => { setReplaceShared(e.target.value); setCorrection(sharedAnswers.find(c => c.update_id === e.target.value)?.clarification.assertion ?? ''); }} disabled={inputsDisabled}>
+    <label className="block">Reuse this answer<select className={inputClass} value={reuse} onChange={e => setReuse(e.target.value as 'job' | 'project' | 'employer')} disabled={inputsDisabled}>
+      {isTitleFact ? (
+        <>
+          <option value="employer">Remember for this employment</option>
+          <option value="job">This job only</option>
+        </>
+      ) : (
+        <>
+          <option value="project">Matching work in this project</option>
+          <option value="job">This job only</option>
+        </>
+      )}
+    </select></label>
+    {(reuse === 'project' || reuse === 'employer') && sharedAnswers.length > 0 && <label className="block">Correct an earlier answer about this claim (optional)<select className={inputClass} value={validReplacement} onChange={e => { setReplaceShared(e.target.value); setCorrection(sharedAnswers.find(c => c.update_id === e.target.value)?.clarification.assertion ?? ''); }} disabled={inputsDisabled}>
       <option value="">Keep existing shared answers</option>{sharedAnswers.map(c => <option key={c.update_id} value={c.update_id}>{c.clarification.assertion}</option>)}
     </select></label>}
     {(fact.state === 'contradicted' || validReplacement) && <>
@@ -259,7 +283,7 @@ function FactEditor({ fact, related, sources, sharedAnswers, savedAnswer, recove
       <button type="button" className={secondaryButton} disabled={disabled || !assertion.trim() || (fact.state === 'contradicted' && (!date || !correction.trim()))} onClick={() => { setReuse('job'); void onSave(assertion, date, correction, [], true, 'job', ''); }}>Confirm for this job instead</button>
     </div>}
     {feedback}
-    <button className={`${primaryButton} min-h-11`} disabled={disabled || needsSource || !assertion.trim() || (!!source && !quotes.length)}>{inputsDisabled ? 'Saving…' : checking ? 'Updating checks…' : retained ? reuse === 'project' ? 'Save existing answer for this project' : 'Save existing answer for this job' : reuse === 'project' ? 'Confirm and save for this project' : 'Confirm for this job and continue'}</button>
+    <button className={`${primaryButton} min-h-11`} disabled={disabled || needsSource || !assertion.trim() || (!!source && !quotes.length)}>{inputsDisabled ? 'Saving…' : checking ? 'Updating checks…' : retained ? reuse === 'employer' ? 'Save existing answer for this employment' : reuse === 'project' ? 'Save existing answer for this project' : 'Save existing answer for this job' : reuse === 'employer' ? 'Confirm and save for this employment' : reuse === 'project' ? 'Confirm and save for this project' : 'Confirm for this job and continue'}</button>
     {fact.state !== 'contradicted' && <button type="button" className={`${secondaryButton} min-h-11`} disabled={disabled || !assertion.trim()} onClick={() => void onSave(assertion, date, correction, quotes, false, 'job', '')}>Save answer, keep unresolved</button>}
   </form>;
 }

@@ -2,6 +2,7 @@ import { z } from 'zod';
 export const SEMANTIC_VERSION = '1';
 export const SEMANTIC_LIMITS = Object.freeze({ passages: 8, inputChars: 48000, outputChars: 16000, timeoutMs: 60000, automaticCalls: 4 });
 const text = z.string().trim().min(1);
+const exactAnswer = z.string().refine(value => value.trim().length > 0, 'Enter a factual answer.');
 export const FactSchema = z.object({ work_id: text, predicate: text, qualifiers: z.array(text) }).strict();
 export const SourceQuoteSchema = z.object({ evidence_id: text, evidence_fingerprint: text,
   field: z.enum(['title', 'summary', 'impact', 'narrative']), start: z.number().int().nonnegative(),
@@ -13,15 +14,18 @@ export const ClaimSchema = z.object({ id: text, subject: SubjectSchema, text,
   qualifier_text: z.array(text),
 }).strict().refine(c => c.end > c.start && c.end - c.start === c.text.length, 'Invalid claim span');
 export const ClarificationSchema = z.object({ schema_version: z.literal(1), id: z.string().uuid(),
-  job_id: z.string().uuid(), input_snapshot_id: z.string().uuid(), revision: z.number().int().nonnegative(),
+  job_id: z.string().min(1), input_snapshot_id: z.string().min(1), revision: z.number().int().nonnegative(),
   kind: z.enum(['confirmation', 'correction']), fact: FactSchema, claim_ids: z.array(text).min(1),
-  question: text, assertion: text, actor: text, recorded_at: z.string().datetime(), source_ids: z.array(text),
+  question: text, assertion: exactAnswer, actor: text, recorded_at: z.string().datetime(),
+  source_ids: z.array(text).default([]),
   supporting_quotes: z.array(SourceQuoteSchema).optional(),
   confirmed: z.boolean().optional(),
-  supersedes: z.string().uuid().nullable(), corrected_assertion: text.optional(),
+  confirmed_claims: z.array(text).optional(),
+  supersedes: z.string().uuid().nullable(), corrected_assertion: exactAnswer.optional(),
   effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  support_basis: z.enum(['captured_evidence', 'human_confirmation', 'both']).optional(),
 }).strict().superRefine((v, ctx) => {
-  if (v.kind === 'correction' && (!v.corrected_assertion || !v.effective_date || !v.source_ids.length))
+  if (v.kind === 'correction' && (!v.corrected_assertion || !v.effective_date || (v.support_basis !== 'human_confirmation' && !v.source_ids.length)))
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Identify the older source assertion and when it changed.' });
   if (v.effective_date) {
     const date = new Date(`${v.effective_date}T00:00:00.000Z`);

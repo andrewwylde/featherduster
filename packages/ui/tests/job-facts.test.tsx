@@ -324,3 +324,76 @@ it('does not dispatch redundant checks when execution is checking', async () => 
   fireEvent.click(checkBtn);
   expect(startCheck).not.toHaveBeenCalled();
 });
+
+it('offers Remember for this employment option for title questions and displays Confirmed by you badge and label', async () => {
+  const subject = { id: 'subject-title', path: 'experiences.0.role', passage_fingerprint: 'Senior Software Engineer' };
+  const titleView: Facts = {
+    job_id: 'job-1',
+    job_revision: 1,
+    input_fingerprint: 'input',
+    semantic_revision: 0,
+    target,
+    candidate_fingerprint: 'Senior Software Engineer',
+    support_fingerprint: 'Senior Software Engineer',
+    execution: 'complete',
+    configuration_evaluated: false,
+    clarifications: [],
+    usage: { dispatched: 0, elapsed_ms: 0, tokens: null, cost: null },
+    facts: [{
+      claim: {
+        id: 'title-claim',
+        subject,
+        text: 'Senior Software Engineer',
+        start: 0,
+        end: 'Senior Software Engineer'.length,
+        fact: { work_id: 'employer:kong', predicate: 'formal_title', qualifiers: [] },
+        qualifier_text: []
+      },
+      state: 'needs_clarification',
+      evidence: [],
+      explanation: 'Confirm your formal job title.',
+      question: 'Was Senior Software Engineer your formal title at Kong?',
+      passage: { subject, text: 'Senior Software Engineer', work_id: 'employer:kong', inherited: true },
+      resolution: null,
+    }],
+  };
+
+  vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(titleView);
+  const save = vi.spyOn(apiClient, 'saveJobFactClarification').mockResolvedValue({
+    ...titleView,
+    facts: [{
+      ...titleView.facts[0],
+      state: 'supported',
+      status: 'supported',
+      support_label: 'Confirmed by you',
+      resolution: { provenance: 'human', explanation: 'Senior Software Engineer' },
+    }],
+  });
+
+  render(<JobFacts jobId="job-1" />);
+
+  // 1. Verify "Remember for this employment" option is available in the select
+  expect(await screen.findByRole('heading', { name: 'Was Senior Software Engineer your formal title at Kong?' })).toBeVisible();
+  const reuseSelect = screen.getByLabelText('Reuse this answer') as HTMLSelectElement;
+  expect(reuseSelect).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Remember for this employment' })).toBeInTheDocument();
+  expect(reuseSelect.value).toBe('employer');
+
+  // 2. Submit confirmation with "Remember for this employment"
+  fireEvent.change(screen.getByLabelText('Your factual answer'), { target: { value: 'Senior Software Engineer' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm and save for this employment' }));
+
+  await waitFor(() => expect(save).toHaveBeenCalledOnce());
+  expect(save.mock.calls[0][1]).toMatchObject({
+    confirmed: true,
+    reuse: 'employer',
+    assertion: 'Senior Software Engineer',
+  });
+
+  // 3. Verify "Confirmed by you" badge and label appear for resolved fact
+  fireEvent.click(screen.getByText('Resolved facts and supporting sources'));
+  expect(screen.getByText('Confirmed by you: Senior Software Engineer')).toBeVisible();
+  const badge = screen.getByRole('status', { name: 'Confirmed by you' });
+  expect(badge).toBeInTheDocument();
+  expect(badge).toHaveTextContent('Confirmed by you');
+});
