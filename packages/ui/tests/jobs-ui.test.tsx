@@ -13,6 +13,7 @@ import { JobAnswers } from '../src/views/jobs/JobAnswers.js';
 import { WorkerControls } from '../src/views/jobs/WorkerControls.js';
 import { QueueVisualization } from '../src/views/jobs/QueueVisualization.js';
 import { JobResumeReview } from '../src/views/jobs/JobResumeReview.js';
+import { JobInputReview } from '../src/views/jobs/JobInputReview.js';
 import { jobsViewForPath, jobDraftForPath, tabForPath } from '../src/routing.js';
 import { useJobsData } from '../src/hooks/useJobsData.js';
 
@@ -797,3 +798,60 @@ it('keeps terminal history out of Needs work while retaining ready resumes and r
   for (const preparation_state of ['cancelled', 'skipped'] as const)
     expect(matchesJobFilter(job({ preparation_state }), 'Needs work')).toBe(false);
 });
+
+function renderJobInputReview(options: {
+  capturedInputs?: {
+    resume_id?: string;
+    resume_path?: string;
+    resume_fingerprint?: string;
+  };
+  currentSelection?: string | null;
+  resolvedDefaultId?: string;
+}) {
+  const resume = {
+    id: options.resolvedDefaultId ?? 'tailored/main:yaml',
+    name: 'Main Resume',
+    filePath: options.capturedInputs?.resume_path ?? 'resumes/tailored/main.yaml',
+    type: 'template' as const,
+    spec,
+  };
+  vi.spyOn(apiClient, 'getResumes').mockResolvedValue([resume]);
+
+  const testJob = job({
+    base_resume_id: options.currentSelection ?? null,
+  });
+
+  const testDetail: JobsDetail = {
+    job: testJob,
+    posting: { text: 'Some posting' } as any,
+    attempt: null,
+    artifacts: [],
+    events: [],
+    answers: [],
+    analysis: null,
+    alignment: null,
+    brief_markdown: null,
+    captured: options.capturedInputs as any,
+    capturedInputs: options.capturedInputs,
+    resolvedDefaultId: options.resolvedDefaultId,
+  } as any;
+
+  return render(<JobInputReview data={testDetail} navigate={vi.fn()} initialResumes={[resume]} />);
+}
+
+it('displays active captured resume fingerprint alongside next-run selection without false empty state', () => {
+  renderJobInputReview({
+    capturedInputs: {
+      resume_id: 'tailored/main:yaml',
+      resume_path: 'resumes/tailored/main.yaml',
+      resume_fingerprint: 'sha256:abc1234',
+    },
+    currentSelection: null, // null selector falling back to default
+    resolvedDefaultId: 'tailored/main:yaml',
+  });
+
+  expect(screen.getByTestId('captured-resume-label')).toHaveTextContent('resumes/tailored/main.yaml (Captured for current draft)');
+  expect(screen.getByTestId('next-selection-label')).toHaveTextContent('Default: resumes/tailored/main.yaml');
+  expect(screen.queryByText('Select a saved starting resume')).not.toBeInTheDocument();
+});
+

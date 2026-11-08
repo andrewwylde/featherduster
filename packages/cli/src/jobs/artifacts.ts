@@ -25,6 +25,10 @@ export interface CaptureInputsRequest {
   resume_id?: string;
   resume_path?: string;
   resume_fingerprint?: string;
+  resolved_resume_path?: string;
+  resolved_resume_fingerprint?: string;
+  page_budget?: number;
+  recorded_runner?: string;
 }
 const inputManifest = z.object({
   schema_version: z.literal(1), snapshot: C.InputSnapshotSchema.omit({ fingerprint: true }),
@@ -74,6 +78,10 @@ export class JobArtifactsService {
         const resolved = C.applyCorpusSnapshot(evidence, { ...knowledge, updates: knowledge.updates.filter(u => u.change.kind !== 'evidence_amendment') }, { fingerprint: sourceFingerprint });
         knowledge.materialized = { support: C.applicableSkillSupport(resolved.support, { job_id: job.id, employer: job.employer_id ?? undefined, role: job.role ?? undefined }), sources: [] };
       }
+      const resolvedResumePath = request.resolved_resume_path ?? request.resume_path;
+      const resolvedResumeFingerprint = request.resolved_resume_fingerprint ?? request.resume_fingerprint;
+      const pageBudget = request.page_budget ?? request.policy?.page_budget ?? request.template?.page_budget;
+      const recordedRunner = request.recorded_runner ?? runner.runner;
       const snapshot = {
         schema_version: 1 as const, id, workspace_id: job.workspace_id, job_id: job.id, created_at: this.now(),
         corpus_knowledge: add('corpus-knowledge.json', canonical(knowledge)),
@@ -81,6 +89,10 @@ export class JobArtifactsService {
         selected_evidence: request.selected_evidence.map((e, i) => add(`evidence-${i}.txt`, e.bytes)),
         privacy_rules: add('privacy-rules.json', canonical(request.privacy_rules)), template: add('template.json', canonical(C.LatexTemplateProfileSchema.parse(request.template))),
         runner_configuration: add('runner-configuration.json', canonical(runner)), policy, policy_fingerprint: fingerprint(canonical(policy)),
+        ...(resolvedResumePath ? { resolved_resume_path: resolvedResumePath } : {}),
+        ...(resolvedResumeFingerprint ? { resolved_resume_fingerprint: resolvedResumeFingerprint } : {}),
+        ...(pageBudget ? { page_budget: pageBudget } : {}),
+        ...(recordedRunner ? { recorded_runner: recordedRunner } : {}),
       };
       const manifest = inputManifest.parse({ schema_version: 1, snapshot, job_scope: { company: job.company, role: job.role, employer_id: job.employer_id }, posting_file: add('posting.txt', posting.text), policy_file: add('policy.json', canonical(policy)), evidence_sources: request.selected_evidence.map(e => e.source_id), ...(request.resume_id ? { resume_id: request.resume_id } : {}), ...(request.resume_path ? { resume_path: request.resume_path } : {}), ...(request.resume_fingerprint ? { resume_fingerprint: request.resume_fingerprint } : {}) });
       const bytes = canonical(manifest); bundle['manifest.json'] = bytes;
@@ -121,7 +133,12 @@ export class JobArtifactsService {
           && (!binding.source_status || (binding.source_status.confidence === record.confidence && binding.source_status.in_flight === record.in_flight));
       }));
       const manifest = inputManifest.parse(JSON.parse(read({ id: `${this.repository.database.files.bundlePath('snapshots', input.job_id, input.id)}/manifest.json`, fingerprint: input.fingerprint })));
-      return { input, job_scope: manifest.job_scope, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport, resume_id: manifest.resume_id, resume_path: manifest.resume_path, resume_fingerprint: manifest.resume_fingerprint };
+      return {
+        input, job_scope: manifest.job_scope, base_resume: C.ResumeSpecSchema.parse(yaml.load(read(input.base_resume))), evidence, knowledge, skillSupport,
+        resume_id: manifest.resume_id,
+        resume_path: manifest.resume_path ?? input.resolved_resume_path,
+        resume_fingerprint: manifest.resume_fingerprint ?? input.resolved_resume_fingerprint
+      };
     });
   }
   publishCandidate(request: { draft_id: string; expected_draft_revision: number; fence: OwnershipFence; source: Bytes; pdf?: Bytes; previews?: Bytes[]; validation_report?: Bytes; validation_result: C.ArtifactVersion['validation_result']; semantic_binding?: C.ArtifactVersion['semantic_binding'] }): C.ArtifactVersion {

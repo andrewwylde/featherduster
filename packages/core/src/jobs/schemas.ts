@@ -125,8 +125,14 @@ export const InputSnapshotSchema = z.object({
   base_resume: ImmutableReferenceSchema, corpus_knowledge: ImmutableReferenceSchema.optional(), selected_evidence: z.array(ImmutableReferenceSchema),
   privacy_rules: ImmutableReferenceSchema, template: ImmutableReferenceSchema, runner_configuration: ImmutableReferenceSchema,
   policy: PreparationPolicySchema, policy_fingerprint: text,
+  resolved_resume_path: text.optional(),
+  resolved_resume_fingerprint: text.optional(),
+  page_budget: z.number().int().positive().optional(),
+  recorded_runner: text.optional(),
 }).strict();
 export type InputSnapshot = z.infer<typeof InputSnapshotSchema>;
+export const JobInputsSnapshotSchema = InputSnapshotSchema;
+export type JobInputsSnapshot = InputSnapshot;
 /** Version 2 is fit-only; legacy resume snapshots are deliberately unchanged. */
 export const FitInputSnapshotSchema = InputSnapshotSchema.omit({ base_resume: true, template: true, policy: true }).extend({
   schema_version: z.literal(2), activity: z.literal('fit'),
@@ -160,7 +166,7 @@ export const CheckpointSchema = z.object({
 export type Checkpoint = z.infer<typeof CheckpointSchema>;
 export const ArtifactVersionSchema = z.object({
   origin: z.enum(['automatic', 'manual']).optional(),
-  semantic_binding: z.object({ revision: z.number().int().nonnegative(), configuration_key: text, evaluated: z.boolean() }).strict().optional(),
+  semantic_binding: z.object({ revision: z.number().int().nonnegative(), configuration_key: text, evaluated: z.boolean(), clarification_fingerprint: text.optional() }).strict().optional(),
   ...jobEntity, attempt_id: uuid, input_snapshot_id: uuid, input_fingerprint: text, version_fingerprint: text,
   parent_version_id: uuid.nullable(), created_at: timestamp, source: ImmutableReferenceSchema,
   pdf: ImmutableReferenceSchema.nullable(), preview: ImmutableReferenceSchema.nullable(), validation_report: ImmutableReferenceSchema.nullable(),

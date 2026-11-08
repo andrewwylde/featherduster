@@ -48,6 +48,21 @@ export interface JobsDetail {
   job: Job; posting: PostingSnapshot | null; attempt: Omit<Attempt, 'owner_token'> | null;
   artifacts: ArtifactVersion[]; events: JobEvent[]; answers: ScopedAnswer[];
   analysis: JobAnalysis | null; alignment: AlignmentMatrix | null; brief_markdown: string | null;
+  captured?: {
+    input?: InputSnapshot;
+    resume_id?: string;
+    resume_path?: string;
+    resume_fingerprint?: string;
+    base_resume?: ResumeSpec;
+    job_scope?: { company: string | null; role: string | null; employer_id: string | null };
+  } | null;
+  capturedInputs?: {
+    resume_id?: string;
+    resume_path?: string;
+    resume_fingerprint?: string;
+    input?: InputSnapshot;
+  } | null;
+  resolvedDefaultId?: string;
 }
 export interface JobsControl { queued_count?: number; needs_review_count?: number; control: WorkerControl; active: Omit<Attempt, 'owner_token'>[] }
 export interface JobReview {
