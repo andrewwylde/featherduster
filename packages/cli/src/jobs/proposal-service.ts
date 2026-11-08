@@ -208,6 +208,130 @@ export class ProposalService {
       return { job: savedJob, review: saved };
     });
   }
+  async saveMixedDraftEdits(mutation: C.MixedDraftMutation): Promise<{ success: boolean; new_revision: number; review: C.ProposalReviewRevision; job: C.Job }> {
+    C.MixedDraftMutationSchema.parse(mutation);
+    const job = this.jobs.getJob(mutation.job_id);
+    const review = this.proposals.getActive(job.id);
+    if (!review) throw new RepositoryError('invalid_relationship', 'No active review found');
+    if (review.revision !== mutation.expected_revision) throw new RepositoryError('revision_conflict', 'Stale revision');
+    if (mutation.expected_review_revision !== undefined && review.revision !== mutation.expected_review_revision) throw new RepositoryError('revision_conflict', 'Stale revision');
+    if (mutation.expected_job_revision !== undefined && job.revision !== mutation.expected_job_revision) throw new RepositoryError('revision_conflict', 'Stale revision');
+    if (mutation.review_id && review.id !== mutation.review_id) throw new RepositoryError('revision_conflict', 'Stale revision');
+    if (this.jobs.active().some(a => a.job_id === job.id)) throw new RepositoryError('invalid_ownership', 'Cannot edit an active attempt');
+    this.currentInput(job.id, review.input_snapshot_id);
+
+    return this.jobs.withReceipt('save_mixed_draft_edits', mutation.idempotency_key, mutation, () => {
+
+      const generation = this.proposals.getGeneration(review.generation_id);
+      const context = this.context(generation).captured;
+      const captured = context.base_resume;
+      const effective = this.effectiveBase(captured, review);
+      const recorded_at = new Date().toISOString();
+
+      const corrections = [...(review.base_corrections ?? [])];
+      for (const bc of mutation.base_corrections ?? []) {
+        const path = bc.path ?? `experiences.${bc.experience_index ?? 0}.bullets.${bc.bullet_index}.text`;
+        const beforeInCaptured = C.baseText(captured, path);
+        if (beforeInCaptured === undefined) {
+          throw new RepositoryError('revision_conflict', `Starting-resume location does not exist: ${path}`);
+        }
+        const currentInEffective = C.baseText(effective, path);
+        if (bc.before !== undefined && bc.before !== currentInEffective) {
+          throw new RepositoryError('revision_conflict', `Target text mismatch at ${path}: expected "${bc.before}", found "${currentInEffective}"`);
+        }
+        const match = C.BASE_TEXT_PATH.exec(path);
+        const originalCitations = match && path !== 'summary' ? captured.experiences[Number(match[2])]?.bullets[Number(match[3])]?.citations ?? [] : [];
+        const currentCitations = match && path !== 'summary' ? effective.experiences[Number(match[2])]?.bullets[Number(match[3])]?.citations ?? [] : [];
+        const citations = bc.citations ?? currentCitations;
+        if (bc.citations && (path === 'summary' || new Set(citations).size !== citations.length || citations.some(id => !context.evidence.get(id) || context.evidence.get(id)?.confidence === 'retracted'))) {
+          this.fail('Select distinct captured, active sources for this bullet.');
+        }
+        const idx = corrections.findIndex(c => c.path === path);
+        if (idx >= 0) corrections.splice(idx, 1);
+        const anchor = C.experienceAnchor(captured, path);
+        if (!(bc.after === beforeInCaptured && canonical(citations) === canonical(originalCitations))) {
+          corrections.push({
+            path,
+            before: beforeInCaptured,
+            after: bc.after,
+            ...(anchor ? { anchor } : {}),
+            ...(canonical(citations) !== canonical(originalCitations) ? { before_citations: originalCitations, citations } : {}),
+            recorded_by: 'local-human',
+            recorded_at,
+          });
+        }
+      }
+
+      const currentOverlay = C.applyProposalPatches(generation.proposals.proposals, review.patches, [], review.groundings);
+      const incomingPatches: C.ProposalPatch[] = [];
+      for (const gp of mutation.generated_patches ?? []) {
+        const existingProposal = currentOverlay.proposals.find(p => p.id === gp.proposal_id);
+        if (!existingProposal && !gp.omission) {
+          throw new RepositoryError('revision_conflict', `Unknown proposal ID: ${gp.proposal_id}`);
+        }
+        if (existingProposal && gp.before !== undefined) {
+          const currentText = existingProposal.edited_after ?? existingProposal.after;
+          if (gp.before !== currentText) {
+            throw new RepositoryError('revision_conflict', `Target text mismatch for proposal ${gp.proposal_id}: expected "${gp.before}", found "${currentText}"`);
+          }
+        }
+        const { before: _b, after, edited_after, ...rest } = gp;
+        const patch: C.ProposalPatch = {
+          ...rest,
+          ...(edited_after !== undefined ? { edited_after } : after !== undefined ? { edited_after: after } : {}),
+        };
+        incomingPatches.push(patch);
+      }
+      const overlay = C.applyProposalPatches(generation.proposals.proposals, review.patches, incomingPatches, review.groundings);
+
+      const nextRevision = review.revision + 1;
+      const draft: C.ProposalReviewRevision = {
+        ...review,
+        revision: nextRevision,
+        base_corrections: corrections.length ? corrections : undefined,
+        patches: overlay.patches,
+        groundings: overlay.groundings.map(g => ({ ...g, review_revision: nextRevision })),
+        created_at: recorded_at,
+      };
+      const { candidate_preview, validation } = this.evaluate(generation, draft, !!this.semantic);
+      const explanation = mutation.explanation ?? 'Mixed draft wording edits';
+      const feedback: C.FeedbackEvent = {
+        schema_version: 1,
+        id: randomUUID(),
+        workspace_id: job.workspace_id,
+        job_id: job.id,
+        proposal_id: null,
+        review_revision: nextRevision,
+        kind: 'wording',
+        before: canonical({ patches: review.patches, base_corrections: review.base_corrections ?? [] }),
+        after: canonical({ patches: overlay.patches, base_corrections: corrections }),
+        explanation,
+        scope: { kind: 'job', key: job.id },
+        recorded_by: 'local-human',
+        recorded_at,
+      };
+      this.corpus.repository.saveFeedback(feedback);
+      const saved = this.proposals.appendReview({
+        ...draft,
+        candidate_preview,
+        validation,
+        feedback_ids: [...review.feedback_ids, feedback.id],
+      }, review.revision);
+      const stale = job.recovery?.kind === 'stale_inputs';
+      const savedJob = this.jobs.updateJob({
+        ...job,
+        recovery: stale ? job.recovery : { kind: 'proposals', subject: {}, action: 'review_proposals' },
+        state_reason: 'Mixed draft edits saved and rechecked.',
+      }, job.revision);
+      this.event(saved);
+      return {
+        success: true,
+        new_revision: nextRevision,
+        review: saved,
+        job: savedJob,
+      };
+    }).result;
+  }
   /** Locates the active review's corrections in newly captured base wording; snapshots themselves stay unchanged. */
   carryBaseCorrections(jobId: string, base: C.ResumeSpec) {
     const carried: C.BaseCorrection[] = [], unapplied: C.BaseCorrection[] = [];

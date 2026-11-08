@@ -775,4 +775,242 @@ it('displays distinct counts for factual questions, technical checks, and wordin
   expect(screen.getByTestId('primary-next-action')).toHaveTextContent('Checking in progress...');
 });
 
+it('coalesces typing bursts across generated proposals and starting resume into an atomic mixed save', async () => {
+  vi.useFakeTimers();
+  const mixedCandidate = {
+    profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' },
+    summary: 'Original',
+    experiences: [
+      { company: 'Acme', role: 'Engineer', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Legacy bullet 1' }] }
+    ],
+    education: [],
+    skills: [],
+  };
+  const mixedData = {
+    ...data,
+    review: {
+      ...data.review,
+      candidate_preview: mixedCandidate,
+      validation: {
+        ...data.review.validation,
+        issues: [
+          {
+            id: 'prop-issue',
+            subject: { kind: 'proposal', proposal_id: 'p1' },
+            group: 'grounding',
+            action: 'edit_proposal',
+            details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Check backend wording' }]
+          },
+          {
+            id: 'candidate-issue',
+            subject: { kind: 'candidate', path: 'experiences.0.bullets.0.text' },
+            group: 'grounding',
+            action: 'refresh_base',
+            details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Starting wording needs correction' }]
+          }
+        ]
+      }
+    },
+    captured: {
+      evidence: [],
+      skillSupport: [],
+      analysis: { requirements: [] },
+      base_resume: mixedCandidate,
+    }
+  };
+
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(mixedData as any);
+  const saveMixedSpy = vi.spyOn(apiClient, 'saveMixedDraftEdits').mockResolvedValue({
+    success: true,
+    new_revision: 1,
+    review: { ...mixedData.review, revision: 1 } as any,
+    job: { ...job, revision: 3 } as any,
+  });
+
+  render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
+  await act(async () => { await Promise.resolve(); });
+
+  // 1. Edit generated proposal wording
+  const propWording = screen.getByLabelText('Proposed wording');
+  fireEvent.change(propWording, { target: { value: 'Edited proposal text' } });
+
+  // 2. Open starting resume editor and edit base wording
+  fireEvent.click(screen.getByText('Edit starting wording for this job'));
+  const baseWording = screen.getByLabelText('Starting wording');
+  fireEvent.change(baseWording, { target: { value: 'Corrected starting bullet' } });
+
+  // 3. Fast-forward debounce timer to trigger atomic coalesced save
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600);
+  });
+
+  expect(saveMixedSpy).toHaveBeenCalledTimes(1);
+  expect(saveMixedSpy).toHaveBeenCalledWith(
+    'job',
+    expect.objectContaining({
+      expected_revision: 0,
+      base_corrections: [
+        expect.objectContaining({
+          path: 'experiences.0.bullets.0.text',
+          before: 'Legacy bullet 1',
+          after: 'Corrected starting bullet',
+        }),
+      ],
+      generated_patches: [
+        expect.objectContaining({
+          proposal_id: 'p1',
+          after: 'Edited proposal text',
+        }),
+      ],
+    })
+  );
+
+  expect(screen.getByTestId('auto-save-status')).toHaveTextContent('Saved');
+});
+
+it('displays conflict status inline when mixed draft save encounters a revision conflict', async () => {
+  vi.useFakeTimers();
+  const mixedCandidate = {
+    profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' },
+    summary: 'Original',
+    experiences: [
+      { company: 'Acme', role: 'Engineer', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Legacy bullet 1' }] }
+    ],
+    education: [],
+    skills: [],
+  };
+  const mixedData = {
+    ...data,
+    review: {
+      ...data.review,
+      candidate_preview: mixedCandidate,
+      validation: {
+        ...data.review.validation,
+        issues: [
+          {
+            id: 'prop-issue',
+            subject: { kind: 'proposal', proposal_id: 'p1' },
+            group: 'grounding',
+            action: 'edit_proposal',
+            details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Check backend wording' }]
+          },
+          {
+            id: 'candidate-issue',
+            subject: { kind: 'candidate', path: 'experiences.0.bullets.0.text' },
+            group: 'grounding',
+            action: 'refresh_base',
+            details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Starting wording needs correction' }]
+          }
+        ]
+      }
+    },
+    captured: {
+      evidence: [],
+      skillSupport: [],
+      analysis: { requirements: [] },
+      base_resume: mixedCandidate,
+    }
+  };
+
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(mixedData as any);
+  vi.spyOn(apiClient, 'saveMixedDraftEdits').mockRejectedValue(new Error('Stale revision'));
+
+  render(<JobProposalReview job={job} onSaved={() => {}} />);
+  await openWording();
+  await act(async () => { await Promise.resolve(); });
+
+  fireEvent.change(screen.getByLabelText('Proposed wording'), { target: { value: 'Edited proposal text' } });
+  fireEvent.click(screen.getByText('Edit starting wording for this job'));
+  fireEvent.change(screen.getByLabelText('Starting wording'), { target: { value: 'Corrected starting bullet' } });
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600);
+  });
+
+  expect(screen.getByTestId('auto-save-status')).toHaveTextContent('Conflict: edit rejected');
+});
+
+it('uses existing review patch edited_after as before baseline for subsequent edits to proposals', async () => {
+  vi.useFakeTimers();
+  const mixedCandidate = {
+    profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' },
+    summary: 'Original',
+    experiences: [
+      { company: 'Acme', role: 'Engineer', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Legacy bullet 1' }] }
+    ],
+    education: [],
+    skills: [],
+  };
+  const mixedData = {
+    ...data,
+    review: {
+      ...data.review,
+      revision: 1,
+      patches: [{ proposal_id: 'p1', edited_after: 'Rev1 Saved Text' }],
+      candidate_preview: mixedCandidate,
+      validation: {
+        ...data.review.validation,
+        issues: [
+          {
+            id: 'prop-issue',
+            subject: { kind: 'proposal', proposal_id: 'p1' },
+            group: 'grounding',
+            action: 'edit_proposal',
+            details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Check backend wording' }]
+          },
+          {
+            id: 'candidate-issue',
+            subject: { kind: 'candidate', path: 'experiences.0.bullets.0.text' },
+            group: 'grounding',
+            action: 'refresh_base',
+            details: [{ severity: 'block', kind: 'unsupported_experience', message: 'Starting wording needs correction' }]
+          }
+        ]
+      }
+    },
+    captured: {
+      evidence: [],
+      skillSupport: [],
+      analysis: { requirements: [] },
+      base_resume: mixedCandidate,
+    }
+  };
+
+  vi.spyOn(apiClient, 'getJobProposals').mockResolvedValue(mixedData as any);
+  const saveMixedSpy = vi.spyOn(apiClient, 'saveMixedDraftEdits').mockResolvedValue({
+    success: true,
+    new_revision: 2,
+    review: { ...mixedData.review, revision: 2 },
+    job: { ...job, revision: 2 },
+  } as any);
+
+  render(<JobProposalReview job={{ ...job, revision: 1 }} onSaved={() => {}} />);
+  await openWording();
+  await act(async () => { await Promise.resolve(); });
+
+  fireEvent.change(screen.getByLabelText('Proposed wording'), { target: { value: 'Rev2 Edited Text' } });
+  fireEvent.click(screen.getByText('Edit starting wording for this job'));
+  fireEvent.change(screen.getByLabelText('Starting wording'), { target: { value: 'Rev2 Corrected bullet' } });
+
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600);
+  });
+
+  expect(saveMixedSpy).toHaveBeenCalledWith(
+    'job',
+    expect.objectContaining({
+      expected_revision: 1,
+      generated_patches: [
+        expect.objectContaining({
+          proposal_id: 'p1',
+          before: 'Rev1 Saved Text',
+          after: 'Rev2 Edited Text',
+        }),
+      ],
+    })
+  );
+});
+
+
 

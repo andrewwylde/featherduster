@@ -420,6 +420,12 @@ export class ApiClient {
   addJobs(preview_id: string, idempotency_key: string) { return this.fetchJson<IntakeResult>('/api/jobs', this.jsonRequest('POST', { preview_id, idempotency_key })); }
   saveJobDetails(id: string, body: { expected_revision: number; idempotency_key: string; changes: Partial<Pick<Job, 'company' | 'role' | 'notes' | 'context_url'>>; posting_text?: string }) { return this.fetchJson<{ result: { job: Job }; replayed: boolean }>(`/api/jobs/${id}/details`, this.jsonRequest('PUT', body)); }
   correctJobStartingResume(id: string, body: ProposalBaseCorrectionRequest) { return this.fetchJson<ProposalBaseCorrectionResponse>(`/api/jobs/${id}/starting-resume`, this.jsonRequest('PUT', body)); }
+  saveMixedDraftEdits(id: string, body: Omit<import('@featherduster/core').MixedDraftMutation, 'job_id'> & { job_id?: string }) {
+    return this.fetchJson<{ success: boolean; new_revision: number; review: import('@featherduster/core').ProposalReviewRevision; job: Job }>(
+      `/api/jobs/${id}/draft-edits`,
+      this.jsonRequest('PUT', { ...body, job_id: id })
+    );
+  }
   captureJobInputs(id: string, expected_revision: number, selection: { base_resume_id?: string; template_id?: string; runner?: RunnerId; evidence_ids?: string[] } = {}) { return this.fetchJson<{ input_snapshot: InputSnapshot; unapplied_base_corrections?: BaseCorrection[] }>(`/api/jobs/${id}/inputs`, this.jsonRequest('POST', { expected_revision, ...selection })); }
   prepareJob(id: string, action: 'prepare' | 'resume' | 'retry' | 'reprepare', body: { expected_revision: number; input_snapshot_id: string; idempotency_key: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/${action}`, this.jsonRequest('POST', body)); }
   cancelJob(id: string, body: { expected_revision: number; idempotency_key: string; reason?: string }) { return this.fetchJson<unknown>(`/api/jobs/${id}/cancel`, this.jsonRequest('POST', body)); }

@@ -1,4 +1,4 @@
-import { DraftResumeSpecSchema, CheckJobDraftRequestSchema, FinalizeJobDraftRequestSchema } from '@featherduster/core';
+import { DraftResumeSpecSchema, CheckJobDraftRequestSchema, FinalizeJobDraftRequestSchema, MixedDraftMutationSchema } from '@featherduster/core';
 import { knownClarificationConflicts, inventoryPassages } from '@featherduster/core';
 import { fingerprint } from './files.js';
 import { affectedClarificationDrafts, updateSelectedClarificationDrafts, undoClarificationUpdate, clarificationUpdateHistory, SelectedUpdatesSchema } from './clarification-updates.js';
@@ -216,6 +216,11 @@ app.post('/api/jobs/:id/drafts/:draftId/finalize', handle(async (c, r) => {
   }));
   app.put('/api/jobs/:id/starting-resume', handle(async (c, r) => {
     return r.proposals.correctBase({ ...CorrectBaseSchema.parse(await c.req.json()), job_id: uuid.parse(c.req.param('id')) });
+  }));
+  app.put('/api/jobs/:id/draft-edits', handle(async (c, r) => {
+    const id = uuid.parse(c.req.param('id'));
+    const body = await c.req.json();
+    return r.proposals.saveMixedDraftEdits(MixedDraftMutationSchema.parse({ ...body, job_id: id }));
   }));
   app.post('/api/jobs/:id/inputs', handle(async (c, r) => {
     const body = z.object({ expected_revision: revision, base_resume_id: z.string().min(1).optional(), template_id: z.string().min(1).optional(), runner: z.enum(['claude-code', 'codex', 'anthropic-api', 'ollama', 'fake']).optional(), evidence_ids: z.array(z.string().min(1)).optional() }).strict().parse(await c.req.json());

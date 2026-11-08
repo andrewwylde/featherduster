@@ -46,6 +46,52 @@ export const BaseCorrectionSchema = z.object({
   before_citations: z.array(text).optional(), citations: z.array(text).optional(),
 }).strict();
 export type BaseCorrection = z.infer<typeof BaseCorrectionSchema>;
+
+export const MixedDraftBaseCorrectionSchema = z.object({
+  path: z.string().regex(BASE_TEXT_PATH).optional(),
+  bullet_index: z.number().int().nonnegative().optional(),
+  experience_index: z.number().int().nonnegative().optional(),
+  before: z.string().optional(),
+  after: z.string().min(1).max(BASE_TEXT_MAX),
+  citations: z.array(z.string().min(1)).optional(),
+}).strict().refine(c => c.path !== undefined || c.bullet_index !== undefined, {
+  message: 'Either path or bullet_index is required',
+});
+export type MixedDraftBaseCorrection = z.infer<typeof MixedDraftBaseCorrectionSchema>;
+
+export const MixedDraftGeneratedPatchSchema = z.object({
+  proposal_id: z.string().min(1),
+  before: z.string().optional(),
+  after: z.string().optional(),
+  edited_after: z.string().optional(),
+  citations: z.array(z.string().min(1)).optional(),
+  decision: z.enum(['pending', 'rejected']).optional(),
+  order: z.array(z.number().int()).optional(),
+  skills: z.array(z.string()).optional(),
+  omission: AccomplishmentOmissionSchema.optional(),
+}).strict();
+export type MixedDraftGeneratedPatch = z.infer<typeof MixedDraftGeneratedPatchSchema>;
+
+export const MixedDraftMutationSchema = z.object({
+  job_id: z.string().min(1),
+  expected_revision: z.number().int().nonnegative(),
+  expected_review_revision: z.number().int().nonnegative().optional(),
+  expected_job_revision: z.number().int().nonnegative().optional(),
+  review_id: z.string().optional(),
+  idempotency_key: z.string().min(1),
+  base_corrections: z.array(MixedDraftBaseCorrectionSchema).default([]),
+  generated_patches: z.array(MixedDraftGeneratedPatchSchema).default([]),
+  explanation: z.string().optional(),
+}).strict();
+export type MixedDraftMutation = z.infer<typeof MixedDraftMutationSchema>;
+
+export const MixedDraftResultSchema = z.object({
+  success: z.boolean(),
+  new_revision: z.number().int().nonnegative(),
+  review: z.lazy(() => ProposalReviewRevisionSchema).optional(),
+  job: z.any().optional(),
+}).strict();
+export type MixedDraftResult = z.infer<typeof MixedDraftResultSchema>;
 export function baseText(base: z.infer<typeof ResumeSpecSchema>, path: string): string | undefined {
   const match = BASE_TEXT_PATH.exec(path);
   if (!match) return undefined;

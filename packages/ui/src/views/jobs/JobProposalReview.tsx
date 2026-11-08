@@ -106,6 +106,90 @@ function Editor({
   const [selectedProposal, setSelectedProposal] = useState(() => [...proposalBlockers][0] ?? (candidateBlockers[0] ? `base:${candidateBlockers[0]}` : ''));
   const startingFields = [...new Set([...candidateBlockers, ...(selectedProposal.startsWith('base:') ? [selectedProposal.slice(5)] : [])])];
 
+  const [startingDrafts, setStartingDrafts] = useState<Map<string, { path: string; text: string; citations?: string[]; before: string }>>(new Map());
+  const updateStartingDraft = useCallback((path: string, item: { path: string; text: string; citations?: string[]; before: string } | null) => {
+    setStartingDrafts(prev => {
+      const next = new Map(prev);
+      if (item) next.set(path, item);
+      else next.delete(path);
+      return next;
+    });
+  }, []);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<string>('');
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const autoSavePendingRef = useRef(false);
+
+  const saveMixedDrafts = useCallback(async () => {
+    if (busy || autoSavePendingRef.current) return;
+    autoSavePendingRef.current = true;
+    setAutoSaveStatus('Saving...');
+    setBusy(true);
+
+    const base_corrections = Array.from(startingDrafts.values()).map(c => ({
+      path: c.path,
+      before: c.before,
+      after: c.text,
+      citations: c.citations,
+    }));
+    const generated_patches = draft.patches.map(p => ({
+      proposal_id: p.proposal_id,
+      before: base.review.patches.find(item => item.proposal_id === p.proposal_id)?.edited_after
+        ?? base.generation.proposals.proposals.find(item => item.id === p.proposal_id)?.after,
+      after: p.edited_after ?? '',
+      edited_after: p.edited_after,
+      citations: p.citations,
+      decision: p.decision,
+      order: p.order,
+      skills: p.skills,
+      omission: p.omission,
+    }));
+
+    const mutation = {
+      expected_revision: base.review.revision,
+      idempotency_key: key({ base_corrections, generated_patches, rev: base.review.revision }),
+      base_corrections,
+      generated_patches,
+    };
+
+    try {
+      const response = await apiClient.saveMixedDraftEdits(job.id, mutation);
+      setAutoSaveStatus('Saved');
+      setBase(b => ({ ...b, review: response.review }));
+      setRevision(response.job.revision);
+      setDraftBaseRevision(response.review.revision);
+      setStartingDrafts(new Map());
+      setDraft(empty());
+      setMessage(`Saved mixed edits in revision ${response.review.revision}.`);
+      onSaved();
+      await refresh();
+    } catch (error: any) {
+      const msg = error?.message || String(error);
+      if (/stale|conflict|revision/i.test(msg)) {
+        setAutoSaveStatus('Conflict: edit rejected');
+        setMessage('Conflict: edit rejected. The draft revision is stale; please refresh.');
+      } else {
+        setAutoSaveStatus('Error saving');
+        setMessage(requestErrorMessage(error, { timeout: 'Save timed out. Your draft is retained.', fallback: 'Save failed. Your draft is retained.' }));
+      }
+    } finally {
+      autoSavePendingRef.current = false;
+      setBusy(false);
+    }
+  }, [busy, startingDrafts, draft.patches, base.review.revision, base.review.patches, base.generation.proposals.proposals, job.id, key, onSaved, refresh]);
+
+  useEffect(() => {
+    if (busy || active || stale) return;
+    if (startingDrafts.size > 0 && draft.patches.length > 0) {
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(() => {
+        void saveMixedDrafts();
+      }, 500);
+      return () => {
+        if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      };
+    }
+  }, [startingDrafts, draft.patches, busy, active, stale, saveMixedDrafts]);
+
   // Drawer and Semantic Facts state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [factsData, setFactsData] = useState<Facts | null>(() => initialFacts ?? null);
@@ -431,7 +515,7 @@ function Editor({
     </div>
     {(loadError || overlayError) && <p role="alert">{loadError || overlayError}</p>}
     {stale && <p role="alert">The saved review changed. Your local edits are retained. <button className={secondaryButton} onClick={() => { setBase(data); setRevision(job.revision); setDraftBaseRevision(data.review.revision); }}>Reconcile current review and keep edits</button></p>}
-    <button ref={saveDraftButton} className={primaryButton} disabled={busy || active || stale || !dirty} onClick={() => void save(false)}>Save draft</button>
+    <button ref={saveDraftButton} className={primaryButton} disabled={busy || active || stale || (!dirty && startingDrafts.size === 0)} onClick={() => startingDrafts.size > 0 ? void saveMixedDrafts() : void save(false)}>Save draft</button>
     <ResumeDraftSurface ref={resumeNavigation} resume={unifiedResume}
       proposals={overlay.proposals} omissions={overlay.patches.filter(p => p.omission)} facts={factsData} issues={base.review.validation.issues} evidence={base.captured.evidence} workspaceId={job.workspace_id}
       disabled={busy || active || stale} onSelect={setSelectedProposal} onToggle={(id, rejected) => patch({ proposal_id: id, decision: rejected ? 'rejected' : 'pending' })}
@@ -447,7 +531,8 @@ function Editor({
             issues={base.review.validation.issues.filter(i => i.subject.kind === 'proposal' && i.subject.proposal_id === id)}
             requirements={base.captured.analysis.requirements.filter(r => proposal.requirement_ids.includes(r.id)).map(r => r.text)}
             grounding={draft.groundings.find(g => g.proposal_id === id)} onGrounding={g => setDraft(d => ({ ...d, groundings: [...d.groundings.filter(v => v.proposal_id !== id), ...(g ? [g] : [])] }))} />
-            : originalPath ? <JobStartingResumeCorrection key={originalPath} job={{ ...job, revision }} review={base.review} resume={startingResume} path={originalPath} evidence={base.captured.evidence} disabled={busy || active || stale || dirty}
+            : originalPath ? <JobStartingResumeCorrection key={originalPath} job={{ ...job, revision }} review={base.review} resume={startingResume} path={originalPath} evidence={base.captured.evidence} disabled={busy || active || stale}
+              onDraftChange={change => updateStartingDraft(originalPath, change)} autoSaveStatus={autoSaveStatus} onSaveMixed={startingDrafts.size > 0 && draft.patches.length > 0 ? () => void saveMixedDrafts() : undefined}
               onSaved={result => { setBase(b => ({ ...b, review: result.review })); setRevision(result.job.revision); setDraftBaseRevision(result.review.revision); void reloadFacts(); onSaved(); void refresh(); }} /> : <p>This wording has multiple possible original targets. Undo the associated change before editing it.</p>}
           </details>
         </div>;
@@ -458,6 +543,7 @@ function Editor({
   return (
     <section aria-label="Proposal resolution" className={`${cardClass} proposal-review text-slate-900 dark:text-slate-100 p-4 sm:p-6 space-y-5 min-w-0 break-words`}>
       {summaryHeader}
+      {autoSaveStatus && <p role="status" data-testid="auto-save-status" className="text-sm font-semibold text-sky-600 dark:text-sky-400">{autoSaveStatus}</p>}
       {loadError && <p role="alert">{loadError} Showing the last successfully loaded review; it will refresh when the host responds.</p>}
       {overlayError && <p role="alert">{overlayError}. Showing the captured starting resume; this saved correction cannot be checked or continued.</p>}
 
@@ -668,7 +754,10 @@ function Editor({
                           review={base.review}
                           resume={startingResume}
                           path={path}
-                          disabled={busy || active || stale || dirty}
+                          disabled={busy || active || stale}
+                          onDraftChange={change => updateStartingDraft(path, change)}
+                          autoSaveStatus={autoSaveStatus}
+                          onSaveMixed={startingDrafts.size > 0 && draft.patches.length > 0 ? () => void saveMixedDrafts() : undefined}
                           onSaved={async result => {
                             setBase(b => ({ ...b, review: result.review }));
                             setRevision(result.job.revision);

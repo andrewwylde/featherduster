@@ -49,8 +49,8 @@ function fixture() {
   return { root, repo, db, service, seed, run, runner, renderer, onEvent, request, deps, reviews, proposals, corpus, evidence, artifacts };
 }
 const analysis = { company: 'Acme', role: 'Engineer', seniority: '', mission: '', requirements: [{ id: 'r1', text: 'Backend', terms: ['backend', 'Kafka'], tier: 'must', quote: 'Build things' }] };
-async function blocked() {
-  const f = fixture(); const seeded = f.seed();
+async function blocked(base?: C.ResumeSpec) {
+  const f = fixture(); const seeded = f.seed(10000, base);
   f.run.mockResolvedValueOnce(analysis as any).mockResolvedValueOnce({ rows: [] } as any).mockResolvedValueOnce({ proposals: [{ id: 'p', type: 'summary.rewrite', target: {}, before: '', after: 'Built backend APIs.', citations: ['ev-1'], requirement_ids: ['r1'] }] } as any);
   f.service.prepare(f.request(seeded)); await f.service.worker.whenIdle();
   const view = f.reviews.read(seeded.job.id);
@@ -293,5 +293,71 @@ it('binds finding to exact wording and distinguishes retained baseline from repl
   expect(finding.target.scope).toBe('retained_baseline');
   expect(finding.target.text).toContain('11 years');
   expect(finding.is_stale_for_preview).toBe(true);
+});
+
+it('applies batch of inherited base corrections and generated edits atomically with revision fencing', async () => {
+  const base: C.ResumeSpec = {
+    profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' },
+    experiences: [
+      { company: 'Acme', role: 'Engineer', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Legacy bullet 1' }] }
+    ],
+    education: [],
+    skills: [],
+  };
+  const f = await blocked(base);
+  const mutation = {
+    job_id: f.seeded.job.id,
+    expected_revision: f.view.review.revision,
+    idempotency_key: 'idem-batch-1',
+    base_corrections: [
+      { path: 'experiences.0.bullets.0.text', before: 'Legacy bullet 1', after: 'Corrected bullet 1' },
+    ],
+    generated_patches: [
+      { proposal_id: 'p', before: 'Built backend APIs.', after: 'User edited generated text' },
+    ],
+  };
+
+  const result = await f.reviews.saveMixedDraftEdits(mutation);
+  expect(result.success).toBe(true);
+  expect(result.new_revision).toBe(f.view.review.revision + 1);
+
+  // Stale expected_revision rejects entire batch atomically
+  await expect(f.reviews.saveMixedDraftEdits({ ...mutation, expected_revision: f.view.review.revision }))
+    .rejects.toThrow(/Stale/);
+});
+
+it('supports bullet_index mapping to path and rejects target text mismatch atomically', async () => {
+  const base: C.ResumeSpec = {
+    profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' },
+    experiences: [
+      { company: 'Acme', role: 'Engineer', startDate: '2020', endDate: 'Present', bullets: [{ text: 'Legacy bullet 1' }] }
+    ],
+    education: [],
+    skills: [],
+  };
+  const f = await blocked(base);
+  const mutation = {
+    job_id: f.seeded.job.id,
+    expected_revision: f.view.review.revision,
+    idempotency_key: 'idem-batch-2',
+    base_corrections: [
+      { bullet_index: 0, before: 'Legacy bullet 1', after: 'Corrected bullet 1' },
+    ],
+    generated_patches: [
+      { proposal_id: 'p', before: 'Built backend APIs.', after: 'User edited generated text' },
+    ],
+  };
+
+  const result = await f.reviews.saveMixedDraftEdits(mutation);
+  expect(result.success).toBe(true);
+  expect(result.new_revision).toBe(f.view.review.revision + 1);
+
+  // Target text mismatch rejects entire batch atomically
+  await expect(f.reviews.saveMixedDraftEdits({
+    ...mutation,
+    expected_revision: result.new_revision,
+    idempotency_key: 'idem-batch-3',
+    base_corrections: [{ bullet_index: 0, before: 'Wrong text', after: 'Another edit' }],
+  })).rejects.toThrow(/mismatch|does not match/i);
 });
 
