@@ -8,11 +8,23 @@ export interface LiveSyncState {
   syncCount: number;
 }
 
+export interface LiveSyncOptions {
+  topic?: string;
+}
+
+export type LiveSyncCallback = (event?: any, options?: { signal?: AbortSignal }) => void | Promise<void>;
+
 /**
  * Connects to the local SSE event stream at /api/events via the shared sseClient singleton.
- * Fires the onSync callback whenever a filesystem change event is received from the watcher.
+ * Fires the onSync callback whenever a scoped event is received.
+ * Coalesces incoming refresh requests with a leading edge fetch and at most one trailing fetch.
+ * Discards redundant in-flight fetches using AbortController.
  */
-export function useLiveSync(onSync?: (event?: any) => void): LiveSyncState {
+export function useLiveSync(
+  onSync?: LiveSyncCallback,
+  topicOrOptions?: string | LiveSyncOptions
+): LiveSyncState {
+  const topic = typeof topicOrOptions === 'string' ? topicOrOptions : topicOrOptions?.topic;
   const [isConnected, setIsConnected] = useState(() => sseClient.isConnected());
   const [lastEvent, setLastEvent] = useState<any | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
@@ -24,29 +36,91 @@ export function useLiveSync(onSync?: (event?: any) => void): LiveSyncState {
   }, [onSync]);
 
   useEffect(() => {
-    const unsubStatus = sseClient.onStatus((status) => {
-      setIsConnected(status);
-    });
+    let alive = true;
+    let isRunning = false;
+    let trailingPending = false;
+    let trailingEvent: any = null;
+    let currentController: AbortController | null = null;
 
-    const unsubChange = sseClient.onChange((data) => {
-      setLastEvent(data);
+    const runSync = async (event: any) => {
+      if (!alive) return;
+      if (isRunning) {
+        trailingPending = true;
+        trailingEvent = event;
+        return;
+      }
+
+      isRunning = true;
+      trailingPending = false;
+
+      if (currentController) {
+        currentController.abort();
+      }
+      currentController = new AbortController();
+      const controller = currentController;
+
+      setLastEvent(event);
       setLastSyncTime(new Date());
       setSyncCount((prev) => prev + 1);
-      if (onSyncRef.current) {
-        onSyncRef.current(data);
+
+      try {
+        if (onSyncRef.current) {
+          const result = onSyncRef.current(event, { signal: controller.signal });
+          if (result && typeof result.then === 'function') {
+            await result;
+          }
+        }
+      } catch (err: any) {
+        if (err?.name !== 'AbortError' && !controller.signal.aborted) {
+          // Ignore unhandled error
+        }
+      } finally {
+        if (currentController === controller) {
+          currentController = null;
+        }
+        isRunning = false;
+
+        if (alive && trailingPending && !controller.signal.aborted) {
+          const nextEvt = trailingEvent;
+          trailingPending = false;
+          trailingEvent = null;
+          void runSync(nextEvt);
+        }
       }
+    };
+
+    const unsubStatus = sseClient.onStatus((status) => {
+      if (alive) setIsConnected(status);
     });
 
-    const unsubCorpus = sseClient.onCorpus((data) => {
-      setLastEvent(data); setLastSyncTime(new Date()); setSyncCount(prev => prev + 1);
-      onSyncRef.current?.(data);
-    });
+    let unsubTopic: () => void;
+    if (topic) {
+      unsubTopic = sseClient.onTopic(topic, (data) => {
+        void runSync(data);
+      });
+    } else {
+      const unsubChange = sseClient.onChange((data) => {
+        void runSync(data);
+      });
+      const unsubCorpus = sseClient.onCorpus((data) => {
+        void runSync(data);
+      });
+      unsubTopic = () => {
+        unsubChange();
+        unsubCorpus();
+      };
+    }
+
     return () => {
-      unsubCorpus();
+      alive = false;
+      if (currentController) {
+        currentController.abort();
+        currentController = null;
+      }
       unsubStatus();
-      unsubChange();
+      unsubTopic();
     };
-  }, []);
+  }, [topic]);
 
   return { isConnected, lastEvent, lastSyncTime, syncCount };
 }

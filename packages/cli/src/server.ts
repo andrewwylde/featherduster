@@ -1422,6 +1422,10 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
   mountJobsRoutes(app, getJobs);
 
   app.get('/api/events', (c) => {
+    const topicParams = c.req.queries('topic') ?? (c.req.query('topic') ? [c.req.query('topic')!] : []);
+    const topicsList = topicParams.flatMap(t => t.split(',')).map(t => t.trim()).filter(Boolean);
+    const topicFilter = topicsList.length > 0 ? new Set(topicsList) : null;
+
     return streamSSE(c, async (stream) => {
       let isCleanedUp = false;
       let unsubscribe: (() => void) | null = null;
@@ -1446,37 +1450,52 @@ export function createApp(workspaceDir: string, options?: CreateAppOptions): Hon
         });
 
         const tailoringListener = (evt: TailoringEvent) => {
-          stream
-            .writeSSE({ event: 'tailoring', data: JSON.stringify(evt) })
-            .catch(() => cleanup());
+          if (!topicFilter || topicFilter.has('tailoring')) {
+            stream
+              .writeSSE({ event: 'tailoring', data: JSON.stringify(evt) })
+              .catch(() => cleanup());
+          }
         };
         tailoringListeners.add(tailoringListener);
         const unsubscribeWatcher = watcher.subscribe(async (evt) => {
           try {
             const draftMatch = /^tailoring-drafts\/([0-9a-f-]{36})\.json$/i.exec(evt.relativePath);
             if (draftMatch) {
-              let token;
-              try { token = draftService.repository.read(draftMatch[1]).token; } catch { /* Deleted/corrupt records still invalidate caches. */ }
-              await stream.writeSSE({ event: 'tailoring-draft', data: JSON.stringify({ draftId: draftMatch[1], token }) });
+              if (!topicFilter || topicFilter.has('tailoring') || topicFilter.has(`tailoring:${draftMatch[1]}`)) {
+                let token;
+                try { token = draftService.repository.read(draftMatch[1]).token; } catch { /* Deleted/corrupt records still invalidate caches. */ }
+                await stream.writeSSE({ event: 'tailoring-draft', data: JSON.stringify({ draftId: draftMatch[1], token }) });
+              }
               return;
             }
-            await stream.writeSSE({
-              event: 'change',
-              data: JSON.stringify({
+            if (!topicFilter || topicFilter.has('workspace_integrity') || topicFilter.has('change')) {
+              const payload = JSON.stringify({
                 type: evt.type,
                 relativePath: evt.relativePath,
                 timestamp: evt.timestamp,
-              }),
-            });
+              });
+              await stream.writeSSE({
+                event: 'workspace_integrity',
+                data: payload,
+              });
+              await stream.writeSSE({
+                event: 'change',
+                data: payload,
+              });
+            }
           } catch {
             cleanup();
           }
         });
         const unsubscribeJobs = getJobs().subscribe(evt => {
-          void stream.writeSSE({ event: 'jobs', id: evt.id, data: JSON.stringify(evt) }).catch(() => cleanup());
+          if (!topicFilter || topicFilter.has('jobs') || topicFilter.has(`jobs:${evt.job_id}`)) {
+            void stream.writeSSE({ event: 'jobs', id: evt.id, data: JSON.stringify(evt) }).catch(() => cleanup());
+          }
         });
         const unsubscribeCorpus = getJobs().subscribeCorpus(evt => {
-          void stream.writeSSE({ event: 'corpus', data: JSON.stringify(evt) }).catch(() => cleanup());
+          if (!topicFilter || topicFilter.has('corpus')) {
+            void stream.writeSSE({ event: 'corpus', data: JSON.stringify(evt) }).catch(() => cleanup());
+          }
         });
         unsubscribe = () => {
           unsubscribeCorpus();

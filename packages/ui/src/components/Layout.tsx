@@ -25,31 +25,70 @@ export const Layout: React.FC<LayoutProps> = ({ currentTab, onSelectTab, childre
   const [isMoreDrawerOpen, setIsMoreDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
+  const inFlightRef = React.useRef<AbortController | null>(null);
+  const isFetchingRef = React.useRef(false);
+  const pendingRefreshRef = React.useRef(false);
+
   const fetchWorkspaceAndIntegrity = async () => {
-    try {
-      const health = await apiClient.getHealth();
-      setWorkspaceDir(health.workspaceDir);
-    } catch {
-      // Ignore health fetch error
+    if (isFetchingRef.current) {
+      pendingRefreshRef.current = true;
+      return;
     }
+    isFetchingRef.current = true;
+    pendingRefreshRef.current = false;
+
+    if (inFlightRef.current) {
+      inFlightRef.current.abort();
+    }
+    const controller = new AbortController();
+    inFlightRef.current = controller;
 
     try {
-      setIntegrityLoading(true);
-      const integrity = await apiClient.getIntegrityCheck();
-      setIntegrityReport(integrity);
-    } catch {
-      // Ignore integrity fetch error
+      try {
+        const health = await apiClient.getHealth();
+        if (!controller.signal.aborted) {
+          setWorkspaceDir(health.workspaceDir);
+        }
+      } catch {
+        // Ignore health fetch error
+      }
+
+      try {
+        setIntegrityLoading(true);
+        const integrity = await apiClient.getIntegrityCheck();
+        if (!controller.signal.aborted) {
+          setIntegrityReport(integrity);
+        }
+      } catch {
+        // Ignore integrity fetch error
+      } finally {
+        if (!controller.signal.aborted) {
+          setIntegrityLoading(false);
+        }
+      }
     } finally {
-      setIntegrityLoading(false);
+      if (inFlightRef.current === controller) {
+        inFlightRef.current = null;
+      }
+      isFetchingRef.current = false;
+      if (pendingRefreshRef.current) {
+        pendingRefreshRef.current = false;
+        void fetchWorkspaceAndIntegrity();
+      }
     }
   };
 
   useLiveSync(() => {
     fetchWorkspaceAndIntegrity();
-  });
+  }, 'workspace_integrity');
 
   useEffect(() => {
     fetchWorkspaceAndIntegrity();
+    return () => {
+      if (inFlightRef.current) {
+        inFlightRef.current.abort();
+      }
+    };
   }, []);
 
   const handleSelectDeskTab = (tab: DeskTab) => {

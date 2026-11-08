@@ -13,6 +13,7 @@ class SseClient {
   private tailoringListeners = new Set<TailoringListener>();
   private corpusListeners = new Set<(event: CorpusNotification) => void>();
   private jobsListeners = new Set<ChangeListener>();
+  private workspaceIntegrityListeners = new Set<ChangeListener>();
   private statusListeners = new Set<StatusListener>();
   private connected = false;
   private retryAttempts = 0;
@@ -24,7 +25,7 @@ class SseClient {
   }
 
   private totalListeners(): number {
-    return this.draftListeners.size + this.corpusListeners.size + this.jobsListeners.size + this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
+    return this.draftListeners.size + this.corpusListeners.size + this.jobsListeners.size + this.workspaceIntegrityListeners.size + this.changeListeners.size + this.tailoringListeners.size + this.statusListeners.size;
   }
 
   private setConnected(status: boolean) {
@@ -104,6 +105,22 @@ class SseClient {
         let data: unknown;
         try { data = JSON.parse(e.data); } catch { return; }
         for (const listener of this.jobsListeners) { try { listener(data); } catch { /* isolate observers */ } }
+      });
+
+      source.addEventListener('workspace_integrity', (e: MessageEvent) => {
+        let data: any;
+        try {
+          data = JSON.parse(e.data);
+        } catch {
+          data = e.data;
+        }
+        for (const listener of this.workspaceIntegrityListeners) {
+          try {
+            listener(data);
+          } catch {
+            // Ignore subscriber error
+          }
+        }
       });
 
       source.addEventListener('tailoring-draft', (e: MessageEvent) => {
@@ -195,6 +212,37 @@ class SseClient {
     return () => { this.corpusListeners.delete(listener); this.scheduleDisconnectIfOrphaned(); };
   }
 
+  onWorkspaceIntegrity(listener: ChangeListener): () => void {
+    this.workspaceIntegrityListeners.add(listener);
+    this.connect();
+    return () => {
+      this.workspaceIntegrityListeners.delete(listener);
+      this.scheduleDisconnectIfOrphaned();
+    };
+  }
+
+  onTopic(topic: string, listener: ChangeListener): () => void {
+    if (topic === 'workspace_integrity') {
+      return this.onWorkspaceIntegrity(listener);
+    }
+    if (topic === 'corpus') {
+      return this.onCorpus(listener);
+    }
+    if (topic === 'jobs' || topic.startsWith('jobs:')) {
+      return this.onJobs((data: any) => {
+        if (topic === 'jobs') {
+          listener(data);
+        } else {
+          const jobId = topic.slice(5);
+          if (data && (data.job_id === jobId || data.id === jobId)) {
+            listener(data);
+          }
+        }
+      });
+    }
+    return this.onChange(listener);
+  }
+
   onJobs(listener: ChangeListener): () => void {
     this.jobsListeners.add(listener);
     this.connect();
@@ -232,6 +280,7 @@ class SseClient {
     this.close();
     this.corpusListeners.clear();
     this.jobsListeners.clear();
+    this.workspaceIntegrityListeners.clear();
     this.changeListeners.clear();
     this.tailoringListeners.clear();
     this.draftListeners.clear();

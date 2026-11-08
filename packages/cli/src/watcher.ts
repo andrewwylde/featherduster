@@ -13,41 +13,59 @@ export interface WorkspaceWatcherOptions {
   debounceMs?: number;
 }
 
+export const WATCHER_IGNORE_REGEXES = [
+  /.*\.db-(?:wal|shm)$/,
+  /(?:^|[\\/])\.leases[\\/]/,
+  /(?:^|[\\/])\.leases$/,
+  /(?:^|[\\/])\.cache[\\/]/,
+  /(?:^|[\\/])\.cache$/,
+  /(?:^|[\\/])tmp[\\/]/,
+  /(?:^|[\\/])tmp$/,
+  /.*\.tmp\.[a-zA-Z0-9]+$/,
+];
+
+export function isOperationalOrIgnoredPath(targetPath: string): boolean {
+  const normalized = targetPath.replace(/\\/g, '/');
+  for (const regex of WATCHER_IGNORE_REGEXES) {
+    if (regex.test(normalized)) return true;
+  }
+  if (normalized.endsWith('.tmp')) return true;
+  return false;
+}
+
 export class WorkspaceWatcher extends EventEmitter {
   private watcher: FSWatcher | null = null;
   private readonly workspaceDir: string;
   private readonly debounceMs: number;
   private subscribers = new Set<(event: WatcherChangeEvent) => void>();
-  private debounceTimer: NodeJS.Timeout | null = null;
-  private pendingEvents: WatcherChangeEvent[] = [];
+  private pathTimers = new Map<string, NodeJS.Timeout>();
+  private pendingByPath = new Map<string, WatcherChangeEvent>();
 
   constructor(workspaceDir: string, options?: WorkspaceWatcherOptions) {
     super();
     this.workspaceDir = path.resolve(workspaceDir);
-    this.debounceMs = options?.debounceMs ?? 100;
+    this.debounceMs = options?.debounceMs ?? 50;
   }
 
   /**
-   * Starts watching the evidence, companies, rubrics, resumes, tailoring, and .featherduster directories.
+   * Starts watching the workspace directory.
    */
   start(): void {
     if (this.watcher) return;
 
-    const watchTargets = [
-      path.join(this.workspaceDir, 'evidence'),
-      path.join(this.workspaceDir, 'companies'),
-      path.join(this.workspaceDir, 'rubrics'),
-      path.join(this.workspaceDir, 'resumes'),
-      path.join(this.workspaceDir, '.featherduster'),
-      path.join(this.workspaceDir, 'tailoring'),
-      path.join(this.workspaceDir, 'tailoring-drafts'),
-    ];
-
-    this.watcher = chokidar.watch(watchTargets, {
+    this.watcher = chokidar.watch(this.workspaceDir, {
       ignoreInitial: true,
       persistent: true,
       followSymlinks: false,
       ignored: [
+        /.*\.db-(?:wal|shm)$/,
+        /(?:^|[\\/])\.leases[\\/]/,
+        /(?:^|[\\/])\.leases$/,
+        /(?:^|[\\/])\.cache[\\/]/,
+        /(?:^|[\\/])\.cache$/,
+        /(?:^|[\\/])tmp[\\/]/,
+        /(?:^|[\\/])tmp$/,
+        /.*\.tmp\.[a-zA-Z0-9]+$/,
         /(^|[/\\])\.(?!featherduster)/, // dotfiles except .featherduster
         '**/node_modules/**',
         '**/.git/**',
@@ -68,6 +86,9 @@ export class WorkspaceWatcher extends EventEmitter {
         ? normalizedPath.slice(normalizedWorkspace.length).replace(/^\//, '')
         : path.relative(this.workspaceDir, filePath).replace(/\\/g, '/');
 
+      if (!relativePath || relativePath === '.') return;
+      if (isOperationalOrIgnoredPath(normalizedPath) || isOperationalOrIgnoredPath(relativePath)) return;
+
       if (relativePath.startsWith('tailoring-drafts/') && !/^tailoring-drafts\/[0-9a-f-]{36}\.json$/i.test(relativePath)) return;
 
       const changeEvent: WatcherChangeEvent = {
@@ -77,18 +98,19 @@ export class WorkspaceWatcher extends EventEmitter {
         timestamp: Date.now(),
       };
 
-      this.pendingEvents.push(changeEvent);
+      this.pendingByPath.set(normalizedPath, changeEvent);
 
-      if (this.debounceTimer) {
-        clearTimeout(this.debounceTimer);
+      const existingTimer = this.pathTimers.get(normalizedPath);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
       }
 
-      this.debounceTimer = setTimeout(() => {
-        const events = [...this.pendingEvents];
-        this.pendingEvents = [];
-        this.debounceTimer = null;
+      const timer = setTimeout(() => {
+        this.pathTimers.delete(normalizedPath);
+        const evt = this.pendingByPath.get(normalizedPath);
+        this.pendingByPath.delete(normalizedPath);
 
-        for (const evt of events) {
+        if (evt) {
           this.emit('change', evt);
           for (const sub of this.subscribers) {
             try {
@@ -99,6 +121,8 @@ export class WorkspaceWatcher extends EventEmitter {
           }
         }
       }, this.debounceMs);
+
+      this.pathTimers.set(normalizedPath, timer);
     };
 
     this.watcher.on('add', (fp) => handleEvent('add', fp));
@@ -120,14 +144,26 @@ export class WorkspaceWatcher extends EventEmitter {
    * Closes the underlying file watcher and stops all timers.
    */
   async close(): Promise<void> {
-    if (this.debounceTimer) {
-      clearTimeout(this.debounceTimer);
-      this.debounceTimer = null;
+    for (const timer of this.pathTimers.values()) {
+      clearTimeout(timer);
     }
+    this.pathTimers.clear();
+    this.pendingByPath.clear();
     this.subscribers.clear();
     if (this.watcher) {
       await this.watcher.close();
       this.watcher = null;
     }
   }
+}
+
+export function createScopedWatcher(
+  workspaceDir: string,
+  listener: (event: WatcherChangeEvent) => void,
+  options?: WorkspaceWatcherOptions,
+): WorkspaceWatcher {
+  const watcher = new WorkspaceWatcher(workspaceDir, options);
+  watcher.subscribe(listener);
+  watcher.start();
+  return watcher;
 }
