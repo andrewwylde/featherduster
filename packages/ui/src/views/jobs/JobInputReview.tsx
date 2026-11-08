@@ -40,12 +40,13 @@ export function JobInputReview({ data, navigate, initialResumes }: {
 
   const selected = resumes.find(r => r.id === baseId);
   const resolvedDefaultLabel = defaultResume?.filePath || defaultResume?.name || (data.resolvedDefaultId && (capturedResumeId === data.resolvedDefaultId || capturedResumePath) ? capturedResumePath : undefined) || data.resolvedDefaultId;
-  const nextSelectionText = !job.base_resume_id && resolvedDefaultLabel
-    ? `Default: ${resolvedDefaultLabel}`
-    : selected
-      ? (selected.filePath || selected.name || selected.id)
-      : resolvedDefaultLabel
-        ? `Default: ${resolvedDefaultLabel}`
+  const isExplicitSelection = Boolean(baseId && (!defaultResume || baseId !== defaultResume.id));
+  const nextSelectionText = isExplicitSelection && selected
+    ? (selected.filePath || selected.name || selected.id)
+    : resolvedDefaultLabel
+      ? `Default: ${resolvedDefaultLabel}`
+      : selected
+        ? (selected.filePath || selected.name || selected.id)
         : 'Starting resume';
 
   const prepare = async () => {

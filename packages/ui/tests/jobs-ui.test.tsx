@@ -807,6 +807,7 @@ function renderJobInputReview(options: {
   };
   currentSelection?: string | null;
   resolvedDefaultId?: string;
+  additionalResumes?: any[];
 }) {
   const resume = {
     id: options.resolvedDefaultId ?? 'tailored/main:yaml',
@@ -815,7 +816,8 @@ function renderJobInputReview(options: {
     type: 'template' as const,
     spec,
   };
-  vi.spyOn(apiClient, 'getResumes').mockResolvedValue([resume]);
+  const allResumes = [resume, ...(options.additionalResumes ?? [])];
+  vi.spyOn(apiClient, 'getResumes').mockResolvedValue(allResumes);
 
   const testJob = job({
     base_resume_id: options.currentSelection ?? null,
@@ -836,7 +838,7 @@ function renderJobInputReview(options: {
     resolvedDefaultId: options.resolvedDefaultId,
   } as any;
 
-  return render(<JobInputReview data={testDetail} navigate={vi.fn()} initialResumes={[resume]} />);
+  return render(<JobInputReview data={testDetail} navigate={vi.fn()} initialResumes={allResumes} />);
 }
 
 it('displays active captured resume fingerprint alongside next-run selection without false empty state', () => {
@@ -848,10 +850,24 @@ it('displays active captured resume fingerprint alongside next-run selection wit
     },
     currentSelection: null, // null selector falling back to default
     resolvedDefaultId: 'tailored/main:yaml',
+    additionalResumes: [
+      {
+        id: 'tailored/alt:yaml',
+        name: 'Alt Resume',
+        filePath: 'resumes/tailored/alt.yaml',
+        type: 'saved' as const,
+        spec,
+      },
+    ],
   });
 
   expect(screen.getByTestId('captured-resume-label')).toHaveTextContent('resumes/tailored/main.yaml (Captured for current draft)');
   expect(screen.getByTestId('next-selection-label')).toHaveTextContent('Default: resumes/tailored/main.yaml');
   expect(screen.queryByText('Select a saved starting resume')).not.toBeInTheDocument();
+
+  // Changing selection to another variant updates next-selection-label away from Default
+  fireEvent.change(screen.getByLabelText('Starting resume'), { target: { value: 'tailored/alt:yaml' } });
+  expect(screen.getByTestId('next-selection-label')).toHaveTextContent('resumes/tailored/alt.yaml');
+  expect(screen.getByTestId('next-selection-label')).not.toHaveTextContent('Default:');
 });
 
