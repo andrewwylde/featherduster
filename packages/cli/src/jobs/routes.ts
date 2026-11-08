@@ -1,4 +1,7 @@
 import { DraftResumeSpecSchema, CheckJobDraftRequestSchema, FinalizeJobDraftRequestSchema } from '@featherduster/core';
+import { knownClarificationConflicts, inventoryPassages } from '@featherduster/core';
+import { fingerprint } from './files.js';
+import { affectedClarificationDrafts, updateSelectedClarificationDrafts, undoClarificationUpdate, clarificationUpdateHistory, SelectedUpdatesSchema } from './clarification-updates.js';
 import { StartSemanticCheckSchema, SaveFactClarificationSchema, SemanticTargetSchema } from '@featherduster/core';
 import { JobExportRequestSchema } from './exports.js';
 import { SaveReviewSchema, ReviewBindingSchema, ContinueReviewSchema, RecoverReviewSchema, CorrectBaseSchema } from './proposal-service.js';
@@ -28,6 +31,9 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     }
   };
   app.post('/api/jobs/preparation-batches', handle(async (c, r) => r.prepareBatch(await c.req.json()), 202));
+  app.get('/api/jobs/clarification-updates', handle((c, r) => ({ ...affectedClarificationDrafts(r, { cursor: c.req.query('cursor') || undefined }), history: clarificationUpdateHistory(r) })));
+  app.post('/api/jobs/clarification-updates', handle(async (c, r) => updateSelectedClarificationDrafts(r, SelectedUpdatesSchema.parse(await c.req.json()))));
+  app.post('/api/jobs/clarification-updates/undo', handle(async (c, r) => undoClarificationUpdate(r, z.object({ operation_key: key }).strict().parse(await c.req.json()).operation_key)));
   app.get('/api/jobs/preparation-batches/:batchId', handle((c, r) => r.readBatch(uuid.parse(c.req.param('batchId')))));
   app.get('/api/jobs/preparation-batches/:batchId/review-queue', handle((c, r) => ({ queue: r.readBatch(uuid.parse(c.req.param('batchId'))).queue })));
   app.get('/api/jobs/preparation-batches/:batchId/questions', handle((c, r) => ({ groups: r.questions.read(uuid.parse(c.req.param('batchId'))), materials: r.questions.materials(uuid.parse(c.req.param('batchId'))) })));
@@ -50,8 +56,8 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
   app.post('/api/jobs/:id/facts/check', handle(async (c, r) => r.semantic.start(uuid.parse(c.req.param('id')), StartSemanticCheckSchema.parse(await c.req.json())), 202));
   app.get('/api/jobs/:id/facts/checks/:operationId', handle((c, r) => r.semantic.operation(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('operationId')))));
   app.post('/api/jobs/:id/facts/clarifications', handle(async (c, r) => {
-    const id = uuid.parse(c.req.param('id')), result = r.semantic.clarify(id, SaveFactClarificationSchema.parse(await c.req.json()));
-    r.coordinator.answered(id); return result;
+    const id = uuid.parse(c.req.param('id')), request = SaveFactClarificationSchema.parse(await c.req.json()), result = r.semantic.clarify(id, request);
+    if (request.confirmed !== false) r.coordinator.answered(id); return result;
   }));
   const checkFallback = (r: JobsRuntime, id?: string, rev?: number) => { if (id && r.repository.getJob(id).revision !== rev) throw new RepositoryError('revision_conflict', 'Stale fallback revision'); };
   app.get('/api/jobs', handle((c, r) => { const filters = jobFilters.parse(c.req.query()); return {
@@ -124,7 +130,10 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
     return exportResponse(file.bytes, file.type, file.name, c.req.query('download') === '1');
   }));
   const binding = z.object({ expected_job_revision: revision, artifact_fingerprint: key, idempotency_key: key }).strict();
-  app.get('/api/jobs/:id/artifacts/:versionId/review', handle((c, r) => r.artifacts.review(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')))));
+  app.get('/api/jobs/:id/artifacts/:versionId/review', handle((c, r) => {
+    const view = r.artifacts.review(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')));
+    return { ...view, fact_conflicts: knownClarificationConflicts(r.corpus.repository.snapshot(), inventoryPassages(view.draft.candidate, fingerprint)) };
+  }));
   for (const kind of ['pdf', 'previews/:page']) app.get(`/api/jobs/:id/artifacts/:versionId/${kind}`, handle((c, r) => {
     const page = kind === 'pdf' ? undefined : z.coerce.number().int().positive().parse(c.req.param('page'));
     const bytes = r.artifacts.content(uuid.parse(c.req.param('id')), uuid.parse(c.req.param('versionId')), page);

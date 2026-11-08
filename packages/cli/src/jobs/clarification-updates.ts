@@ -11,7 +11,7 @@ export const SelectedUpdatesSchema = z.object({ expected_corpus_revision: z.numb
 }).strict();
 
 /** Derives affected jobs from persisted answers and captured work identities, never employer-name similarity. */
-export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurationMs?: number }) {
+export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurationMs?: number; cursor?: string }) {
   const knowledge = r.corpus.repository.snapshot();
   const corrections = C.clarificationCorrections(knowledge);
   if (!corrections.length) return { corpus_revision: knowledge.revision, jobs: [] };
@@ -29,23 +29,32 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
   const maxDurationMs = options?.maxDurationMs ?? 1500;
   const startTime = Date.now();
   let incomplete = false;
+  let next_cursor: string | undefined;
 
   const jobs: {
     job_id: string; company: string | null; role: string | null; target: C.SemanticTarget;
     draft_revision: number | undefined; working_draft: boolean; job_revision: number;
-    fingerprint: string; edits: (C.PassageEdit & { corrections: { update_id: string; answer: string }[] })[];
+    fingerprint: string; edits: (C.PassageEdit & { proposal_id?: string; corrections: { update_id: string; answer: string }[] })[];
     historical_artifact: string | null; busy: boolean;
   }[] = [];
 
-  for (const job of r.repository.listJobs()) {
+  let list = r.repository.listJobs();
+  if (options?.cursor) {
+    const idx = list.findIndex(j => j.id === options.cursor);
+    if (idx >= 0) list = list.slice(idx + 1);
+  }
+
+  for (const job of list) {
     if (Date.now() - startTime > maxDurationMs) {
       incomplete = true;
+      next_cursor = job.id;
       break;
     }
 
     try {
       // Lightweight index check: collect recorded work IDs before loading artifacts or reviewing
       const jobWorkIds = new Set<string>();
+      let hasClaimTokenMatch = false;
 
       const draftRow = db.prepare('SELECT payload FROM draft_revisions WHERE job_id=? ORDER BY rowid DESC LIMIT 1').get(job.id) as { payload: string } | undefined;
       if (draftRow) {
@@ -53,6 +62,9 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
           const draftData = JSON.parse(draftRow.payload);
           if (draftData.candidate?.summary?.trim()) {
             jobWorkIds.add(`summary:${fingerprint(draftData.candidate.summary)}`);
+            for (const token of activeClaimTokens) {
+              if (draftData.candidate.summary.includes(token)) hasClaimTokenMatch = true;
+            }
           }
           for (const exp of draftData.candidate?.experiences ?? []) {
             for (const b of exp.bullets ?? []) {
@@ -62,6 +74,9 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
               ]));
               jobWorkIds.add(wid);
               for (const c of b.citations ?? []) jobWorkIds.add(c);
+              for (const token of activeClaimTokens) {
+                if (b.text?.includes(token)) hasClaimTokenMatch = true;
+              }
             }
           }
         } catch {}
@@ -98,11 +113,13 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
       }
 
       // Skip jobs whose recorded work IDs share no intersection with any active correction's work_id
-      let intersects = false;
-      for (const wid of jobWorkIds) {
-        if (activeWorkIds.has(wid)) {
-          intersects = true;
-          break;
+      let intersects = hasClaimTokenMatch;
+      if (!intersects) {
+        for (const wid of jobWorkIds) {
+          if (activeWorkIds.has(wid)) {
+            intersects = true;
+            break;
+          }
         }
       }
       if (!intersects) continue;
@@ -159,7 +176,7 @@ export function affectedClarificationDrafts(r: JobsRuntime, options?: { maxDurat
     }
   }
 
-  return { corpus_revision: knowledge.revision, jobs, ...(incomplete ? { incomplete: true } : {}) };
+  return { corpus_revision: knowledge.revision, jobs, ...(incomplete ? { incomplete: true, next_cursor } : {}) };
 }
 
 /** Each selected job commits independently; late/stale results never overwrite another edit. */

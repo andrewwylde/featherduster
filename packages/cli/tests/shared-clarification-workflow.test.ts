@@ -347,3 +347,16 @@ it('bounds work during discovery with 52 saved jobs and does not read unrelated 
   expect(pdfReads).toHaveLength(0);
 });
 
+it('bounds work and returns pagination cursor when duration budget is exceeded', async () => {
+  const fixture = create52JobWorkspaceWithOneCorrection();
+  const capped = await affectedClarificationDrafts(fixture.runtime, { maxDurationMs: 0 });
+
+  expect(capped.incomplete).toBe(true);
+  expect(typeof capped.next_cursor).toBe('string');
+  expect(capped.next_cursor?.length).toBeGreaterThan(0);
+
+  // Resuming from cursor with sufficient budget completes discovery
+  const resumed = await affectedClarificationDrafts(fixture.runtime, { cursor: capped.next_cursor, maxDurationMs: 5000 });
+  expect(resumed.incomplete).toBeUndefined();
+});
+

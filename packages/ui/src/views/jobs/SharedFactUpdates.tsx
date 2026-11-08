@@ -3,14 +3,23 @@ import type { PassageEdit } from '@featherduster/core';
 import { cardClass, inputClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
 interface Affected { job_id: string; company: string; role: string; fingerprint: string; busy: boolean; historical_artifact: string | null; edits: (PassageEdit & { corrections: { update_id: string; answer: string }[] })[] }
 interface History { job_id: string; operation_key: string; edits: PassageEdit[]; undone: boolean; check: { status: string; error?: string } }
-interface View { corpus_revision: number; jobs: Affected[]; history: History[]; incomplete?: boolean }
+interface View { corpus_revision: number; jobs: Affected[]; history: History[]; incomplete?: boolean; next_cursor?: string }
 async function request<T>(path: string, body?: unknown): Promise<T> {
   const response = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : undefined);
   const value = await response.json(); if (!response.ok) throw Error(value.error ?? 'Could not update drafts.'); return value;
 }
 export function SharedFactUpdates({ onSaved }: { onSaved(): void }) {
   const [view, setView] = useState<View>(), [selected, setSelected] = useState<string[]>([]), [busy, setBusy] = useState(false), [message, setMessage] = useState('');
-  const load = () => request<View>('/api/jobs/clarification-updates').then(setView).catch(e => setMessage(e.message));
+  const load = (cursor?: string) =>
+    request<View>(`/api/jobs/clarification-updates${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ''}`)
+      .then(v => {
+        setView(prev => {
+          if (!cursor || !prev) return v;
+          const existingIds = new Set(prev.jobs.map(j => j.job_id));
+          return { ...v, jobs: [...prev.jobs, ...v.jobs.filter(j => !existingIds.has(j.job_id))] };
+        });
+      })
+      .catch(e => setMessage(e.message));
   useEffect(() => { void load(); }, []);
   if (!view && !message) return null;
   if (view && !view.jobs.length && !view.history.length && !view.incomplete) return null;
@@ -19,7 +28,7 @@ export function SharedFactUpdates({ onSaved }: { onSaved(): void }) {
     <p className="text-sm">Select affected drafts to update. Unrelated wording stays unchanged. Approved PDFs remain historical versions; updated drafts need fresh checks and PDF approval.</p>
     {view?.incomplete && <div className="text-sm bg-amber-50 text-amber-900 border border-amber-200 p-2 rounded flex items-center justify-between">
       <span>Draft discovery was bounded to keep the interface responsive; additional drafts may be affected.</span>
-      <button className={secondaryButton} disabled={busy} onClick={() => void load()}>Scan remaining</button>
+      <button className={secondaryButton} disabled={busy} onClick={() => void load(view?.next_cursor)}>Scan remaining</button>
     </div>}
     <p role="status">{message}</p>{!view && message && <button className={secondaryButton} onClick={() => void load()}>Retry loading affected drafts</button>}
     {view?.jobs.map(job => <section key={job.job_id} className="border-t pt-3 space-y-2">
