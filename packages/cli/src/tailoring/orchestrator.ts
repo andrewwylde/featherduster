@@ -55,6 +55,7 @@ import { loadTailoringConfig, recordRunnerConsent, type TailoringConfig } from '
 import { loadTailoringSkill } from './skill-text.js';
 import { DraftRepositoryError } from './drafts/errors.js';
 import { DraftService } from './drafts/service.js';
+import { resolveResume } from '../resumes/variants.js';
 import { RUN_FILES, RunStore, RunStoreError, writeRunArtifactAtomic } from './store.js';
 
 export interface TailoringEvent {
@@ -854,7 +855,13 @@ export class TailoringOrchestrator {
   private requireBaseResume(manifest: RunManifest): BaseResumeRef {
     const draft = this.drafts.adoptRun(manifest.slug);
     const base = draft?.record.base ? { id: draft.record.base.resumeId, name: draft.record.base.resumeId, spec: draft.record.base.spec } : undefined;
-    if (!base) throw new TailoringError(409, 'base_resume_missing', `Base resume "${manifest.base_resume}" no longer exists.`);
+    if (!base) {
+      const resolved = resolveResume(this.deps.loadResumes() as any, manifest.base_resume).resume;
+      if (resolved) {
+        return { id: resolved.id, name: resolved.name, spec: resolved.spec };
+      }
+      throw new TailoringError(409, 'base_resume_missing', `Base resume "${manifest.base_resume}" no longer exists.`);
+    }
     return base;
   }
 

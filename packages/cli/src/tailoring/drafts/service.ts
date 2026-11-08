@@ -285,7 +285,7 @@ export class DraftService {
       if (draft.record.kind !== 'run' || draft.record.runSlug !== slug) throw new DraftRepositoryError(409, 'association_conflict', 'Run and draft association differ');
       return this.establishLegacyCompletion(this.reconcileMissingArtifactTokens(draft, store), store);
     }
-    const source = this.dependencies.loadResumes().find((item) => item.id === manifest.base_resume);
+    const source = resolveResume(this.dependencies.loadResumes() as any, manifest.base_resume).resume;
     if (!source) return undefined;
     const digest = createHash('sha256').update(this.workspaceId + ':legacy:' + slug).digest('hex');
     const id = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
