@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { JobFacts as Facts } from '@featherduster/core';
+import { computeUnifiedReviewSummary, type JobFacts as Facts } from '@featherduster/core';
 import {
   ArrowLeft,
   FileText,
@@ -119,10 +119,24 @@ export function JobDetail({
     return () => { alive = false; };
   }, [id, hasReview, data?.job.revision]);
   const canRecover = data?.proposal_review?.availability === 'missing_output' && data.proposal_review.recoverable;
+  const issues = data?.proposal_review?.availability === 'available' && data.proposal_review.blocking_count > 0
+    ? Array.from({ length: data.proposal_review.blocking_count }, (_, i) => ({
+        id: `blocker-${i}`,
+        subject: { kind: 'proposal' as const, proposal_id: `p-${i}` },
+        group: 'grounding',
+        action: 'edit_proposal' as const,
+        details: [{ severity: 'block' as const, kind: 'unsupported_experience', message: 'Blocker' }],
+      }))
+    : undefined;
+  const unifiedSummary = computeUnifiedReviewSummary({
+    facts: factsData ?? undefined,
+    issues,
+    hasPdf: !!job?.artifact_version_ids?.length,
+  });
   const unresolvedFactsCount = factsData
-    ? factsData.facts.filter(f => !f.resolution && ['needs_clarification', 'contradicted'].includes(f.state)).length
+    ? unifiedSummary.unresolved_facts_count
     : (data?.proposal_review?.availability === 'available' ? data.proposal_review.blocking_count : 0);
-  const wordingBlockersCount = data?.proposal_review?.availability === 'available' ? data.proposal_review.blocking_count : 0;
+  const wordingBlockersCount = unifiedSummary.wording_issues_count;
   const reviewButtonLabel = factsData
     ? unresolvedFactsCount > 0 && wordingBlockersCount > 0
       ? `Review draft (${unresolvedFactsCount} ${unresolvedFactsCount === 1 ? 'fact' : 'facts'}, ${wordingBlockersCount} wording)`

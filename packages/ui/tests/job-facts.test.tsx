@@ -295,3 +295,32 @@ it('renders Needs retry banner naming the specific failed batch and safe message
   fireEvent.click(retryBtn);
   await waitFor(() => expect(startCheck).toHaveBeenCalledWith('job', expect.objectContaining({ reason: 'retry' })));
 });
+
+it('does not dispatch redundant checks when execution is checking', async () => {
+  const checkingView: Facts = {
+    ...view(),
+    execution: 'checking',
+    failures: [{
+      batch_index: 1,
+      stage: 'schema_validation',
+      code: 'wire_shape_invalid',
+      safe_diagnostic: 'Temporary failure',
+      passage_ids: ['p1'],
+    }],
+  };
+  vi.spyOn(apiClient, 'getJobFacts').mockResolvedValue(checkingView);
+  const startCheck = vi.spyOn(apiClient, 'startJobFactCheck');
+  render(<JobFacts jobId="job" reactive />);
+
+  expect(await screen.findByText('Checking captured evidence…')).toBeVisible();
+
+  const retryBtn = screen.getByRole('button', { name: 'Retry failed checks' });
+  expect(retryBtn).toBeDisabled();
+
+  const checkBtn = screen.getByRole('button', { name: 'Check evidence' });
+  expect(checkBtn).toBeDisabled();
+
+  fireEvent.click(retryBtn);
+  fireEvent.click(checkBtn);
+  expect(startCheck).not.toHaveBeenCalled();
+});
