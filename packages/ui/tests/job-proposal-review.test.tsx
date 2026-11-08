@@ -547,14 +547,14 @@ it('labels findings from retained baseline as resolved by pending edit when repl
   const rewriteProposal: Proposal = {
     id: 'p-rewrite',
     type: 'bullet.rewrite',
-    target: { experience_index: 0, bullet_index: 0 },
+    target: { experience_index: 0, bullet_index: 0 } as any,
     before: 'Built 11 features with zero bugs.',
     after: 'Built features with zero bugs.',
     citations: ['ev-1'],
     requirement_ids: [],
     decision: 'pending',
     checks: [],
-  };
+  } as unknown as Proposal;
   const baseFinding: ProposalIssue = {
     id: 'base-0',
     subject: { kind: 'candidate', path: 'experiences.0.bullets.0.text' },
@@ -598,14 +598,14 @@ it('prevents stale finding from showing as defect when user edits newly typed te
   const proposal: Proposal = {
     id: 'p-metric',
     type: 'summary.rewrite',
-    target: {},
+    target: {} as any,
     before: '',
     after: 'Reduced latency by 99%.',
     citations: ['ev-1'],
     requirement_ids: [],
     decision: 'pending',
     checks: [],
-  };
+  } as unknown as Proposal;
   const issue: ProposalIssue = {
     id: 'issue-metric',
     subject: { kind: 'proposal', proposal_id: 'p-metric' },

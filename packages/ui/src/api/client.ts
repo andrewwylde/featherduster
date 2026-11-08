@@ -1,5 +1,5 @@
 import type { JobDraftCheck, FinalizeJobDraftRequest } from '@featherduster/core';
-import type { CorpusView, CorpusWriteRequest, CorpusPreviewResponse, CorpusUpdate, MutationReceipt, ProposalBinding, ProposalSaveRequest, ProposalContinueRequest, ProposalRecoverRequest, ProposalReadResponse, ProposalSaveResponse, ProposalAdmissionResponse, ProposalReviewRevision, ProposalReviewSummary, ProposalBaseCorrectionRequest, ProposalBaseCorrectionResponse, BaseCorrection } from '@featherduster/core';
+import type { CorpusView, CorpusWriteRequest, CorpusPreviewResponse, CorpusUpdate, MutationReceipt, ProposalBinding, ProposalSaveRequest, ProposalContinueRequest, ProposalRecoverRequest, ProposalReadResponse, ProposalSaveResponse, ProposalAdmissionResponse, ProposalReviewRevision, ProposalReviewSummary, ProposalBaseCorrectionRequest, ProposalBaseCorrectionResponse, BaseCorrection, ArtifactChangesSummary } from '@featherduster/core';
 import type { Job, PostingSnapshot, Attempt, ArtifactVersion, JobEvent, ScopedAnswer, WorkerControl, JobDraft, InputSnapshot, ResumeReview } from '@featherduster/core';
 import type {
   DraftAcknowledgement, DraftEnvelope, DraftContext, DraftCompletion, DraftRecord, DraftUpdate, RevisionToken, SetupPayload, ManualDraftPayload,
@@ -51,8 +51,12 @@ export interface JobsDetail {
 }
 export interface JobsControl { queued_count?: number; needs_review_count?: number; control: WorkerControl; active: Omit<Attempt, 'owner_token'>[] }
 export interface JobReview {
+  fact_conflicts?: { path: string; wording: string; previous_answer: string; corrected_answer: string }[];
   working_draft?: JobDraft | null;
   artifact: ArtifactVersion; draft: JobDraft; base_resume: ResumeSpec;
+  raw_base_resume?: any;
+  base_corrections?: any[];
+  changes_summary?: ArtifactChangesSummary;
   analysis: JobAnalysis | null; alignment: AlignmentMatrix | null; brief_markdown: string | null;
   validation_report: unknown; preview_count: number;
 }

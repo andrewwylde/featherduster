@@ -357,10 +357,5 @@ export function validateOmissionTargets(base: z.infer<typeof ResumeSpecSchema>, 
   }
 }
 
-export {
-  type PassageDiffStage,
-  type PassageDiffTrace,
-  type ArtifactChangesSummary,
-  computeArtifactChanges,
-} from './restoration.js';
+export * from './restoration.js';
 

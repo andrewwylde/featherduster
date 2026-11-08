@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { compileMarkdownResume, computeArtifactChanges, ProposalSchema, restoreAccomplishmentInDraft, tightenResumeWording, undoProposalInDraft, type Job, type JobDraft, type ResumeSpec, type Proposal } from '@featherduster/core';
+import { compileMarkdownResume, computeArtifactChanges, ProposalSchema, restoreAccomplishmentInDraft, tightenResumeWording, undoProposalInDraft, type Job, type JobDraft, type ResumeSpec, type Proposal, type PassageDiffStage, type PassageDiffTrace, type ArtifactChangesSummary } from '@featherduster/core';
 import { apiClient, type JobReview } from '../../api/client.js';
 import { cardClass, secondaryButton } from '../tailoring/ui.js';
 
@@ -25,26 +25,26 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
   const candidate = draft?.candidate ?? review.draft.candidate;
   const published = review.draft.candidate;
   const pendingChanges = JSON.stringify(candidate) !== JSON.stringify(published);
-  const rawBase = (review as { raw_base_resume?: ResumeSpec }).raw_base_resume;
+  const rawBase = review.raw_base_resume;
   const originalBase = rawBase ?? review.base_resume;
-  const baseCorrections = (review as { base_corrections?: any[] }).base_corrections ?? [];
-  const changesSummary = (review as { changes_summary?: any }).changes_summary
+  const baseCorrections = review.base_corrections ?? [];
+  const changesSummary: ArtifactChangesSummary = review.changes_summary
     ?? computeArtifactChanges(originalBase, baseCorrections, review.draft.proposals.proposals);
-  const findTrace = (p: Proposal) => {
-    const traces = changesSummary.passages;
+  const findTrace = (p: Proposal): PassageDiffTrace | undefined => {
+    const traces: PassageDiffTrace[] = changesSummary.passages;
     if (p.type === 'summary.rewrite') {
-      return traces.find(t => t.passage_id === 'summary' || t.final_text === (p.edited_after ?? p.after));
+      return traces.find((t: PassageDiffTrace) => t.passage_id === 'summary' || t.final_text === (p.edited_after ?? p.after));
     }
     if (p.type === 'bullet.add') {
-      return traces.find(t => t.passage_id === p.id || (t.original_text === '' && t.final_text === (p.edited_after ?? p.after)));
+      return traces.find((t: PassageDiffTrace) => t.passage_id === p.id || (t.original_text === '' && t.final_text === (p.edited_after ?? p.after)));
     }
     const expectedPath = `experiences.${p.target.experience_index}.bullets.${p.target.bullet_index}.text`;
     const targetText = p.edited_after ?? p.after;
-    return traces.find(t => t.passage_id === expectedPath && (t.final_text === targetText || t.stages.some(s => s.text === targetText)))
-      ?? traces.find(t => t.passage_id.endsWith(`:${p.target.bullet_index}`) && (t.final_text === targetText || t.stages.some(s => s.text === targetText)))
-      ?? traces.find(t => t.final_text === targetText && (t.stages.some(s => s.text === p.before) || t.original_text === p.before))
-      ?? traces.find(t => t.stages.some(s => s.text === p.before))
-      ?? traces.find(t => t.final_text === targetText);
+    return traces.find((t: PassageDiffTrace) => t.passage_id === expectedPath && (t.final_text === targetText || t.stages.some((s: PassageDiffStage) => s.text === targetText)))
+      ?? traces.find((t: PassageDiffTrace) => t.passage_id.endsWith(`:${p.target.bullet_index}`) && (t.final_text === targetText || t.stages.some((s: PassageDiffStage) => s.text === targetText)))
+      ?? traces.find((t: PassageDiffTrace) => t.final_text === targetText && (t.stages.some((s: PassageDiffStage) => s.text === p.before) || t.original_text === p.before))
+      ?? traces.find((t: PassageDiffTrace) => t.stages.some((s: PassageDiffStage) => s.text === p.before))
+      ?? traces.find((t: PassageDiffTrace) => t.final_text === targetText);
   };
   const active = review.draft.proposals.proposals.filter(p => p.type !== 'bullet.drop'
     && (p.type === 'summary.rewrite' ? published.summary === (p.edited_after ?? p.after) : published.experiences[p.target.experience_index]?.bullets.some(b => b.text === (p.edited_after ?? p.after))));
@@ -125,7 +125,7 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
               Correction history ({trace.stages.length} stages)
             </summary>
             <ol className="mt-1 space-y-1 pl-4 list-decimal">
-              {trace.stages.map((stage, idx) => (
+              {trace.stages.map((stage: PassageDiffStage, idx: number) => (
                 <li key={idx}>
                   <span className="font-semibold text-slate-800">{stageKindLabel(stage.kind)}: </span>
                   <span>{stage.text || '(empty)'}</span>
