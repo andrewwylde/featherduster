@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { FactSchema, ClarificationSchema, SemanticResultSchema } from '../src/jobs/semantic-evidence.js';
+import { FactSchema, ClarificationSchema, SemanticResultSchema, ClaimSchema, SourceQuoteSchema, SubjectSchema } from '../src/jobs/semantic-evidence.js';
 import { sameFact, resolveSemanticFindings, validClaimBinding } from '../src/jobs/semantic-policy.js';
 import type { ClaimResult, SemanticPassage, SemanticSource } from '../src/jobs/semantic-evidence.js';
 
@@ -32,4 +32,36 @@ it('cannot borrow a quoted source from another employer for an employment bullet
     evidence: [{ evidence_id: 'e', evidence_fingerprint: 'hash', field: 'summary', start: 0, end: source.text.length, quote: source.text }], explanation: 'Literal match.' };
   expect(validClaimBinding(result, passage, [source])).toBe(false);
   expect(validClaimBinding(result, passage, [{ ...source, company: 'ACME' }])).toBe(true);
+});
+
+it('preserves exact verbatim text with leading or trailing whitespace in claims and source quotes', () => {
+  const subject = SubjectSchema.parse({ id: 's', path: 'path', passage_fingerprint: 'fp' });
+  const textWithEdgeSpace = 'Built a UI; ';
+  const claim = ClaimSchema.parse({
+    id: 'c1',
+    subject,
+    text: textWithEdgeSpace,
+    start: 0,
+    end: textWithEdgeSpace.length,
+    fact: { work_id: 'w1', predicate: 'built', qualifiers: [] },
+    qualifier_text: [],
+  });
+  expect(claim.text).toBe(textWithEdgeSpace);
+  expect(claim.end - claim.start).toBe(textWithEdgeSpace.length);
+
+  const quoteWithEdgeSpace = ' shipped an API. ';
+  const quote = SourceQuoteSchema.parse({
+    evidence_id: 'e1',
+    evidence_fingerprint: 'fp',
+    field: 'narrative',
+    start: 5,
+    end: 5 + quoteWithEdgeSpace.length,
+    quote: quoteWithEdgeSpace,
+  });
+  expect(quote.quote).toBe(quoteWithEdgeSpace);
+  expect(quote.end - quote.start).toBe(quoteWithEdgeSpace.length);
+
+  // Whitespace-only quote or claim must fail
+  expect(SourceQuoteSchema.safeParse({ ...quote, quote: '   ', start: 0, end: 3 }).success).toBe(false);
+  expect(ClaimSchema.safeParse({ ...claim, text: '   ', start: 0, end: 3 }).success).toBe(false);
 });

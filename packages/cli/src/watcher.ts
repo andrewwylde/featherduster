@@ -14,14 +14,16 @@ export interface WorkspaceWatcherOptions {
 }
 
 export const WATCHER_IGNORE_REGEXES = [
-  /.*\.db-(?:wal|shm)$/,
-  /(?:^|[\\/])\.leases[\\/]/,
-  /(?:^|[\\/])\.leases$/,
-  /(?:^|[\\/])\.cache[\\/]/,
-  /(?:^|[\\/])\.cache$/,
-  /(?:^|[\\/])tmp[\\/]/,
-  /(?:^|[\\/])tmp$/,
+  /.*\.db-(?:wal|shm|journal)$/,
+  /.*\.sqlite3?(?:-(?:wal|shm|journal))?$/,
+  /(?:^|[\\/])\.leases(?:[\\/]|$)/,
+  /(?:^|[\\/])\.cache(?:[\\/]|$)/,
+  /(?:^|[\\/])tmp(?:[\\/]|$)/,
   /.*\.tmp\.[a-zA-Z0-9]+$/,
+  /(?:^|[\\/])\.featherduster[\\/]jobs(?:[\\/]|$)/,
+  /(?:^|[\\/])tailoring[\\/]jobs[\\/][^\\/]+[\\/]snapshots(?:[\\/]|$)/,
+  /(?:^|[\\/])tailoring-drafts[\\/]operations(?:[\\/]|$)/,
+  /(?:^|[\\/])tailoring-drafts[\\/].*\.lock/,
 ];
 
 export function isOperationalOrIgnoredPath(targetPath: string): boolean {
@@ -58,14 +60,14 @@ export class WorkspaceWatcher extends EventEmitter {
       persistent: true,
       followSymlinks: false,
       ignored: [
-        /.*\.db-(?:wal|shm)$/,
-        /(?:^|[\\/])\.leases[\\/]/,
-        /(?:^|[\\/])\.leases$/,
-        /(?:^|[\\/])\.cache[\\/]/,
-        /(?:^|[\\/])\.cache$/,
-        /(?:^|[\\/])tmp[\\/]/,
-        /(?:^|[\\/])tmp$/,
+        /.*\.db-(?:wal|shm|journal)$/,
+        /.*\.sqlite3?(?:-(?:wal|shm|journal))?$/,
+        /(?:^|[\\/])\.leases(?:[\\/]|$)/,
+        /(?:^|[\\/])\.cache(?:[\\/]|$)/,
+        /(?:^|[\\/])tmp(?:[\\/]|$)/,
         /.*\.tmp\.[a-zA-Z0-9]+$/,
+        /(?:^|[\\/])\.featherduster[\\/]jobs(?:[\\/]|$)/,
+        /(?:^|[\\/])tailoring[\\/]jobs[\\/][^\\/]+[\\/]snapshots(?:[\\/]|$)/,
         /(^|[/\\])\.(?!featherduster)/, // dotfiles except .featherduster
         '**/node_modules/**',
         '**/.git/**',

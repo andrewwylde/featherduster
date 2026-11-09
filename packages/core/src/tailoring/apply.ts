@@ -1,6 +1,7 @@
 import type { ResumeBullet, ResumeSpec } from '../schemas/resume.js';
 import type { AlignmentMatrix, DefensibilityBrief, JobAnalysis, Proposal } from './schemas.js';
 import { effectiveAfter, isBlocked } from './validators.js';
+import { consolidationError, overlappingProposalIds } from './operations.js';
 
 const CHARS_PER_LINE = 110;
 
@@ -33,7 +34,9 @@ interface WorkingBullet {
  */
 export function applyProposals(base: ResumeSpec, proposals: Proposal[]): ResumeSpec {
   const spec: ResumeSpec = JSON.parse(JSON.stringify(base));
-  const accepted = proposals.filter((p) => p.decision === 'accepted' && !isBlocked(p));
+  const selected = proposals.filter((p) => p.decision === 'accepted' && !isBlocked(p));
+  const conflicts = overlappingProposalIds(selected);
+  const accepted = selected.filter(p => !conflicts.has(p.id) && !consolidationError(p, base));
 
   for (const p of accepted) {
     if (p.type === 'summary.rewrite') spec.summary = effectiveAfter(p);
@@ -57,6 +60,11 @@ export function applyProposals(base: ResumeSpec, proposals: Proposal[]): ResumeS
     }
 
     const dropped = new Set(ops.filter((o) => o.type === 'bullet.drop').map((o) => o.target.bullet_index));
+    for (const p of ops.filter(o => o.type === 'bullet.consolidate')) {
+      const anchor = working.find(w => w.originalIndex === p.target.bullet_index)!;
+      anchor.bullet = { text: effectiveAfter(p), citations: [...p.citations] };
+      for (const source of p.source_bullets!) if (source.bullet_index !== p.target.bullet_index) dropped.add(source.bullet_index);
+    }
 
     const reorder = ops.filter((o) => o.type === 'bullet.reorder').pop();
     if (reorder) {
@@ -103,6 +111,29 @@ export function applyProposals(base: ResumeSpec, proposals: Proposal[]): ResumeS
   });
 
   return spec;
+}
+
+export interface SkillsListDiff {
+  before: string[];
+  after: string[];
+  retained: string[];
+  removed: string[];
+  reordered: boolean;
+}
+
+export function computeSkillsListDiff(before: string[], after: string[]): SkillsListDiff {
+  const afterSet = new Set(after.map(s => s.toLowerCase()));
+  const removed = before.filter(s => !afterSet.has(s.toLowerCase()));
+  const retained = after.filter(s => before.some(b => b.toLowerCase() === s.toLowerCase()));
+  const originalRetained = before.filter(s => afterSet.has(s.toLowerCase()));
+  const reordered = retained.length > 1 && retained.some((s, i) => s.toLowerCase() !== originalRetained[i]?.toLowerCase());
+  return {
+    before: [...before],
+    after: [...after],
+    retained,
+    removed,
+    reordered,
+  };
 }
 
 /**

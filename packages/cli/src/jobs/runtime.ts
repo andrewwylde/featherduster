@@ -312,23 +312,36 @@ export function jobDetail(runtime: JobsRuntime, id: string) {
   const activeAttemptId = job.current_attempt_id ?? (job.artifact_version_ids.length > 0 ? r.getArtifact(job.artifact_version_ids[job.artifact_version_ids.length - 1]).attempt_id : null);
   const activeInput = activeAttemptId ? r.getExecutionInput(r.getAttempt(activeAttemptId).input_snapshot_id) : null;
   const trackedProgress = runtime.getPreparationProgress(id);
-  const prepProgress = trackedProgress ?? job.preparation_progress ?? (job.preparation_state === 'preparing' && job.current_attempt_id ? (() => {
-    const att = r.getAttempt(job.current_attempt_id);
-    const stage = att.current_stage;
-    const phase: C.JobPreparationProgress['phase'] = stage === 'compile' ? 'rendering_pdf' : stage === 'preflight' || stage === 'analysis' || stage === 'alignment' || stage === 'proposals' ? 'preparing_resume' : 'checking_support';
-    const activeInp = r.getExecutionInput(att.input_snapshot_id) as any;
-    const model = activeInp?.runner_configuration?.model ?? 'runner-default';
-    return {
-      phase,
-      phase_started_at: att.started_at,
-      elapsed_seconds: Math.max(0, Math.floor((Date.now() - new Date(att.started_at).getTime()) / 1000)),
-      current_operation: stage ?? undefined,
+  const currentAttempt = job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : (activeAttemptId ? r.getAttempt(activeAttemptId) : null);
+
+  let prepProgress = trackedProgress ?? job.preparation_progress;
+  if (currentAttempt) {
+    const stage = currentAttempt.current_stage;
+    const terminalAt = currentAttempt.finished_at ?? currentAttempt.cancelled_at;
+    const isEnded = !!terminalAt || ['completed', 'failed', 'interrupted', 'cancelled'].includes(currentAttempt.status);
+    const phase: C.JobPreparationProgress['phase'] = isEnded
+      ? (job.preparation_state === 'needs_input' ? 'needs_answer' : job.preparation_state === 'resume_ready' ? 'ready_to_review' : 'needs_retry')
+      : (stage === 'compile' ? 'rendering_pdf' : stage === 'preflight' || stage === 'analysis' || stage === 'alignment' || stage === 'proposals' ? 'preparing_resume' : 'checking_support');
+    const activeInp = r.getExecutionInput(currentAttempt.input_snapshot_id) as any;
+    const model = trackedProgress?.usage?.model ?? activeInp?.runner_configuration?.model ?? 'runner-default';
+    const api_calls = Math.max(currentAttempt.resource_usage?.model_calls ?? 0, trackedProgress?.usage?.api_calls ?? 0);
+    const startMs = new Date(currentAttempt.started_at).getTime();
+    const endMs = terminalAt ? new Date(terminalAt).getTime() : Date.now();
+    const elapsed_seconds = Math.max(0, Math.floor((endMs - startMs) / 1000));
+    const current_operation = isEnded ? (currentAttempt.status === 'cancelled' || currentAttempt.status === 'interrupted' ? 'stopped' : 'completed') : (stage ?? trackedProgress?.current_operation ?? undefined);
+
+    prepProgress = {
+      phase: trackedProgress?.phase && !isEnded ? trackedProgress.phase : phase,
+      phase_started_at: currentAttempt.started_at,
+      elapsed_seconds,
+      ...(current_operation ? { current_operation } : {}),
+      ...(terminalAt ? { terminal_at: terminalAt } : {}),
       usage: {
         model,
-        api_calls: att.resource_usage.model_calls,
-        tokens: null,
+        api_calls,
+        tokens: trackedProgress?.usage?.tokens ?? null,
       },
     };
-  })() : null);
+  }
   return publicJobsResult({ job, activity: activeInput && activeInput.schema_version !== 1 ? activeInput.activity : 'resume', proposal_review, answers: [...r.listAnswers({ kind: 'candidate' }), ...(job.employer_id ? r.listAnswers({ kind: 'employer', employer_id: job.employer_id }) : []), ...r.listAnswers({ kind: 'job', job_id: id })], ...runtime.artifacts.preparationContext(activeAttemptId), posting: job.posting_snapshot_id ? r.getPostingSnapshot(job.posting_snapshot_id) : null, attempt: job.current_attempt_id ? r.getAttempt(job.current_attempt_id) : null, artifacts: job.artifact_version_ids.map(id => runtime.artifacts.getArtifact(id)), events: r.listEvents(id), preparation: prepProgress });
 }

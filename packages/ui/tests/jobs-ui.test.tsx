@@ -997,4 +997,33 @@ it('ticks elapsed time client-side and formats non-null token count without refe
   expect(vi.mocked(apiClient.getJob).mock.calls.length).toBe(getJobCallCount);
 });
 
+it('freezes elapsed time when preparation is stopped or complete (SL-BUG-005)', async () => {
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] });
+  const now = Date.now();
+  const startTime = new Date(now - 60000).toISOString();
+  renderJobDetailWithProgress({
+    preparation: {
+      phase: 'needs_retry',
+      phase_started_at: startTime,
+      elapsed_seconds: 42,
+      current_operation: 'stopped',
+      terminal_at: new Date(now - 18000).toISOString(),
+      usage: {
+        model: 'runner-default',
+        api_calls: 2,
+        tokens: null,
+      },
+    },
+  });
+
+  expect(await screen.findByTestId('prep-phase-title')).toHaveTextContent('Needs retry');
+  expect(screen.getByTestId('prep-elapsed-time')).toHaveTextContent('0:42');
+
+  act(() => {
+    vi.advanceTimersByTime(10000);
+  });
+  // Must remain frozen at 0:42
+  expect(screen.getByTestId('prep-elapsed-time')).toHaveTextContent('0:42');
+});
+
 

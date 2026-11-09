@@ -59,6 +59,62 @@ describe('createScopedWatcher', () => {
     expect(events.filter(e => e.includes('notes.yaml'))).toHaveLength(1);
   });
 
+  it('ignores SQLite database operational sidecars, jobs database writes, and generated artifacts (SL-BUG-007)', async () => {
+    const events: string[] = [];
+    watcher = createScopedWatcher(testDir, (event) => events.push(event.path));
+
+    // Operational SQLite sidecars and jobs DB
+    const jobsDir = path.join(testDir, '.featherduster', 'jobs');
+    const artifactsDir = path.join(jobsDir, 'artifacts', 'job-1', 'v1');
+    const snapshotsDir = path.join(testDir, 'tailoring', 'jobs', 'job-1', 'snapshots', 's1');
+    await fs.mkdir(jobsDir, { recursive: true });
+    await fs.mkdir(artifactsDir, { recursive: true });
+    await fs.mkdir(snapshotsDir, { recursive: true });
+
+    await fs.writeFile(path.join(jobsDir, 'jobs.sqlite3'), 'data');
+    await fs.writeFile(path.join(jobsDir, 'jobs.sqlite3-wal'), 'data');
+    await fs.writeFile(path.join(jobsDir, 'jobs.sqlite3-shm'), 'data');
+    await fs.writeFile(path.join(jobsDir, 'jobs.sqlite3-journal'), 'data');
+    await fs.writeFile(path.join(testDir, 'legacy.db-journal'), 'data');
+    await fs.writeFile(path.join(artifactsDir, 'resume.pdf'), 'pdf');
+    await fs.writeFile(path.join(artifactsDir, 'preview-0.png'), 'png');
+    await fs.writeFile(path.join(snapshotsDir, 'base-resume.yaml'), 'snapshot');
+
+    // Genuine user-editable files inside .featherduster and workspace
+    const dotFeather = path.join(testDir, '.featherduster');
+    await fs.writeFile(path.join(dotFeather, 'config.yaml'), 'runner: test');
+    await fs.writeFile(path.join(dotFeather, 'privacy-rules.yaml'), 'exclude: []');
+
+    await sleep(200);
+
+    // Operational writes are suppressed
+    expect(events.filter(e => e.includes('jobs.sqlite3') || e.includes('db-journal') || e.includes('artifacts') || e.includes('snapshots'))).toHaveLength(0);
+
+    // User-editable files trigger events
+    expect(events.filter(e => e.includes('config.yaml'))).toHaveLength(1);
+    expect(events.filter(e => e.includes('privacy-rules.yaml'))).toHaveLength(1);
+  });
+
+  it('correctly classifies Windows backslash paths in isOperationalOrIgnoredPath (SL-BUG-007)', async () => {
+    const { isOperationalOrIgnoredPath } = await import('../src/watcher.js');
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\jobs\\jobs.sqlite3')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\jobs\\jobs.sqlite3-wal')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\jobs\\jobs.sqlite3-shm')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\jobs\\jobs.sqlite3-journal')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\jobs\\artifacts\\123\\456\\resume.pdf')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\tailoring\\jobs\\123\\snapshots\\456\\base.yaml')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\data.db-wal')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\app.db-journal')).toBe(true);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.leases\\worker.lock')).toBe(true);
+
+    // User editable paths must NOT be ignored
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\config.yaml')).toBe(false);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\privacy-rules.yaml')).toBe(false);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\.featherduster\\skills\\de-slop\\SKILL.md')).toBe(false);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\evidence\\experience.md')).toBe(false);
+    expect(isOperationalOrIgnoredPath('C:\\workspace\\resumes\\base.yaml')).toBe(false);
+  });
+
   it('scopes SSE broadcast channels by topic: corpus, jobs:jobId, and workspace_integrity', async () => {
     const app = createApp(testDir);
 

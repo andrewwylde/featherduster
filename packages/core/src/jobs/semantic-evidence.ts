@@ -3,13 +3,14 @@ export const SEMANTIC_VERSION = '1';
 export const SEMANTIC_LIMITS = Object.freeze({ passages: 8, inputChars: 48000, outputChars: 16000, timeoutMs: 60000, automaticCalls: 4 });
 const text = z.string().trim().min(1);
 const exactAnswer = z.string().refine(value => value.trim().length > 0, 'Enter a factual answer.');
+export const exactSpanText = z.string().min(1).refine(value => value.trim().length > 0, 'Quotation or claim text cannot be empty or whitespace only.');
 export const FactSchema = z.object({ work_id: text, predicate: text, qualifiers: z.array(text) }).strict();
 export const SourceQuoteSchema = z.object({ evidence_id: text, evidence_fingerprint: text,
   field: z.enum(['title', 'summary', 'impact', 'narrative']), start: z.number().int().nonnegative(),
-  end: z.number().int().positive(), quote: text,
+  end: z.number().int().positive(), quote: exactSpanText,
 }).strict().refine(q => q.end > q.start && q.end - q.start === q.quote.length, 'Invalid source span');
 export const SubjectSchema = z.object({ id: text, path: text, proposal_id: text.optional(), passage_fingerprint: text }).strict();
-export const ClaimSchema = z.object({ id: text, subject: SubjectSchema, text,
+export const ClaimSchema = z.object({ id: text, subject: SubjectSchema, text: exactSpanText,
   start: z.number().int().nonnegative(), end: z.number().int().positive(), fact: FactSchema,
   qualifier_text: z.array(text),
 }).strict().refine(c => c.end > c.start && c.end - c.start === c.text.length, 'Invalid claim span');

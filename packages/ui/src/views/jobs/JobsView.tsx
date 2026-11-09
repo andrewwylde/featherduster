@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Briefcase, ChevronRight, FileCheck, AlertCircle, RefreshCw, ArrowUpDown, XCircle, CheckCircle, X } from 'lucide-react';
+import { SharedFactUpdates } from './SharedFactUpdates.js';
+import { Briefcase, ChevronRight, FileCheck, AlertCircle, RefreshCw, ArrowUpDown, XCircle, CheckCircle, X, LayoutGrid, Table2 } from 'lucide-react';
 import type { Job } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { useIntentKey, useJobsData } from '../../hooks/useJobsData.js';
@@ -35,6 +36,13 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
   const load = useCallback(() => apiClient.getJobs(), []);
   const { data, error, refresh } = useJobsData(load);
   const [filter, setFilter] = useState<typeof filters[number]>('Needs work');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>(() => {
+    try { return localStorage.getItem('jobs-view-mode') === 'table' ? 'table' : 'cards'; } catch { return 'cards'; }
+  });
+  const changeView = (mode: 'cards' | 'table') => {
+    setViewMode(mode);
+    try { localStorage.setItem('jobs-view-mode', mode); } catch { /* View remains available without storage. */ }
+  };
   const [trackingId, setTrackingId] = useState<string | null>(null);
   const [trackingError, setTrackingError] = useState('');
   const [trackingNotice, setTrackingNotice] = useState('');
@@ -101,8 +109,90 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
     {} as Record<typeof filters[number], number>
   );
 
+  const renderJobs = () => jobs.map(job => {
+    const preparationHref = matchesJobFilter(job, 'Needs work') ? preparationDestination(job, data?.preparation_links?.[job.id]) : null;
+    const selectionControl = (<label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Select ${job.company ?? 'job'} ${job.role ?? ''}`} checked={selection.includes(job.id)}
+                  disabled={preparing || Boolean(trackingId) || Boolean(job.archived_at) || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle) || job.kind !== 'job' || ['queued', 'preparing'].includes(job.preparation_state)}
+                  onChange={event => setSelection(previous => event.target.checked ? [...previous, job.id] : previous.filter(id => id !== job.id))} />Prepare{selection.includes(job.id) ? ` · ${selection.indexOf(job.id) + 1}` : ''}</label>);
+    const heading = (<h2 className="text-base font-semibold leading-tight">
+                      <a
+                        className="text-slate-900 dark:text-white hover:text-vermilion-600 dark:hover:text-vermilion-400 transition-colors flex items-start justify-between gap-3 hover:underline"
+                        href={preparationHref ?? `/jobs/${job.id}`}
+                        onClick={(e) => {
+                          if (!e.ctrlKey && !e.metaKey) {
+                            e.preventDefault();
+                            navigate(preparationHref ?? `/jobs/${job.id}`);
+                          }
+                        }}
+                      >
+                        <span>{job.company ?? 'Unknown company'} — {job.role ?? 'Untitled role'}</span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
+                      </a>
+                    </h2>);
+    const status = (<p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                      {job.archived_at ? 'Archived' : ['submitted', 'outcome_recorded'].includes(job.application_lifecycle) ? 'Applied' : jobListStatus(displayPreparationState(job))}
+                    </p>);
+    const actions = <div className="flex flex-wrap items-center gap-2">{!hasCancellableWork(job) && <>
+                  {job.application_lifecycle !== 'outcome_recorded' && <button className={secondaryButton} disabled={Boolean(trackingId) || preparing} onClick={() => void track(job, job.application_lifecycle === 'submitted' ? 'unapply' : 'applied')}>{job.application_lifecycle === 'submitted' ? 'Mark not applied' : 'Mark applied'}</button>}
+                  <button className={secondaryButton} disabled={Boolean(trackingId) || preparing} onClick={() => void track(job, job.archived_at ? 'restore' : 'archive')}>{trackingId === job.id ? 'Saving…' : job.archived_at ? 'Restore from archive' : 'Archive job'}</button>
+                </>}
+                {hasCancellableWork(job) && <p className="text-xs text-slate-500">Cancel preparation first to mark applied or archive.</p>}
+                {preparationHref && <button className={primaryButton} onClick={() => navigate(preparationHref)}>{preparationHref.endsWith('/questions') ? 'Answer preparation questions' : preparationHref.endsWith('/inputs') ? 'Review current inputs' : 'Preparation progress'}</button>}
+                {hasCancellableWork(job) && (
+                  confirmCancelId === job.id ? (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-rose-600 font-medium">Cancel job?</span>
+                      <button
+                        type="button"
+                        className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
+                        disabled={busyCancelId === job.id}
+                        onClick={() => void handleCancelJob(job)}
+                      >
+                        {busyCancelId === job.id ? 'Cancelling…' : 'Yes'}
+                      </button>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 hover:text-slate-900 dark:text-slate-400"
+                        onClick={() => setConfirmCancelId(null)}
+                      >
+                        No
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-900/60 transition-colors"
+                      onClick={() => setConfirmCancelId(job.id)}
+                    >
+                      <XCircle className="h-3.5 w-3.5" />
+                      <span>Cancel job</span>
+                    </button>
+                  )
+                )}
+
+                {Boolean(job.artifact_version_ids.length) && (
+                  <button
+                    className={`${primaryButton} text-xs font-semibold min-h-[44px] sm:min-h-0 sm:py-1.5`}
+                    onClick={() => navigate(`/jobs/${job.id}/resume`)}
+                  >
+                    <FileCheck className="h-3.5 w-3.5" />
+                    Review resume
+                  </button>
+                )}</div>;
+    if (viewMode === 'table') return <tr key={job.id} className="align-top hover:bg-slate-50/70 dark:hover:bg-slate-900/50"><td className="p-4">{selectionControl}</td><td className="min-w-[240px] p-4">{heading}</td><td className="min-w-[160px] p-4">{status}</td><td className="max-w-md p-4"><div className="flex justify-end">{actions}</div></td></tr>;
+    return <li key={job.id} className={`${cardClass} flex min-w-0 flex-col`}>
+      <div className="flex-1 space-y-4 p-5">
+        <div className="flex items-center justify-between gap-3"><span className="text-xs font-medium text-slate-500 dark:text-slate-400">Saved position</span>{selectionControl}</div>
+        {heading}
+        {status}
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-900/30">{actions}</div>
+    </li>;
+  });
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
+      <SharedFactUpdates onSaved={() => void refresh()} />
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
@@ -117,7 +207,7 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
               </span>
             )}
           </div>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
             Save a position, then choose the preparation you need. Saving never starts model work.
           </p>
         </div>
@@ -266,112 +356,25 @@ export function JobsView({ navigate }: { navigate: (path: string) => void }) {
         </div>
       )}
 
-      {/* Jobs Cards List */}
-      <ul className="space-y-3">
-        {jobs?.map((job) => {
-          const preparationHref = matchesJobFilter(job, 'Needs work') ? preparationDestination(job, data?.preparation_links?.[job.id]) : null;
-          const initials = (job.company || 'Job')
-            .split(' ')
-            .map((w) => w[0])
-            .slice(0, 2)
-            .join('')
-            .toUpperCase();
-
-          return (
-            <li
-              key={job.id}
-              className={`${cardClass} p-5 space-y-3 break-words hover:border-slate-300 dark:hover:border-slate-700 transition-all hover:shadow-md group`}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-                <label className="flex items-center gap-2 text-sm"><input type="checkbox" aria-label={`Select ${job.company ?? 'job'} ${job.role ?? ''}`} checked={selection.includes(job.id)}
-                  disabled={preparing || Boolean(trackingId) || Boolean(job.archived_at) || ['submitted', 'outcome_recorded', 'unknown'].includes(job.application_lifecycle) || job.kind !== 'job' || ['queued', 'preparing'].includes(job.preparation_state)}
-                  onChange={event => setSelection(previous => event.target.checked ? [...previous, job.id] : previous.filter(id => id !== job.id))} />Prepare{selection.includes(job.id) ? ` · ${selection.indexOf(job.id) + 1}` : ''}</label>
-                {/* Left: Avatar + Title */}
-                <div className="flex items-start gap-3.5 min-w-0">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700/60">
-                    {initials}
-                  </div>
-
-                  <div className="min-w-0">
-                    <h2 className="text-base font-semibold leading-tight">
-                      <a
-                        className="text-slate-900 dark:text-white hover:text-vermilion-600 dark:hover:text-vermilion-400 transition-colors flex items-center gap-1.5 group-hover:underline"
-                        href={preparationHref ?? `/jobs/${job.id}`}
-                        onClick={(e) => {
-                          if (!e.ctrlKey && !e.metaKey) {
-                            e.preventDefault();
-                            navigate(preparationHref ?? `/jobs/${job.id}`);
-                          }
-                        }}
-                      >
-                        <span>{job.company ?? 'Unknown company'} — {job.role ?? 'Untitled role'}</span>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-slate-400 group-hover:translate-x-0.5 transition-transform" />
-                      </a>
-                    </h2>
-
-                    {/* Preserves test assertion text while styled cleanly */}
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                      {job.archived_at ? 'Archived' : ['submitted', 'outcome_recorded'].includes(job.application_lifecycle) ? 'Applied' : jobListStatus(displayPreparationState(job))}
-                    </p>
-                  </div>
-                </div>
-
-              </div>
-
-              {/* Action row */}
-              <div className="pt-2 flex flex-wrap items-center justify-end gap-2">
-                {!hasCancellableWork(job) && <>
-                  {job.application_lifecycle !== 'outcome_recorded' && <button className={secondaryButton} disabled={Boolean(trackingId) || preparing} onClick={() => void track(job, job.application_lifecycle === 'submitted' ? 'unapply' : 'applied')}>{job.application_lifecycle === 'submitted' ? 'Mark not applied' : 'Mark applied'}</button>}
-                  <button className={secondaryButton} disabled={Boolean(trackingId) || preparing} onClick={() => void track(job, job.archived_at ? 'restore' : 'archive')}>{trackingId === job.id ? 'Saving…' : job.archived_at ? 'Restore from archive' : 'Archive job'}</button>
-                </>}
-                {hasCancellableWork(job) && <p className="text-xs text-slate-500">Cancel preparation first to mark applied or archive.</p>}
-                {preparationHref && <button className={primaryButton} onClick={() => navigate(preparationHref)}>{preparationHref.endsWith('/questions') ? 'Answer preparation questions' : preparationHref.endsWith('/inputs') ? 'Review current inputs' : 'Preparation progress'}</button>}
-                {hasCancellableWork(job) && (
-                  confirmCancelId === job.id ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-rose-600 font-medium">Cancel job?</span>
-                      <button
-                        type="button"
-                        className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-50"
-                        disabled={busyCancelId === job.id}
-                        onClick={() => void handleCancelJob(job)}
-                      >
-                        {busyCancelId === job.id ? 'Cancelling…' : 'Yes'}
-                      </button>
-                      <button
-                        type="button"
-                        className="rounded-lg border border-slate-200 dark:border-slate-700 px-2 py-1 text-xs text-slate-600 hover:text-slate-900 dark:text-slate-400"
-                        onClick={() => setConfirmCancelId(null)}
-                      >
-                        No
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-2.5 py-1 text-xs font-medium text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:border-rose-200 dark:hover:border-rose-900/60 transition-colors"
-                      onClick={() => setConfirmCancelId(job.id)}
-                    >
-                      <XCircle className="h-3.5 w-3.5" />
-                      <span>Cancel job</span>
-                    </button>
-                  )
-                )}
-
-                {Boolean(job.artifact_version_ids.length) && (
-                  <button
-                    className={`${primaryButton} text-xs font-semibold min-h-[44px] sm:min-h-0 sm:py-1.5`}
-                    onClick={() => navigate(`/jobs/${job.id}/resume`)}
-                  >
-                    <FileCheck className="h-3.5 w-3.5" />
-                    Review resume
-                  </button>
-                )}
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">{pluralize(jobs.length, 'job')}{selection.length > 0 && ` · ${selection.length} selected`}</p>
+          <div role="group" aria-label="Job view" className="inline-flex rounded-desk border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-900">
+            {([{ mode: 'cards', label: 'Cards', Icon: LayoutGrid }, { mode: 'table', label: 'Table', Icon: Table2 }] as const).map(({ mode, label, Icon }) => (
+              <button key={mode} type="button" aria-pressed={viewMode === mode} onClick={() => changeView(mode)} className={`inline-flex min-h-9 items-center gap-2 rounded-desk px-3 text-xs font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-vermilion-500 ${viewMode === mode ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'}`}><Icon aria-hidden="true" className="h-4 w-4" />{label}</button>
+            ))}
+          </div>
+        </div>
+        {viewMode === 'cards' ? <ul aria-label="Saved jobs" className="grid grid-cols-1 gap-4 lg:grid-cols-2">{renderJobs()}</ul> : (
+          <div className={`${cardClass} overflow-x-auto`}>
+            <table className="w-full min-w-[880px] text-left text-sm">
+              <caption className="sr-only">Saved jobs with preparation status and actions</caption>
+              <thead className="border-b border-slate-200 bg-slate-50 text-xs text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400"><tr><th scope="col" className="p-4 font-medium">Prepare</th><th scope="col" className="p-4 font-medium">Company / role</th><th scope="col" className="p-4 font-medium">Status</th><th scope="col" className="p-4 text-right font-medium">Actions</th></tr></thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">{renderJobs()}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

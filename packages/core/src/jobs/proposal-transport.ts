@@ -26,7 +26,7 @@ export interface ProposalSaveRequest extends ProposalBinding {
   remember?: { expected_corpus_revision: number; change: ClientCorpusChange; supersedes?: string };
   idempotency_key: string;
 }
-export interface ProposalBaseCorrectionRequest extends ProposalBinding { review_id: string; path: string; text: string; idempotency_key: string }
+export interface ProposalBaseCorrectionRequest extends ProposalBinding { review_id: string; path: string; text: string; citations?: string[]; idempotency_key: string }
 export interface ProposalContinueRequest extends ProposalBinding { validation_fingerprint: string; idempotency_key: string }
 export interface ProposalRecoverRequest { expected_job_revision: number; input_snapshot_id: string; idempotency_key: string }
 export type ProposalReadResponse = { availability: 'missing_output'; recoverable: boolean; input_snapshot_id: string | null; latest_input_snapshot_id: string | null } | {

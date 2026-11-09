@@ -36,6 +36,7 @@ requests/
 *.db
 *.db-wal
 *.db-shm
+*.tsbuildinfo
 
 __pycache__/
 *.pyc

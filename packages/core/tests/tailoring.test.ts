@@ -286,6 +286,89 @@ describe('validateProposal', () => {
     expect(p.checks.find((c) => c.kind === 'ledger_ceiling')?.message).toContain('Kubernetes');
   });
 
+  it('validates skills operation contract and rejects inverted remove list (SL-BUG-002)', () => {
+    const deliverySkills = ['GitHub Actions', 'Docker', 'Kubernetes/Helm', 'OpenTelemetry', 'Datadog', 'Cypress'];
+    const resumeWithDelivery: ResumeSpec = {
+      ...baseResume,
+      skills: [{ category: 'Delivery', skills: deliverySkills }],
+    };
+    const deliveryCtx: ProposalValidationContext = { ...ctx, baseResume: resumeWithDelivery };
+
+    // Inverted remove list declaring 5 retained skills but removing them instead of Docker
+    const inverted = validateProposal(
+      proposal({
+        type: 'skills.prune',
+        target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+        before_skills: deliverySkills,
+        result_skills: ['GitHub Actions', 'Kubernetes/Helm', 'OpenTelemetry', 'Datadog', 'Cypress'],
+        skills: ['GitHub Actions', 'Kubernetes/Helm', 'OpenTelemetry', 'Datadog', 'Cypress'],
+        rationale: 'Remove Docker.',
+      }),
+      deliveryCtx
+    );
+    expect(isBlocked(inverted)).toBe(true);
+    expect(inverted.checks.some(c => c.kind === 'skills_contract' && c.message.includes('Declared result skills do not match'))).toBe(true);
+
+    // Correct remove list where skills = ['Docker']
+    const correct = validateProposal(
+      proposal({
+        type: 'skills.prune',
+        target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+        before_skills: deliverySkills,
+        result_skills: ['GitHub Actions', 'Kubernetes/Helm', 'OpenTelemetry', 'Datadog', 'Cypress'],
+        skills: ['Docker'],
+        rationale: 'Remove Docker.',
+      }),
+      deliveryCtx
+    );
+    expect(isBlocked(correct)).toBe(false);
+
+    // Unknown removals
+    const unknown = validateProposal(
+      proposal({
+        type: 'skills.prune',
+        target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+        skills: ['UnknownSkill'],
+      }),
+      deliveryCtx
+    );
+    expect(unknown.checks.some(c => c.kind === 'skills_contract' && c.message.includes('unknown skills'))).toBe(true);
+
+    // Duplicate skills in remove list
+    const duplicates = validateProposal(
+      proposal({
+        type: 'skills.prune',
+        target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+        skills: ['Docker', 'docker'],
+      }),
+      deliveryCtx
+    );
+    expect(duplicates.checks.some(c => c.kind === 'skills_contract' && c.message.includes('duplicate'))).toBe(true);
+
+    // Empty group requires explicit permission
+    const emptyGroup = validateProposal(
+      proposal({
+        type: 'skills.prune',
+        target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+        skills: deliverySkills,
+      }),
+      deliveryCtx
+    );
+    expect(emptyGroup.checks.some(c => c.kind === 'skills_contract' && c.message.includes('explicit confirmation to remove the entire group'))).toBe(true);
+
+    // Empty group allowed with explicit flag
+    const emptyGroupAllowed = validateProposal(
+      proposal({
+        type: 'skills.prune',
+        target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+        skills: deliverySkills,
+        allow_empty_group: true,
+      }),
+      deliveryCtx
+    );
+    expect(emptyGroupAllowed.checks.some(c => c.kind === 'skills_contract')).toBe(false);
+  });
+
   it('replaces ungrounded numbers with [METRIC NEEDED] but keeps verified ones', () => {
     const p = validateProposal(
       proposal({

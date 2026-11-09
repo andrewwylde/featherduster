@@ -62,7 +62,7 @@ export function extractPosting(html: string, finalUrl: string): ExtractedPosting
 
 function parseNum(raw: string): number | undefined {
   if (!raw) return undefined;
-  const cleaned = raw.replace(/[$£€¥,]/g, '').replace(/\b[A-Z]{3}\b/gi, '').trim();
+  const cleaned = raw.replace(/[$£€¥,]/g, '').replace(/\b[A-Z]{3}\b/gi, '').replace(/\s*(?:\/|\bper\s+)(?:year|yr|annual|annually|month|mo|hour|hr)\b/gi, '').trim();
   const kMatch = cleaned.match(/^([\d.]+)\s*[kK]$/);
   if (kMatch) {
     const val = parseFloat(kMatch[1]);
@@ -87,8 +87,9 @@ function parsePeriod(text: string, amount?: number): 'annual' | 'monthly' | 'hou
   return 'unknown';
 }
 
-function parseCompensationSegment(seg: string): JobPostingMetadata['compensation'][number] | null {
+function parseCompensationSegment(seg: string, defaultCurrency = 'USD'): JobPostingMetadata['compensation'][number] | null {
   if (!/\d/.test(seg)) return null;
+  if (/\b(?:series\s+[a-z]|funding|raised|valuation|revenue|arr|years(?:\s+of)?\s+experience)\b/i.test(seg)) return null;
   const regionMatch = seg.match(/^([A-Za-z\s]{2,20})\s*[:\-–—]\s*(.*)$/);
   let region: string | undefined;
   let raw_text = seg;
@@ -103,7 +104,7 @@ function parseCompensationSegment(seg: string): JobPostingMetadata['compensation
     }
   }
   const currMatch = raw_text.match(/\b(USD|GBP|EUR|CAD|AUD|CHF|JPY|NZD|SGD|HKD|SEK|NOK|DKK|INR)\b/i);
-  let currency = 'USD';
+  let currency = defaultCurrency;
   if (currMatch) {
     currency = currMatch[1].toUpperCase();
   } else if (raw_text.includes('£')) {
@@ -112,16 +113,18 @@ function parseCompensationSegment(seg: string): JobPostingMetadata['compensation
     currency = 'EUR';
   } else if (raw_text.includes('¥')) {
     currency = 'JPY';
+  } else if (raw_text.includes('$')) {
+    currency = defaultCurrency;
   }
-  const rangeMatch = raw_text.match(/([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)\s*(?:-|–|—|to)\s*([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?)/);
+  const rangeMatch = raw_text.match(/([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?(?:\s*(?:\/|\bper\s+)(?:year|yr|annual|annually|month|mo|hour|hr))?)\s*(?:-|–|—|to)\s*([$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?(?:\s*(?:\/|\bper\s+)(?:year|yr|annual|annually|month|mo|hour|hr))?)/i);
   let min: number | undefined;
   let max: number | undefined;
   if (rangeMatch) {
     min = parseNum(rangeMatch[1]);
     max = parseNum(rangeMatch[2]);
   } else {
-    const single = raw_text.match(/[$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?/);
-    if (single) {
+    const single = raw_text.match(/[$£€¥]?(?:[A-Z]{3})?\s*[\d,]+(?:\.\d+)?\s*[kK]?(?:\s*(?:\/|\bper\s+)(?:year|yr|annual|annually|month|mo|hour|hr))?/i);
+    if (single && single[0].match(/\d/)) {
       min = parseNum(single[0]);
       max = min;
     }
@@ -173,9 +176,20 @@ export async function extractPostingMetadata(html: string, url?: string): Promis
   let employment_type: string | undefined;
   let locations: string[] = [];
   const compensation: JobPostingMetadata['compensation'] = [];
+  let defaultCurrency = 'USD';
 
   const job = jobs[0];
   if (job) {
+    const locObj = Array.isArray(job.jobLocation) ? job.jobLocation[0] : job.jobLocation;
+    const addr = locObj?.address ?? job.applicantLocationRequirements;
+    const country = typeof addr === 'string' ? addr : addr?.addressCountry ?? addr?.name;
+    if (typeof country === 'string') {
+      if (/^(CA|CAN|Canada)$/i.test(country)) defaultCurrency = 'CAD';
+      else if (/^(AU|AUS|Australia)$/i.test(country)) defaultCurrency = 'AUD';
+      else if (/^(GB|GBR|UK|United Kingdom)$/i.test(country)) defaultCurrency = 'GBP';
+      else if (/^(US|USA|United States)$/i.test(country)) defaultCurrency = 'USD';
+    }
+
     if (job.employmentType) {
       const raw = Array.isArray(job.employmentType) ? job.employmentType[0] : job.employmentType;
       if (typeof raw === 'string') {
@@ -214,7 +228,7 @@ export async function extractPostingMetadata(html: string, url?: string): Promis
     }
     if (job.baseSalary && typeof job.baseSalary === 'object') {
       const bs = job.baseSalary;
-      const currency = typeof bs.currency === 'string' ? bs.currency : 'USD';
+      const currency = typeof bs.currency === 'string' ? bs.currency : defaultCurrency;
       let min: number | undefined;
       let max: number | undefined;
       let unitText: string | undefined;
@@ -235,6 +249,26 @@ export async function extractPostingMetadata(html: string, url?: string): Promis
         period,
         raw_text,
       });
+    }
+
+    if (compensation.length === 0 && job.description && typeof job.description === 'string') {
+      const descText = plain(job.description);
+      const descLines = descText.split('\n').map(l => l.trim()).filter(Boolean);
+      for (const line of descLines) {
+        if (!/\d/.test(line)) continue;
+        const looksLikeSalary = /^(?:salary|compensation|base\s*pay|pay\s*range|salary\s*range|rate)\s*[:\-–—]/i.test(line) ||
+          /[$£€¥]|\b(?:USD|GBP|EUR|CAD|AUD)\b/i.test(line);
+        if (looksLikeSalary) {
+          const segments = line.split(/[|\n;]+/).map(s => s.trim()).filter(Boolean);
+          for (const seg of segments) {
+            const comp = parseCompensationSegment(seg, defaultCurrency);
+            if (comp) {
+              const duplicate = compensation.some(c => c.min === comp.min && c.max === comp.max && c.currency === comp.currency && c.period === comp.period && c.region === comp.region);
+              if (!duplicate) compensation.push(comp);
+            }
+          }
+        }
+      }
     }
   }
 
@@ -265,8 +299,11 @@ export async function extractPostingMetadata(html: string, url?: string): Promis
       const salText = $(el).text().trim();
       const segments = salText.split(/[|\n;]+/).map(s => s.trim()).filter(Boolean);
       for (const seg of segments) {
-        const comp = parseCompensationSegment(seg);
-        if (comp) compensation.push(comp);
+        const comp = parseCompensationSegment(seg, defaultCurrency);
+        if (comp) {
+          const duplicate = compensation.some(c => c.min === comp.min && c.max === comp.max && c.currency === comp.currency && c.period === comp.period && c.region === comp.region);
+          if (!duplicate) compensation.push(comp);
+        }
       }
     });
   }
@@ -293,8 +330,11 @@ export async function extractPostingMetadata(html: string, url?: string): Promis
       if (looksLikeSalary) {
         const segments = line.split(/[|\n;]+/).map(s => s.trim()).filter(Boolean);
         for (const seg of segments) {
-          const comp = parseCompensationSegment(seg);
-          if (comp) compensation.push(comp);
+          const comp = parseCompensationSegment(seg, defaultCurrency);
+          if (comp) {
+            const duplicate = compensation.some(c => c.min === comp.min && c.max === comp.max && c.currency === comp.currency && c.period === comp.period && c.region === comp.region);
+            if (!duplicate) compensation.push(comp);
+          }
         }
         if (compensation.length > 0) break;
       }

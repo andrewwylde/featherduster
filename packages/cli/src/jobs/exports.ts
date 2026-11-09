@@ -1,4 +1,5 @@
 import { currentResumeContext } from './resume-context.js';
+import { CorpusRepository } from '../corpus/repository.js';
 import { randomUUID } from 'node:crypto';
 import * as C from '@featherduster/core';
 import { z } from 'zod';
@@ -33,6 +34,8 @@ export class JobExports {
     const blocked = (message: string): never => { throw new RepositoryError('ineligible', message); };
     if (artifact.version_fingerprint !== request.artifact_fingerprint) blocked('Resume version changed. Reload the current resume before exporting.');
     if (job.artifact_version_ids.at(-1) !== artifact.id) blocked('This is historical. Open its saved release, or return to the current resume.');
+    if (C.knownClarificationConflicts(new CorpusRepository(this.r).snapshot(), C.inventoryPassages(draft.candidate, fingerprint)).length)
+      blocked('A shared factual correction conflicts with this PDF. Update the affected wording and approve a new PDF; the saved version remains historical.');
     if (this.r.active().some(a => a.job_id === jobId)) blocked('Stop or finish preparation before publishing current files.');
     if (view.working_draft && canonical(view.working_draft.candidate) !== canonical(draft.candidate)) blocked('Working resume has pending edits. Save and check it before exporting; saved releases remain available.');
 const { context, rules } = currentResumeContext(this.r, this.artifacts, jobId, artifact.id, this.select, this.rules);

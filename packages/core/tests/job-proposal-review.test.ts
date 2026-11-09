@@ -81,4 +81,15 @@ describe('starting-resume correction relocation', () => {
   it('rejects leading-zero location aliases', () => {
     expect(BaseCorrectionSchema.safeParse({ ...fix, path: 'experiences.01.bullets.0.text' }).success).toBe(false);
   });
+
+  it('permits patching skills on skills.prune and skills.reorder proposals (SL-BUG-002)', () => {
+    const pruneProposal = ProposalSchema.parse({
+      id: 'prune-1',
+      type: 'skills.prune',
+      target: { skill_group_index: 0 },
+      skills: ['Docker', 'Datadog'],
+    });
+    const patchResult = applyProposalPatches([pruneProposal], [], [{ proposal_id: 'prune-1', skills: ['Docker'] }]);
+    expect(patchResult.proposals[0].skills).toEqual(['Docker']);
+  });
 });

@@ -27,16 +27,28 @@ export type LatexTemplateProfile = z.infer<typeof LatexTemplateProfileSchema>;
 export function compileTemplateResume(template: LatexTemplateProfile, spec: ResumeSpec, rules?: PrivacyRulesConfig) {
   const profile = LatexTemplateProfileSchema.parse(template);
   const expectedText: string[] = [];
-  const leaf = (value?: string) => {
+  const leaf = (value?: string, mode?: 'smallcaps' | 'target') => {
     if (!value) return '';
     const normalized = value.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
     const result = redactText(normalized, rules ?? { strip_patterns: [], replacements: [], banned_keywords: [] });
     if (!result.isClean) throw new Error('Resume contains unresolved privacy violations');
     const text = result.redactedText.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
-    if (text) expectedText.push(text);
+    if (text && mode !== 'target') expectedText.push(mode === 'smallcaps' ? text.toUpperCase() : text);
     return escapeLatex(text);
   };
-  const join = (values: (string | undefined)[], sep: string) => values.map(leaf).filter(Boolean).join(sep);
+  if (profile.id === 'career-signature' || profile.id === 'career-master') {
+    // Keep fingerprinted input profiles readable while using the user-approved serif layout.
+    return compileTemplateResume({ ...profile, id: 'career-serif-render',
+      preamble: String.raw`\documentclass[letterpaper,10pt]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=0.6in]{geometry}
+\pagestyle{empty}
+\setlength{\parindent}{0pt}`,
+      body: '{{profile}}\n{{summary}}\n{{experiences}}\n{{education}}\n{{skills}}',
+    }, spec, rules);
+  }
+  const join = (values: (string | undefined)[], sep: string) => values.map(value => leaf(value)).filter(Boolean).join(sep);
   const section = (title: string, body: string) => body ? `\\section*{${title}}\n${body}` : '';
   const list = (items: string[]) => items.length ? `\\begin{itemize}[leftmargin=0.18in,noitemsep,topsep=2pt]\n${items.map(b => `  \\item ${b}`).join('\n')}\n\\end{itemize}` : '';
   const head = (left: string, right: string) => `\\noindent ${left}${right ? ` \\hfill {\\small ${right}}` : ''}\\par`;

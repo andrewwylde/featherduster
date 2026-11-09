@@ -96,6 +96,21 @@ function calculateAccomplishmentScore(
     score -= acc.unsupported_qualifiers.length * 5;
   }
 
+  // Cross-stack capability calibration for fullstack roles
+  const combinedText = `${topic} ${text} ${evidenceText}`;
+  const hasFrontend = /\b(react|ui|frontend|interface|client|components?)\b/i.test(combinedText);
+  const hasApiLifecycle = /\b(apis?|backend|lifecycle|analytics|data\s+visualization|endpoints?|services?)\b/i.test(combinedText);
+  if (hasFrontend && hasApiLifecycle) {
+    score += 15;
+  }
+
+  // Auxiliary internal tooling penalty (deprioritize editor/build scripting over product delivery)
+  const isAuxiliary = /\b(build\s+scripting|internal\s+tooling|build\s+tools|repo\s+maintenance|general\s+administration|dependency\s+upgrades?)\b/i.test(topic)
+    || /\b(build\s+scripting|internal\s+tooling|general\s+administration)\b/i.test(text);
+  if (isAuxiliary) {
+    score -= 15;
+  }
+
   return score;
 }
 
@@ -158,6 +173,22 @@ function narrowScope(acc: AccomplishmentInput, candidateText: string): string {
   if (hasUnsupportedQualifier('api') || (singleEvidence && /api/i.test(text))) {
     text = text.replace(/\bacross APIs\b/g, 'across the API');
     text = text.replace(/\bAPIs\b/g, 'the API');
+  }
+
+  if (hasUnsupportedQualifier('product') || (singleEvidence && /\bproducts\b/i.test(text))) {
+    text = text.replace(/\bacross products\b/g, 'for the product');
+    text = text.replace(/\bmultiple products\b/g, 'the product');
+    text = text.replace(/\bproducts\b/g, 'the product');
+  }
+
+  if (hasUnsupportedQualifier('enterprise')) {
+    text = text.replace(/\benterprise-(?:scale|grade)\b/gi, 'production');
+    text = text.replace(/\benterprise\b/gi, 'core');
+  }
+
+  if (hasUnsupportedQualifier('ownership') || hasUnsupportedQualifier('lead')) {
+    text = text.replace(/\bowned and led\b/gi, 'developed');
+    text = text.replace(/\bsolely owned\b/gi, 'engineered');
   }
 
   // 5. Narrow unproven causations

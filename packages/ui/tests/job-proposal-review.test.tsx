@@ -3,7 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createHash, webcrypto } from 'node:crypto';
-import { EvidenceStore, type Job, type ProposalReadResponse, type Proposal, type ProposalIssue } from '@featherduster/core';
+import { EvidenceStore, ProposalSchema, type Job, type ProposalReadResponse, type Proposal, type ProposalIssue } from '@featherduster/core';
 import { apiClient } from '../src/api/client.js';
 import { JobProposalReview } from '../src/views/jobs/JobProposalReview.js';
 
@@ -775,6 +775,45 @@ it('displays distinct counts for factual questions, technical checks, and wordin
   expect(screen.getByTestId('primary-next-action')).toHaveTextContent('Checking in progress...');
 });
 
+it('passageCheckState excludes checking and completed supported passages from Needs retry (SL-BUG-008)', async () => {
+  const { passageCheckState } = await import('../src/views/jobs/ResumeDraftSurface.js');
+  const passageText = 'Engineered reliable distributed backend systems.';
+  const mockFacts = {
+    job_id: 'job-1',
+    job_revision: 1,
+    input_fingerprint: 'fp',
+    semantic_revision: 1,
+    target: { kind: 'review' as const, review_id: '12345678-1234-1234-1234-123456789012', review_revision: 0 },
+    candidate_fingerprint: 'cand',
+    support_fingerprint: 'supp',
+    facts: [{
+      claim: { id: 'c1', text: passageText, fact: { work_id: 'w1', predicate: 'p', qualifiers: [] } },
+      state: 'supported' as const,
+      evidence: [],
+      explanation: 'Verified in evidence',
+      resolution: { provenance: 'model' as const, explanation: 'Verified in evidence' },
+      passage: { subject: { id: 'p1', path: 'summary' }, text: passageText },
+    }],
+    clarifications: [],
+    execution: 'complete' as const,
+    configuration_evaluated: true,
+    usage: { dispatched: 1, elapsed_ms: 100, tokens: null, cost: null },
+  };
+
+  // 1. Supported passage with execution complete should be 'Resolved', NOT 'Needs retry'
+  expect(passageCheckState(mockFacts as any, passageText, false, 'summary')).toBe('Resolved');
+
+  // 2. While checking, state should be 'Checking'
+  expect(passageCheckState({ ...mockFacts, execution: 'checking' } as any, passageText, false, 'summary')).toBe('Checking');
+
+  // 3. Unavailable fact should be 'Needs retry'
+  const unavailableFacts = {
+    ...mockFacts,
+    facts: [{ ...mockFacts.facts[0], state: 'unavailable' as const, resolution: null }],
+  };
+  expect(passageCheckState(unavailableFacts as any, passageText, false, 'summary')).toBe('Needs retry');
+});
+
 it('coalesces typing bursts across generated proposals and starting resume into an atomic mixed save', async () => {
   vi.useFakeTimers();
   const mixedCandidate = {
@@ -1008,6 +1047,131 @@ it('uses existing review patch edited_after as before baseline for subsequent ed
           after: 'Rev2 Edited Text',
         }),
       ],
+    })
+  );
+});
+
+it('reviews and edits skills-list changes with explicit removal and reorder controls (SL-FEAT-001)', async () => {
+  const { JobProposalEditor } = await import('../src/views/jobs/JobProposalEditor.js');
+  const sixSkills = ['Python', 'TypeScript', 'Go', 'Docker', 'SQL', 'Git'];
+  
+  // 1. Docker removal fixture with an inverted list from model (where model passed the 5 kept skills as to-remove)
+  const invertedPruneProposal = ProposalSchema.parse({
+    id: 'prune-skills-1',
+    type: 'skills.prune',
+    target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+    before: sixSkills.join(', '),
+    before_skills: sixSkills,
+    after: '',
+    skills: ['Python', 'TypeScript', 'Go', 'SQL', 'Git'], // Inverted remove list!
+    citations: [],
+    requirement_ids: [],
+    rationale: 'Focus on core stack without Docker.',
+    decision: 'pending',
+    checks: [],
+  });
+
+  const patchSpy = vi.fn();
+
+  const { rerender } = render(
+    <JobProposalEditor
+      proposal={invertedPruneProposal}
+      issues={[]}
+      evidence={[]}
+      support={[]}
+      requirements={[]}
+      onGrounding={() => {}}
+      onPatch={patchSpy}
+      disabled={false}
+    />
+  );
+
+  // Displays plain label "Remove skills"
+  expect(screen.getByText('Remove skills')).toBeInTheDocument();
+  // Displays original skills
+  expect(screen.getAllByText(sixSkills.join(', ')).length).toBeGreaterThanOrEqual(1);
+
+  // Inverted list displays its actual effect:
+  // Removed (5): Python, TypeScript, Go, SQL, Git
+  // Retained (1): Docker
+  expect(screen.getByText(/Removed \(5\): Python, TypeScript, Go, SQL, Git/)).toBeInTheDocument();
+  expect(screen.getByText(/Retained \(1\): Docker/)).toBeInTheDocument();
+
+  // 2. User corrects the remove list: checks Python to keep it
+  const retainPythonCheckbox = screen.getByRole('checkbox', { name: 'Retain Python' });
+  expect(retainPythonCheckbox).not.toBeChecked(); // because it was in the remove list
+  fireEvent.click(retainPythonCheckbox);
+
+  // onPatch is called with Python removed from the remove list
+  expect(patchSpy).toHaveBeenCalledWith(
+    expect.objectContaining({
+      proposal_id: 'prune-skills-1',
+      skills: ['TypeScript', 'Go', 'SQL', 'Git'],
+    })
+  );
+
+  // Now render with the corrected prune proposal: only Docker removed
+  const correctedPruneProposal = ProposalSchema.parse({
+    ...invertedPruneProposal,
+    skills: ['Docker'],
+  });
+
+  rerender(
+    <JobProposalEditor
+      proposal={correctedPruneProposal}
+      issues={[]}
+      evidence={[]}
+      support={[]}
+      requirements={[]}
+      onGrounding={() => {}}
+      onPatch={patchSpy}
+      disabled={false}
+    />
+  );
+
+  expect(screen.getByText(/Removed \(1\): Docker/)).toBeInTheDocument();
+  expect(screen.getByText(/Retained \(5\): Python, TypeScript, Go, SQL, Git/)).toBeInTheDocument();
+
+  // 3. Test skills.reorder
+  const reorderProposal = ProposalSchema.parse({
+    id: 'reorder-skills-1',
+    type: 'skills.reorder',
+    target: { experience_index: -1, bullet_index: -1, skill_group_index: 0 },
+    before: sixSkills.join(', '),
+    before_skills: sixSkills,
+    after: '',
+    skills: ['TypeScript', 'Python', 'Go', 'Docker', 'SQL', 'Git'],
+    citations: [],
+    requirement_ids: [],
+    rationale: 'Prioritize TypeScript.',
+    decision: 'pending',
+    checks: [],
+  });
+
+  rerender(
+    <JobProposalEditor
+      proposal={reorderProposal}
+      issues={[]}
+      evidence={[]}
+      support={[]}
+      requirements={[]}
+      onGrounding={() => {}}
+      onPatch={patchSpy}
+      disabled={false}
+    />
+  );
+
+  expect(screen.getByText('Reorder skills')).toBeInTheDocument();
+  expect(screen.getByText(/Order change: use the buttons or keyboard/)).toBeInTheDocument();
+
+  // Move Go up (from position 3 to 2)
+  const moveGoUp = screen.getByRole('button', { name: 'Move Go up' });
+  fireEvent.click(moveGoUp);
+
+  expect(patchSpy).toHaveBeenCalledWith(
+    expect.objectContaining({
+      proposal_id: 'reorder-skills-1',
+      skills: ['TypeScript', 'Go', 'Python', 'Docker', 'SQL', 'Git'],
     })
   );
 });

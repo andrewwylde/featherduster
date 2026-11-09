@@ -17,8 +17,8 @@ export const SEMANTIC_REQUEST_SYSTEM = `${SEMANTIC_SYSTEM}\nFor synthesized acco
 export const SEMANTIC_PROMPT_HASH = fingerprint(canonical([SEMANTIC_REQUEST_SYSTEM, SEMANTIC_RESPONSE_SCHEMA]));
 const Response = z.object({ passages: z.array(C.PassageResultSchema).min(1) }).strict();
 const WireResponse = z.object({ passages: z.array(z.object({ subject_ref: z.string().min(1), claims: z.array(z.object({
-  text: z.string().min(1), fact: C.FactSchema.omit({ work_id: true }), qualifier_text: z.array(z.string()),
-  state: C.SemanticStateSchema, evidence: z.array(z.object({ source_ref: z.string().min(1), quote: z.string().min(1) }).strict()),
+  text: C.exactSpanText, fact: C.FactSchema.omit({ work_id: true }), qualifier_text: z.array(z.string()),
+  state: C.SemanticStateSchema, evidence: z.array(z.object({ source_ref: z.string().min(1), quote: C.exactSpanText }).strict()),
   explanation: z.string().min(1), question: z.string().nullable().optional(),
 }).strict()).min(1) }).strict()).min(1) }).strict();
 
@@ -147,7 +147,7 @@ export async function classifyBatch(
       }) };
     }
     const locate = (text: string, quote: unknown, offset = 0) => {
-      if (typeof quote !== 'string' || !quote.length) throw Error('Classification contains an empty quotation.');
+      if (typeof quote !== 'string' || !quote.length || !quote.trim().length) throw Error('Classification contains an empty quotation.');
       const start = text.indexOf(quote);
       if (start < 0 || text.indexOf(quote, start + 1) >= 0) throw Error('Classification quotation is missing or ambiguous.');
       return { start: start + offset, end: start + offset + quote.length };

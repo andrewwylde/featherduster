@@ -12,6 +12,8 @@ export const CorpusRequestSchema = z.object({
   idempotency_key: z.string().trim().min(1), explanation: z.string().trim().min(1),
   supersedes: z.string().uuid().nullable().default(null),
   change: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('clarification'), value: C.SharedClarificationSchema }).strict(),
+    z.object({ kind: z.literal('writing_preference'), value: C.WritingPreferenceSchema }).strict(),
     z.object({ kind: z.literal('skill_support'), value: clientSupport }).strict(),
     z.object({ kind: z.literal('evidence_amendment'), value: C.EvidenceAmendmentSchema }).strict(),
     z.object({ kind: z.literal('withdrawal'), update_id: z.string().uuid(), reason: z.string().trim().min(1) }).strict(),
@@ -38,6 +40,7 @@ export class CorpusService {
     if (snapshot.revision !== request.expected_revision) throw new RepositoryError('revision_conflict', 'Stale corpus revision');
     const source = this.source();
     const change: C.CorpusChange = structuredClone(request.change);
+    if (change.kind === 'clarification') throw new RepositoryError('invalid_relationship', 'Save project answers from the job fact review so their claim bindings and human provenance can be verified.');
     if (change.kind === 'skill_support') {
       for (const binding of change.value.sources) {
         const record = source.get(binding.evidence_id);
@@ -56,7 +59,7 @@ export class CorpusService {
         if (metric.status !== (previous?.status ?? 'unverified')) throw new RepositoryError('invalid_relationship', 'Metric verification cannot be upgraded');
       }
     }
-    const feedback: C.FeedbackEvent = { schema_version: 1, id: randomUUID(), workspace_id: request.workspace_id, job_id: null, proposal_id: null, review_revision: null, kind: change.kind === 'evidence_amendment' ? 'fact' : 'grounding', before: '', after: JSON.stringify(change), explanation: request.explanation, scope: change.kind === 'skill_support' ? change.value.scope : { kind: 'workspace' }, recorded_by: 'local-human', recorded_at: new Date().toISOString() };
+    const feedback: C.FeedbackEvent = { schema_version: 1, id: randomUUID(), workspace_id: request.workspace_id, job_id: null, proposal_id: null, review_revision: null, kind: change.kind === 'evidence_amendment' ? 'fact' : change.kind === 'writing_preference' ? 'wording' : 'grounding', before: '', after: JSON.stringify(change), explanation: request.explanation, scope: change.kind === 'skill_support' || change.kind === 'writing_preference' ? change.value.scope : { kind: 'workspace' }, recorded_by: 'local-human', recorded_at: new Date().toISOString() };
     const update: C.CorpusUpdate = { schema_version: 1, id: randomUUID(), workspace_id: request.workspace_id, revision: snapshot.revision + 1, feedback_id: feedback.id, supersedes: request.supersedes, change, recorded_at: feedback.recorded_at };
     const inactive = new Set(snapshot.updates.flatMap(u => [...(u.supersedes ? [u.supersedes] : []), ...(u.change.kind === 'withdrawal' ? [u.change.update_id] : [])]));
     const active = snapshot.updates.filter(u => !inactive.has(u.id) && u.change.kind !== 'withdrawal');

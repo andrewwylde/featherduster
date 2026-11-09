@@ -28,6 +28,7 @@ interface ProposalsStepProps {
 const TYPE_LABELS: Record<Proposal['type'], string> = {
   'summary.rewrite': 'Summary rewrite',
   'bullet.rewrite': 'Bullet rewrite',
+  'bullet.consolidate': 'Consolidated accomplishment',
   'bullet.add': 'New bullet',
   'bullet.drop': 'Drop bullet',
   'bullet.reorder': 'Reorder bullets',

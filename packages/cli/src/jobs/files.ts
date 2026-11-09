@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { ImmutableReference } from '@featherduster/core';
 
 export const fingerprint = (bytes: string | Uint8Array): string => createHash('sha256').update(bytes).digest('hex');
-const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const uuid = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[a-zA-Z0-9_-]+)$/i;
 
 /** Protects normal filesystem operations, not against hostile concurrent OS users. */
 export class JobFiles {

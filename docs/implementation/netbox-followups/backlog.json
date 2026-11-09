@@ -1,0 +1,191 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-11-08",
+  "source": "docs/netbox-live-job-attempt-2026-11-07.md",
+  "tracker": {
+    "kind": "task-master",
+    "tag": "master",
+    "file": ".taskmaster/tasks/tasks.json"
+  },
+  "items": [
+    {
+      "id": "BUG-001",
+      "kind": "bug",
+      "title": "Bound shared-correction discovery for saved jobs",
+      "priority": "high",
+      "status": "mitigated-follow-up-open",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "bugs/bug-001-correction-discovery.md",
+      "task_id": 51
+    },
+    {
+      "id": "BUG-002",
+      "kind": "bug",
+      "title": "Recover failed classification batches with actionable diagnostics",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "bugs/bug-002-classification-recovery.md",
+      "task_id": 52
+    },
+    {
+      "id": "BUG-003",
+      "kind": "bug",
+      "title": "Bind review findings to exact displayed wording and revision",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "bugs/bug-003-validation-wording.md",
+      "task_id": 53
+    },
+    {
+      "id": "BUG-004",
+      "kind": "bug",
+      "title": "Generate complete claim bindings and identify uncovered spans",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "bugs/bug-004-claim-binding-coverage.md",
+      "task_id": 54
+    },
+    {
+      "id": "BUG-005",
+      "kind": "bug",
+      "title": "Coalesce and scope workspace live refreshes",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "bugs/bug-005-live-refresh-storm.md",
+      "task_id": 55
+    },
+    {
+      "id": "BUG-006",
+      "kind": "bug",
+      "title": "Unify review counts and next actions under current persisted state",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [
+        "BUG-002",
+        "BUG-003"
+      ],
+      "document": "bugs/bug-006-review-state.md",
+      "task_id": 56
+    },
+    {
+      "id": "BUG-007",
+      "kind": "bug",
+      "title": "Include inherited wording corrections in final PDF change summaries",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [
+        "BUG-003"
+      ],
+      "document": "bugs/bug-007-final-correction-history.md",
+      "task_id": 57
+    },
+    {
+      "id": "BUG-008",
+      "kind": "bug",
+      "title": "Display resolved and captured starting resume selections",
+      "priority": "medium",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [
+        "BUG-009"
+      ],
+      "document": "bugs/bug-008-captured-resume-selection.md",
+      "task_id": 59
+    },
+    {
+      "id": "BUG-009",
+      "kind": "bug",
+      "title": "Give resume variants unique identities and searchable choices",
+      "priority": "medium",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "bugs/bug-009-resume-identities.md",
+      "task_id": 58
+    },
+    {
+      "id": "BUG-010",
+      "kind": "bug",
+      "title": "Distinguish unknown workspace audit state and job-local blockers",
+      "priority": "medium",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "bugs/bug-010-workspace-audit-state.md",
+      "task_id": 60
+    },
+    {
+      "id": "FEAT-001",
+      "kind": "feature",
+      "title": "Retain structured posting context and provenance",
+      "priority": "medium",
+      "status": "proposed",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "features/feat-001-posting-context.md",
+      "task_id": 61
+    },
+    {
+      "id": "FEAT-002",
+      "kind": "feature",
+      "title": "Expose preparation phase elapsed time and recorded usage",
+      "priority": "medium",
+      "status": "proposed",
+      "triage": "ready-for-agent",
+      "depends_on": [
+        "BUG-006"
+      ],
+      "document": "features/feat-002-preparation-progress.md",
+      "task_id": 62
+    },
+    {
+      "id": "FEAT-003",
+      "kind": "feature",
+      "title": "Save mixed wording edits atomically before checking",
+      "priority": "high",
+      "status": "proposed",
+      "triage": "ready-for-agent",
+      "depends_on": [
+        "BUG-003",
+        "BUG-006"
+      ],
+      "document": "features/feat-003-mixed-edit-saving.md",
+      "task_id": 63
+    },
+    {
+      "id": "FEAT-004",
+      "kind": "feature",
+      "title": "Prioritize supported accomplishments and narrow unsupported scope",
+      "priority": "medium",
+      "status": "proposed",
+      "triage": "ready-for-agent",
+      "depends_on": [
+        "BUG-004"
+      ],
+      "document": "features/feat-004-accomplishment-selection.md",
+      "task_id": 64
+    },
+    {
+      "id": "FEAT-005",
+      "kind": "feature",
+      "title": "Reuse scoped human employment facts",
+      "priority": "high",
+      "status": "existing-pending",
+      "triage": "ready-for-agent",
+      "depends_on": [],
+      "document": "features/feat-005-employment-facts.md",
+      "task_id": 45
+    }
+  ]
+}

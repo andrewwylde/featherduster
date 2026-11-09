@@ -185,3 +185,129 @@ it('renders original capture in Before and shows correction history stages for m
   expect(screen.getByText(/Tailored proposal:/)).toBeInTheDocument();
   expect(screen.getByText(/Engineered accessible web forms for internal admin tools\./)).toBeInTheDocument();
 });
+
+it('includes inherited-only corrections in prominent PDF changes and undoes back to original capture (SL-BUG-003)', async () => {
+  const originalCapture: ResumeSpec = {
+    profile: { name: 'Test', title: 'Fullstack Engineer', email: 'test@example.com' },
+    summary: 'Original broad summary covering all software engineering.',
+    experiences: [
+      {
+        company: 'Acme Corp',
+        role: 'Senior Engineer',
+        startDate: '2020',
+        endDate: 'Present',
+        bullets: [
+          { text: 'Audited and engineered accessible components across internal applications.', citations: ['audit'] },
+          { text: 'Built real-time messaging using @enterprise/unsupported-realtime v2 library.', citations: ['pkg'] },
+        ],
+      },
+    ],
+    skills: [],
+    education: [],
+  };
+
+  const baseCorrections = [
+    {
+      path: 'experiences.0.bullets.0.text',
+      before: 'Audited and engineered accessible components across internal applications.',
+      after: 'Engineered accessible components for internal applications.',
+      recorded_by: 'human',
+      recorded_at: '2026-01-01T00:00:00.000Z',
+    },
+    {
+      path: 'experiences.0.bullets.1.text',
+      before: 'Built real-time messaging using @enterprise/unsupported-realtime v2 library.',
+      after: 'Built real-time messaging using standard WebSockets.',
+      recorded_by: 'human',
+      recorded_at: '2026-01-01T00:00:00.000Z',
+    },
+  ];
+
+  const summaryProposal = ProposalSchema.parse({
+    id: 'prop-summary',
+    type: 'summary.rewrite',
+    target: { experience_index: -1, bullet_index: -1 },
+    before: 'Original broad summary covering all software engineering.',
+    after: 'Focused fullstack engineer with deep expertise in web apps and real-time APIs.',
+    citations: ['summary'],
+    decision: 'accepted',
+  });
+
+  const publishedCandidate: ResumeSpec = {
+    ...originalCapture,
+    summary: 'Focused fullstack engineer with deep expertise in web apps and real-time APIs.',
+    experiences: [
+      {
+        ...originalCapture.experiences[0],
+        bullets: [
+          { text: 'Engineered accessible components for internal applications.', citations: ['audit'] },
+          { text: 'Built real-time messaging using standard WebSockets.', citations: ['pkg'] },
+        ],
+      },
+    ],
+  };
+
+  const effectiveBase: ResumeSpec = {
+    ...originalCapture,
+    experiences: publishedCandidate.experiences,
+  };
+
+  const draft = {
+    id: 'draft-artifact-test',
+    revision: 1,
+    candidate: publishedCandidate,
+    proposals: { proposals: [summaryProposal] },
+  } as unknown as JobDraft;
+
+  const review = {
+    artifact: { id: 'artifact-1', version_fingerprint: 'vfp-1' },
+    draft,
+    base_resume: effectiveBase,
+    raw_base_resume: originalCapture,
+    base_corrections: baseCorrections,
+  } as unknown as JobReview;
+
+  vi.spyOn(apiClient, 'getJob').mockResolvedValue({ job: { revision: 1 } } as never);
+  vi.spyOn(apiClient, 'editJobResume').mockResolvedValue({ draft });
+  const saveSpy = vi.spyOn(apiClient, 'saveJobDraft').mockImplementation(async (_job, _id, revision, val) => ({
+    draft: { ...draft, revision: revision + 1, candidate: val },
+  }));
+  vi.spyOn(apiClient, 'viewJobFacts').mockResolvedValue({ facts: [{ resolution: { provenance: 'model' } }] } as never);
+  vi.spyOn(apiClient, 'checkJobDraft').mockResolvedValue({ status: 'ready', issues: [], binding: {}, job_revision: 1 } as never);
+  vi.spyOn(apiClient, 'finalizeJobDraft').mockResolvedValue({ artifact: { id: 'new-art' } } as never);
+
+  render(<JobArtifactChanges job={{ id: 'job-1' } as Job} review={review} disabled={false} onSaved={() => {}} />);
+
+  // 1. Two inherited-only corrections and one generated rewrite are visible before approval without opening drawer
+  const summaryChange = screen.getAllByText(/Focused fullstack engineer with deep expertise/);
+  expect(summaryChange.length).toBeGreaterThanOrEqual(1);
+
+  const bulletAChange = screen.getAllByText(/Engineered accessible components for internal applications\./);
+  expect(bulletAChange.length).toBeGreaterThanOrEqual(1);
+
+  const bulletBChange = screen.getAllByText(/Built real-time messaging using standard WebSockets\./);
+  expect(bulletBChange.length).toBeGreaterThanOrEqual(1);
+
+  // Original before text remains the immutable capture
+  expect(screen.getAllByText(/Audited and engineered accessible components across internal applications\./).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText(/Built real-time messaging using @enterprise\/unsupported-realtime v2 library\./).length).toBeGreaterThanOrEqual(1);
+  expect(screen.getAllByText(/Original broad summary covering all software engineering\./).length).toBeGreaterThanOrEqual(1);
+
+  // 2. Undo bullet A inherited correction
+  const undoButtons = screen.getAllByRole('button', { name: 'Undo change' });
+  expect(undoButtons).toHaveLength(3); // 1 summary rewrite + 2 corrections
+
+  // Find the button inside the section for bullet A
+  const bulletAContainer = screen.getAllByText(/Audited and engineered accessible components across internal applications\./)[0].closest('div');
+  const bulletAUndoBtn = within(bulletAContainer!).getByRole('button', { name: 'Undo change' });
+  fireEvent.click(bulletAUndoBtn);
+
+  await waitFor(() => {
+    expect(saveSpy).toHaveBeenCalled();
+  });
+
+  const savedCandidate = saveSpy.mock.calls[0][3] as ResumeSpec;
+  expect(savedCandidate.experiences[0].bullets[0].text).toBe('Audited and engineered accessible components across internal applications.');
+  expect(savedCandidate.experiences[0].bullets[1].text).toBe('Built real-time messaging using standard WebSockets.');
+  expect(savedCandidate.summary).toBe('Focused fullstack engineer with deep expertise in web apps and real-time APIs.');
+});

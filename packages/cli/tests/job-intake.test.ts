@@ -184,4 +184,30 @@ describe('structured posting metadata extraction', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('extracts compensation present only in JSON-LD description with repeated units (SL-BUG-006)', async () => {
+    const jsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'JobPosting',
+      title: 'Frontend Engineer',
+      description: '<p>Compensation:</p><p>$180,000/year - $220,000/year + equity + benefits</p><p>Requires 5+ years of experience. Series B startup.</p>',
+      employmentType: 'FULL_TIME',
+      jobLocationType: 'TELECOMMUTE',
+      jobLocation: { address: { addressCountry: 'US' } },
+    };
+    const html = `<html><head><script type="application/ld+json">${JSON.stringify(jsonLd)}</script></head><body></body></html>`;
+    const parsed = await extractPostingMetadata(html, 'https://example.com/jobs/frontend');
+
+    expect(parsed.remote_policy).toBe('Remote');
+    expect(parsed.employment_type).toBe('Full-time');
+    expect(parsed.compensation).toEqual([
+      {
+        currency: 'USD',
+        min: 180000,
+        max: 220000,
+        period: 'annual',
+        raw_text: '$180,000/year - $220,000/year + equity + benefits',
+      },
+    ]);
+  });
 });

@@ -58,7 +58,7 @@ export function JobFitReview({ job, onSaved, navigate }: { job: Job; onSaved(): 
     <div className="flex flex-wrap gap-3">
       <button className={primaryButton} disabled={busy || active || !sources.data || !!sources.error} onClick={() => void assess()}>{busy || active ? 'Assessment in progress' : current ? 'Reassess fit' : 'Assess fit'}</button>
       {active && <button className={secondaryButton} disabled={busy} onClick={() => void cancel()}>Cancel assessment</button>}
-      <button className={secondaryButton} onClick={() => navigate(`/jobs/${job.id}/resume`)}>Tailor resume</button>
+      <button className={secondaryButton} onClick={() => navigate(`/jobs/${job.id}/resume`)}>Open resume</button>
     </div>
     {active && <p role="status" className="text-sm">Work is running. Cancel this assessment here, or use Stop processing below for all work. The last saved assessment stays available.</p>}
     <p className="text-sm text-slate-600 dark:text-slate-300">Fit is advice, not a gate. You can tailor a resume regardless of this assessment. Salary and other personal preferences are not assessed here.</p>

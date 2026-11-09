@@ -69,6 +69,7 @@ export const RawJobPreparationProgressSchema = z.object({
   phase_started_at: z.string(),
   elapsed_seconds: z.number().int().nonnegative().optional(),
   current_operation: z.string().optional(),
+  terminal_at: z.string().optional(),
   usage: JobPreparationUsageSchema.optional(),
 }).strict();
 

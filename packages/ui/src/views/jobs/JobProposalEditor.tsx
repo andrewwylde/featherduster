@@ -1,6 +1,6 @@
 import { SourcePicker } from '../../components/SourcePicker.js';
 import { useCallback, useState } from 'react';
-import type { EvidenceRecord, JobFact, Proposal, ProposalIssue, ProposalPatch, SkillSupport } from '@featherduster/core';
+import { computeSkillsListDiff, type EvidenceRecord, type JobFact, type Proposal, type ProposalIssue, type ProposalPatch, type SkillSupport } from '@featherduster/core';
 import { cardClass, CitationChip, inputClass, IssueList, primaryButton, secondaryButton } from '../tailoring/ui.js';
 import { wordDiff } from '../tailoring/wordDiff.js';
 import { JobEvidenceChooser } from './JobEvidenceChooser.js';
@@ -60,6 +60,18 @@ export function JobProposalEditor({
   const close = useCallback(() => setChoosing(false), []);
   const p = proposal;
   const isRejected = p.decision === 'rejected';
+  const isSkills = p.type === 'skills.prune' || p.type === 'skills.reorder';
+  const beforeSkills: string[] = p.before_skills ?? (p.before ? p.before.split(/,\s*/).map(s => s.trim()).filter(Boolean) : []);
+  const currentSkills = p.skills ?? [];
+  const currentOrder = p.type === 'skills.reorder' && currentSkills.length === beforeSkills.length
+    ? currentSkills
+    : beforeSkills;
+  const skillsDiff = computeSkillsListDiff(
+    beforeSkills,
+    p.type === 'skills.prune'
+      ? beforeSkills.filter(s => !currentSkills.some(rem => rem.toLowerCase() === s.toLowerCase()))
+      : currentOrder
+  );
   const n = position && position.total > 1 ? ` (change ${position.index} of ${position.total})` : '';
   const title = (id: string) => evidenceTitle(evidence, id);
   const update = (value: Partial<GroundingDraft>) => onGrounding({ proposal_id: p.id, term: '', evidence_id: '', quote: '', explanation: '', ...grounding, ...value });
@@ -77,7 +89,7 @@ export function JobProposalEditor({
     <fieldset disabled={disabled} className={`${cardClass} p-4 space-y-4 min-w-0 break-words border border-slate-200 dark:border-slate-800 shadow-sm`}>
       <legend className="font-semibold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
         <Sparkles className="h-4 w-4 text-vermilion-500" />
-        Correct this wording{n}
+        {p.type === 'skills.prune' ? 'Remove skills' : p.type === 'skills.reorder' ? 'Reorder skills' : 'Correct this wording'}{n}
       </legend>
 
       {/* Rationale and Target Requirements */}
@@ -89,12 +101,12 @@ export function JobProposalEditor({
           </span>
         ))}
         <details className="text-slate-500 dark:text-slate-400">
-          <summary className="cursor-pointer">Original wording</summary>
-          <p className="mt-1 p-2 bg-slate-50 dark:bg-slate-900 rounded">{p.source_bullets?.map(s => s.before).join(' / ') || p.before || '(new content)'}</p>
+          <summary className="cursor-pointer">Original {isSkills ? 'skills' : 'wording'}</summary>
+          <p className="mt-1 p-2 bg-slate-50 dark:bg-slate-900 rounded">{isSkills ? beforeSkills.join(', ') : (p.source_bullets?.map(s => s.before).join(' / ') || p.before || '(new content)')}</p>
         </details>
         <details className="text-slate-500 dark:text-slate-400">
-          <summary className="cursor-pointer">Generated wording</summary>
-          <p className="mt-1 p-2 bg-slate-50 dark:bg-slate-900 rounded">{p.after}</p>
+          <summary className="cursor-pointer">Generated {isSkills ? 'skills' : 'wording'}</summary>
+          <p className="mt-1 p-2 bg-slate-50 dark:bg-slate-900 rounded">{isSkills ? (p.type === 'skills.prune' ? skillsDiff.retained.join(', ') : currentOrder.join(', ')) : p.after}</p>
         </details>
       </div>
 
@@ -106,7 +118,7 @@ export function JobProposalEditor({
             Original from your resume
           </span>
           <p className="text-xs sm:text-sm text-slate-800 dark:text-slate-200 leading-relaxed font-sans">
-            {p.before || <span className="italic text-slate-400">(New section/content)</span>}
+            {isSkills ? (beforeSkills.join(', ') || <span className="italic text-slate-400">(Empty group)</span>) : (p.before || <span className="italic text-slate-400">(New section/content)</span>)}
           </p>
         </div>
 
@@ -119,7 +131,7 @@ export function JobProposalEditor({
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-vermilion-600 dark:text-vermilion-400 flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
-              Proposed wording{n}
+              {isSkills ? (p.type === 'skills.prune' ? 'Skill removal' : 'Skill order') : 'Proposed wording'}{n}
             </span>
             <label className="inline-flex items-center gap-1 text-xs text-slate-600 dark:text-slate-400 cursor-pointer select-none">
               <input
@@ -133,19 +145,118 @@ export function JobProposalEditor({
             </label>
           </div>
 
-          <label className="block text-sm">
-            <span className="sr-only">Proposed wording{n}</span>
-            <textarea
-              aria-label={`Proposed wording${n}`}
-              rows={3}
-              data-proposal-field={p.id}
-              aria-describedby={`issues-${p.id}`}
-              disabled={isRejected}
-              className={`${inputClass} text-xs sm:text-sm leading-relaxed`}
-              value={p.edited_after ?? p.after}
-              onChange={e => onPatch({ proposal_id: p.id, edited_after: e.target.value })}
-            />
-          </label>
+          {isSkills ? (
+            p.type === 'skills.prune' ? (
+              <div className="space-y-3 pt-1">
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                    Removed ({skillsDiff.removed.length}): {skillsDiff.removed.join(', ') || 'None'}
+                  </span>
+                  <span className="px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    Retained ({skillsDiff.retained.length}): {skillsDiff.retained.join(', ') || 'None'}
+                  </span>
+                </div>
+                <div className="space-y-1.5" role="group" aria-label="Skills in this group">
+                  {beforeSkills.map((skill, sIdx) => {
+                    const isRemoved = currentSkills.some(rem => rem.toLowerCase() === skill.toLowerCase());
+                    return (
+                      <label
+                        key={sIdx}
+                        className="flex items-center justify-between p-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer min-h-[44px]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            aria-label={`Retain ${skill}`}
+                            checked={!isRemoved}
+                            disabled={isRejected}
+                            onChange={e => {
+                              const nextRemoved = e.target.checked
+                                ? currentSkills.filter(rem => rem.toLowerCase() !== skill.toLowerCase())
+                                : [...currentSkills, skill];
+                              onPatch({ proposal_id: p.id, skills: nextRemoved });
+                            }}
+                            className="rounded border-slate-300 text-vermilion-600 focus:ring-vermilion-500 h-4 w-4"
+                          />
+                          <span className={`text-sm ${isRemoved ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200 font-medium'}`}>
+                            {skill}
+                          </span>
+                        </div>
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${isRemoved ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'}`}>
+                          {isRemoved ? 'Removed' : 'Retained'}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2 pt-1" role="group" aria-label="Reorder skills">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Order change: use the buttons or keyboard to adjust skill placement.
+                </p>
+                {currentOrder.map((skill, sIdx) => (
+                  <div
+                    key={sIdx}
+                    className="flex items-center justify-between p-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 min-h-[44px]"
+                  >
+                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <span className="text-xs text-slate-400 w-5">{sIdx + 1}.</span>
+                      {skill}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        aria-label={`Move ${skill} up`}
+                        disabled={isRejected || sIdx === 0}
+                        onClick={() => {
+                          if (sIdx === 0) return;
+                          const next = [...currentOrder];
+                          const temp = next[sIdx - 1];
+                          next[sIdx - 1] = next[sIdx];
+                          next[sIdx] = temp;
+                          onPatch({ proposal_id: p.id, skills: next });
+                        }}
+                        className={`${secondaryButton} px-2 py-1 text-xs min-h-[36px] min-w-[36px]`}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Move ${skill} down`}
+                        disabled={isRejected || sIdx === currentOrder.length - 1}
+                        onClick={() => {
+                          if (sIdx === currentOrder.length - 1) return;
+                          const next = [...currentOrder];
+                          const temp = next[sIdx + 1];
+                          next[sIdx + 1] = next[sIdx];
+                          next[sIdx] = temp;
+                          onPatch({ proposal_id: p.id, skills: next });
+                        }}
+                        className={`${secondaryButton} px-2 py-1 text-xs min-h-[36px] min-w-[36px]`}
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <label className="block text-sm">
+              <span className="sr-only">Proposed wording{n}</span>
+              <textarea
+                aria-label={`Proposed wording${n}`}
+                rows={3}
+                data-proposal-field={p.id}
+                aria-describedby={`issues-${p.id}`}
+                disabled={isRejected}
+                className={`${inputClass} text-xs sm:text-sm leading-relaxed`}
+                value={p.edited_after ?? p.after}
+                onChange={e => onPatch({ proposal_id: p.id, edited_after: e.target.value })}
+              />
+            </label>
+          )}
           {uncoveredGaps.length > 0 && !isRejected && (
             <div className="rounded-md border border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 p-2 space-y-1 text-xs" data-testid="uncovered-spans-warning">
               <div className="font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1">

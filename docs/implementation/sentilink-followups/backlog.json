@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "packet_id": "sentilink-followups-2026-11-09",
+  "created_at": "2026-11-09",
+  "source": "docs/sentilink-live-job-attempt-2026-11-08.md",
+  "earlier_backlog": "docs/implementation/netbox-followups/backlog.json",
+  "historical_evidence_root": "walkthrough-output/real-job-2026-11-08",
+  "historical_server_identity": "167b05c925489ea5565f691bc86dc392707925bea497b5e94ad5c36d7f9ebbd6",
+  "tracker": {
+    "kind": "task-master",
+    "tag": "master",
+    "file": ".taskmaster/tasks/tasks.json"
+  },
+  "items": [
+    {
+      "id": "SL-BUG-001",
+      "kind": "bug",
+      "title": "Preserve exact text when computing semantic spans",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-001-semantic-spans.md",
+      "task_id": 65,
+      "task_ownership": "new",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "high",
+      "depends_on": [],
+      "tracker_dependencies": [],
+      "earlier_items": [
+        "BUG-002",
+        "BUG-004"
+      ]
+    },
+    {
+      "id": "SL-BUG-002",
+      "kind": "bug",
+      "title": "Validate the actual effect of skills operations",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-002-skills-operation-contract.md",
+      "task_id": 66,
+      "task_ownership": "new",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "high",
+      "depends_on": [],
+      "tracker_dependencies": [],
+      "earlier_items": []
+    },
+    {
+      "id": "SL-BUG-003",
+      "kind": "bug",
+      "title": "Include inherited-only corrections in prominent PDF changes",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-003-inherited-pdf-changes.md",
+      "task_id": 57,
+      "task_ownership": "follow-up",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "high",
+      "depends_on": [],
+      "tracker_dependencies": [
+        53
+      ],
+      "earlier_items": [
+        "BUG-007"
+      ]
+    },
+    {
+      "id": "SL-BUG-004",
+      "kind": "bug",
+      "title": "Do not restore acknowledged mixed edits as unsaved work",
+      "priority": "high",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-004-saved-draft-recovery.md",
+      "task_id": 63,
+      "task_ownership": "follow-up",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "high",
+      "depends_on": [
+        "SL-BUG-008"
+      ],
+      "tracker_dependencies": [
+        53,
+        56
+      ],
+      "earlier_items": [
+        "FEAT-003"
+      ]
+    },
+    {
+      "id": "SL-BUG-005",
+      "kind": "bug",
+      "title": "Keep progress usage and terminal timing current",
+      "priority": "medium",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-005-progress-truth.md",
+      "task_id": 62,
+      "task_ownership": "follow-up",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "medium",
+      "depends_on": [
+        "SL-BUG-008"
+      ],
+      "tracker_dependencies": [
+        56
+      ],
+      "earlier_items": [
+        "FEAT-002"
+      ]
+    },
+    {
+      "id": "SL-BUG-006",
+      "kind": "bug",
+      "title": "Extract compensation present only in a job description",
+      "priority": "medium",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-006-description-compensation.md",
+      "task_id": 61,
+      "task_ownership": "follow-up",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "medium",
+      "depends_on": [],
+      "tracker_dependencies": [],
+      "earlier_items": [
+        "FEAT-001"
+      ]
+    },
+    {
+      "id": "SL-BUG-007",
+      "kind": "bug",
+      "title": "Stop operational writes refreshing unrelated workspace views",
+      "priority": "medium",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-007-refresh-scope.md",
+      "task_id": 55,
+      "task_ownership": "follow-up",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "high",
+      "depends_on": [],
+      "tracker_dependencies": [],
+      "earlier_items": [
+        "BUG-005"
+      ]
+    },
+    {
+      "id": "SL-BUG-008",
+      "kind": "bug",
+      "title": "Use one current review state for counts and next actions",
+      "priority": "medium",
+      "status": "open",
+      "triage": "ready-for-agent",
+      "document": "bugs/sl-bug-008-review-state.md",
+      "task_id": 56,
+      "task_ownership": "follow-up",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "high",
+      "depends_on": [],
+      "tracker_dependencies": [
+        52,
+        53
+      ],
+      "earlier_items": [
+        "BUG-006"
+      ]
+    },
+    {
+      "id": "SL-FEAT-001",
+      "kind": "feature",
+      "title": "Review and edit actual skills-list changes",
+      "priority": "high",
+      "status": "proposed",
+      "triage": "ready-for-agent",
+      "document": "features/sl-feat-001-skills-review.md",
+      "task_id": 67,
+      "task_ownership": "new",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "high",
+      "depends_on": [
+        "SL-BUG-002",
+        "SL-BUG-004"
+      ],
+      "tracker_dependencies": [
+        66,
+        63
+      ],
+      "earlier_items": []
+    },
+    {
+      "id": "SL-FEAT-002",
+      "kind": "feature",
+      "title": "Calibrate accomplishment selection for frontend-focused fullstack roles",
+      "priority": "medium",
+      "status": "proposed",
+      "triage": "ready-for-agent",
+      "document": "features/sl-feat-002-accomplishment-quality.md",
+      "task_id": 64,
+      "task_ownership": "follow-up",
+      "tracker_status_at_registration": "pending",
+      "tracker_priority": "medium",
+      "depends_on": [],
+      "tracker_dependencies": [
+        54
+      ],
+      "earlier_items": [
+        "FEAT-004"
+      ]
+    }
+  ]
+}

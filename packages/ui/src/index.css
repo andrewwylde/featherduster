@@ -106,3 +106,30 @@
 .animate-slideUp {
   animation: slideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Interaction feedback stays local to the proposal review workflow. */
+.proposal-review :is(button, summary, a, input, textarea, select):focus-visible {
+  outline: 2px solid var(--color-vermilion-500, #d93829);
+  outline-offset: 3px;
+}
+.proposal-review button:not(:disabled), .proposal-review summary { cursor: pointer; }
+.proposal-review button:disabled { cursor: not-allowed; opacity: .45; }
+.proposal-review button { transition: background-color 150ms, border-color 150ms, box-shadow 150ms; }
+.proposal-review button:not(:disabled):hover { box-shadow: inset 0 0 0 1px currentColor; }
+.proposal-review button:not(:disabled):active { transform: translateY(1px); }
+.proposal-review summary {
+  border-radius: var(--radius-desk, 8px);
+  padding: .625rem .75rem;
+  min-height: 44px;
+  transition: background-color 150ms;
+}
+.proposal-review summary:hover { background-color: rgb(148 163 184 / .12); }
+.proposal-review details[open] > summary { background-color: rgb(148 163 184 / .1); }
+.proposal-review summary::marker { color: var(--color-vermilion-500, #d93829); }
+.proposal-review summary.inline-flex { display: list-item; list-style-position: inside; width: fit-content; }
+.proposal-review textarea { resize: vertical; min-height: 7rem; }
+.proposal-review input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--color-vermilion-500, #d93829); }
+@media (prefers-reduced-motion: reduce) {
+  .proposal-review *, .proposal-review *::before, .proposal-review *::after { transition: none !important; animation: none !important; }
+  .proposal-review button:not(:disabled):active { transform: none; }
+}

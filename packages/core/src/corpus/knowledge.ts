@@ -20,7 +20,7 @@ export interface EffectiveCorpus {
 }
 const normalized = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
 
-function scopeMatches(scope: CorpusScope, context: CorpusContext): boolean {
+export function scopeMatches(scope: CorpusScope, context: CorpusContext): boolean {
   if (scope.kind === 'workspace') return true;
   return (scope.kind === 'job' ? context.job_id : context[scope.kind]) === scope.key;
 }

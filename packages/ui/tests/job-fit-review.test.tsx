@@ -26,7 +26,7 @@ it('retains stale findings, evidence and an optional tailoring action', async ()
   render(<JobFitReview job={job} onSaved={() => {}} navigate={navigate} />);
   await screen.findByText(/Inputs changed/);
   expect(screen.getByText(/No supporting evidence found/)).toBeVisible();
-  fireEvent.click(screen.getByRole('button', { name: 'Tailor resume' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open resume' }));
   expect(navigate).toHaveBeenCalledWith('/jobs/job/resume');
 });
 it('offers cancellation next to the active assessment without starting any model work', async () => {

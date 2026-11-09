@@ -2,6 +2,7 @@ import { JobResumeDetails } from './JobResumeDetails.js';
 import { describeJobEvent } from './job-utils.js';
 import { JobExports } from './JobExports.js';
 import { JobProposalReview } from './JobProposalReview.js';
+import { JobArtifactChanges } from './JobArtifactChanges.js';
 import { useEffect, useRef, useState } from 'react';
 import {
   FileText,
@@ -78,6 +79,7 @@ export function JobResumeReview({
 
   const workingDraft = displayedReview?.working_draft;
   const pendingEdits = !!workingDraft && JSON.stringify(workingDraft.candidate) !== JSON.stringify(displayedReview?.draft.candidate);
+  const factualConflict = !!displayedReview?.fact_conflicts?.length;
 
   useEffect(() => {
     if (!selected && artifacts.length) setSelected(artifacts.at(-1)!.id);
@@ -225,6 +227,7 @@ const preview = displayedReview && (<>
           </div>
 
 
+  <JobArtifactChanges key={displayedReview.artifact.id} job={job} review={displayedReview} disabled={busy || selected !== latestArtifact || job.recovery?.kind === 'stale_inputs'} onSaved={() => { onSaved(); setReload(n => n + 1); }} />
 </>);
 const comparison = displayedReview && (<>
           {/* Base to Candidate Diff */}
@@ -316,12 +319,12 @@ const unavailable = !displayedReview;
 const checksContent = displayedReview ? <section className="space-y-3">
   <p>Validation: {displayedReview.artifact.validation_result}. Human approval: {isApproved ? 'Approved for this version' : 'Not approved for this version'}.</p>
   <span ref={approvalStatus} tabIndex={-1} role="status" aria-label="Approval">{isApproved ? 'Approved for this version' : ''}</span>
-  {!isApproved && !queue && <button disabled={busy || conflict || !previewReady || pendingEdits || job.recovery?.kind === 'stale_inputs'
-    || historical || job.revision !== revision || displayedReview.artifact.validation_result !== 'passed' || !displayedReview.artifact.pdf}
-    onClick={() => void act(false)}>Approve Resume</button>}
   <pre className="whitespace-pre-wrap break-words text-xs">{JSON.stringify(displayedReview.validation_report, null, 2)}</pre>
 </section> : <p>No generated resume checks yet.</p>;
 const editActions = <>
+    {displayedReview && !queue && !isApproved && <button className={primaryButton} disabled={busy || conflict || factualConflict || !previewReady || pendingEdits || job.recovery?.kind === 'stale_inputs'
+      || historical || job.revision !== revision || displayedReview.artifact.validation_result !== 'passed' || !displayedReview.artifact.pdf}
+      onClick={() => void act(false)}>Approve Resume</button>}
     {displayedReview && <button className={primaryButton} disabled={busy || conflict || job.revision !== revision || historical}
       onClick={() => workingDraft ? navigate(`/tailor/canvas/jobs/${job.id}/${workingDraft.id}`) : void act(true)}>
       {workingDraft ? 'Continue editing' : 'Edit resume'}
@@ -337,7 +340,7 @@ return <section className="space-y-4 min-w-0">
   {error && <div role="alert"><p>{error}</p><button onClick={() => { onSaved(); setReload(n => n + 1); }}>Retry</button></div>}
   <JobResumeDetails actions={<>
     {queue && <>
-      <button className={primaryButton} disabled={!displayedReview || busy || conflict || !previewReady || pendingEdits || historical || job.revision !== revision
+      <button className={primaryButton} disabled={!displayedReview || busy || conflict || factualConflict || !previewReady || pendingEdits || historical || job.revision !== revision
         || job.recovery?.kind === 'stale_inputs' || queue.artifactId !== selected || displayedReview.artifact.validation_result !== 'passed'}
         onClick={() => void act(false)}>Approve &amp; next</button>
       <button className={secondaryButton} disabled={busy || queue.artifactId !== selected} onClick={queue.onLater}>Review later</button>
@@ -345,17 +348,20 @@ return <section className="space-y-4 min-w-0">
     </>}
     {!queue && editActions}
   </>} secondaryActions={queue ? <>{editActions}{reloadControl}</> : undefined} notice={open => <>
+    {factualConflict && <div role="alert"><p>This saved PDF conflicts with a corrected fact. Its approval is historical; update the affected draft before reuse.</p>
+      {displayedReview?.fact_conflicts?.map((f, i) => <p key={i}>“{f.wording}” — corrected answer: {f.corrected_answer}</p>)}<a className="underline" href="/jobs">Review affected jobs</a></div>}
     {pendingEdits && <p role="status">You have draft changes — continue editing to include them in a new PDF.</p>}
     {job.recovery?.kind === 'stale_inputs' && <p role="status">Starting inputs changed. This is the previous PDF. <button onClick={() => navigate(`/jobs/${job.id}`)}>Review posting and inputs</button></p>}
     {artifacts.length > 0 && job.preparation_state === 'needs_input' && job.recovery?.kind !== 'stale_inputs' &&
       <p role="status">Preparation needs attention. <button onClick={() => open(job.recovery?.kind === 'render' ? 'checks' : 'corrections')}>Resolve preparation issues</button></p>}
     {historical && <button onClick={() => setSelected(latestArtifact)}>Return to current resume</button>}
-    {!artifacts.length && <p role="status">{job.preparation_state === 'preparing' ? 'Preparing your resume…' : 'No generated resume yet.'}
-      {job.preparation_state === 'needs_input' ? <button onClick={() => open('corrections')}>Resolve corrections</button>
-        : <button onClick={() => navigate(`/jobs/${job.id}`)}>Review posting and preparation</button>}</p>}
+    {!artifacts.length && job.preparation_state !== 'needs_input' && <div role="status" className={`${cardClass} p-4 space-y-2`}>
+      <h3 className="font-semibold">{job.preparation_state === 'preparing' ? 'Tailoring your resume' : 'Your tailored resume will appear here'}</h3>
+      <p className="text-sm">{job.preparation_state === 'preparing' ? 'We are drafting and checking your resume. Any questions will appear here before the PDF is generated.' : 'Choose Tailor resume above to create a draft for this job. You can review your starting resume and evidence in Inputs.'}</p>
+    </div>}
     {displayedReview && displayedReview.artifact.validation_result !== 'passed' && <p role="status">This version needs attention. <button onClick={() => open('checks')}>View checks</button></p>}
     {job.revision !== revision && <p role="status">The job changed. <button className={secondaryButton} onClick={() => { onSaved(); setReload(n => n + 1); }}>Reload review</button></p>}
-  </>} preview={unavailable ? (artifacts.length && !error ? <p role="status">Loading resume…</p> : null) : preview}
+  </>} preview={unavailable ? (artifacts.length && !error ? <p role="status">Loading resume…</p> : job.preparation_state === 'needs_input' ? <JobProposalReview job={job} onSaved={onSaved} /> : null) : preview}
     renderView={view => {
       if (view === 'checks') return checksContent;
       if (view === 'corrections') return <JobProposalReview job={job} onSaved={onSaved} />;

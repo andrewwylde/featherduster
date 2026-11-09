@@ -52,3 +52,50 @@ it('bounds a runner that ignores abort without retrying', async () => {
   expect((await classifyBatch(model, { ...request, configuredStepTimeoutMs: 5 }, new AbortController().signal)).status).toBe('unavailable');
   expect(model.run).toHaveBeenCalledOnce();
 });
+
+it('preserves exact semantic spans with edge whitespace across claims (SL-BUG-001)', async () => {
+  const subjectP1 = { id: 'p1', path: 'summary', passage_fingerprint: 'p1-hash' };
+  const passageText = 'Built a UI; shipped an API.';
+  const req: C.SemanticBatchRequest = {
+    subjects: [{ subject: subjectP1, text: passageText, work_id: 'api-a', inherited: true }],
+    sources: [],
+    configuration_key: 'fake:test',
+    configuredStepTimeoutMs: 1000,
+    coverage: { searched_source_count: 0, omitted_source_ids: [], truncated: false },
+  };
+  const wire = {
+    passages: [{
+      subject_ref: 'p1',
+      claims: [
+        {
+          text: 'Built a UI; ',
+          fact: { predicate: 'ui', qualifiers: [] },
+          qualifier_text: [],
+          state: 'needs_clarification',
+          evidence: [],
+          explanation: 'No sources provided.',
+          question: 'What UI was built?',
+        },
+        {
+          text: ' shipped an API.',
+          fact: { predicate: 'api', qualifiers: [] },
+          qualifier_text: [],
+          state: 'needs_clarification',
+          evidence: [],
+          explanation: 'No sources provided.',
+          question: 'What API was shipped?',
+        },
+      ],
+    }],
+  };
+  const result = await classifyBatch(runner(wire), req, new AbortController().signal);
+  expect(result.status).toBe('complete');
+  if (result.status === 'complete') {
+    expect(result.passages[0].claims[0].claim.text).toBe('Built a UI; ');
+    expect(result.passages[0].claims[0].claim.start).toBe(0);
+    expect(result.passages[0].claims[0].claim.end).toBe(12);
+    expect(result.passages[0].claims[1].claim.text).toBe(' shipped an API.');
+    expect(result.passages[0].claims[1].claim.start).toBe(11);
+    expect(result.passages[0].claims[1].claim.end).toBe(27);
+  }
+});

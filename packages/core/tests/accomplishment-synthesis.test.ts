@@ -209,3 +209,68 @@ it('narrows unsupported pluralizations and unproven speculative metrics', () => 
   expect(result.bullets[0].text).not.toMatch(/SDKs/);
   expect(result.bullets[0].text).toMatch(/client SDK/);
 });
+
+it('calibrates accomplishment selection for frontend-focused fullstack roles (SL-FEAT-002)', () => {
+  const result = synthesizeExperienceBullets({
+    role_requirements: [
+      'React interfaces and frontend architecture',
+      'UI-facing APIs and fullstack product lifecycle',
+      'data analytics and product telemetry',
+      'automated testing and production support',
+    ],
+    experience: {
+      employer: 'Parable',
+      accomplishments: [
+        {
+          id: 'acc-build-script',
+          topic: 'internal build scripting and editor tools',
+          text: 'Maintained internal build scripting and local editor dev dependencies.',
+          evidence_supported: true,
+          evidence: [{ text: 'build scripts', verified: true }],
+        },
+        {
+          id: 'acc-lifecycle-api',
+          topic: 'UI-facing API lifecycle and React integration',
+          text: 'Engineered UI-facing APIs and React components across multiple products, owned and led production rollout.',
+          evidence_supported: true,
+          evidence: [{ text: 'Built product UI and API', verified: true, count: 1 }],
+          unsupported_qualifiers: ['products', 'ownership'],
+        },
+        {
+          id: 'acc-analytics',
+          topic: 'analytics and product telemetry visualization',
+          text: 'Built React analytics dashboard with real-time product telemetry visualization, enterprise-grade architecture.',
+          evidence_supported: true,
+          evidence: [{ text: 'telemetry dashboard', verified: true }],
+          unsupported_qualifiers: ['enterprise'],
+        },
+        {
+          id: 'acc-testing',
+          topic: 'automated testing and test isolation',
+          text: 'Implemented automated end-to-end testing in React application.',
+          evidence_supported: true,
+          evidence: [{ text: 'test suite', verified: true }],
+        },
+      ],
+    },
+  });
+
+  // Top two positions belong to lifecycle/API or analytics proof
+  const topTwoIds = [result.bullets[0].accomplishment_id, result.bullets[1].accomplishment_id];
+  expect(topTwoIds).toContain('acc-lifecycle-api');
+  expect(topTwoIds).toContain('acc-analytics');
+
+  // Auxiliary internal build scripting is ranked lowest
+  expect(result.bullets[result.bullets.length - 1].accomplishment_id).toBe('acc-build-script');
+
+  // Scope narrowing: multiple products -> the product, owned and led -> developed, enterprise-grade -> production
+  const lifecycleBullet = result.bullets.find(b => b.accomplishment_id === 'acc-lifecycle-api');
+  expect(lifecycleBullet?.text).not.toMatch(/multiple products/);
+  expect(lifecycleBullet?.text).toMatch(/the product/);
+  expect(lifecycleBullet?.text).not.toMatch(/owned and led/);
+  expect(lifecycleBullet?.text).toMatch(/developed/);
+
+  const analyticsBullet = result.bullets.find(b => b.accomplishment_id === 'acc-analytics');
+  expect(analyticsBullet?.text).not.toMatch(/enterprise-grade/);
+  expect(analyticsBullet?.text).toMatch(/production/);
+});

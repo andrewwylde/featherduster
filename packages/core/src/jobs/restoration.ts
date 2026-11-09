@@ -28,6 +28,15 @@ export function undoProposalInDraft(current: ResumeSpec, base: ResumeSpec, propo
     if (next.summary !== after) throw Error('The summary has changed. Review its current wording before undoing.');
     next.summary = p.before; return next;
   }
+  if (p.type === 'skills.prune' || p.type === 'skills.reorder') {
+    const gi = p.target.skill_group_index;
+    const origGroup = base.skills?.[gi];
+    const curGroup = next.skills?.[gi];
+    if (!origGroup || !curGroup) throw Error('The skills group changed. Review its current content.');
+    curGroup.skills = [...origGroup.skills];
+    curGroup.category = origGroup.category;
+    return next;
+  }
   const original = base.experiences[p.target.experience_index], exp = next.experiences[p.target.experience_index];
   if (!original || !exp || original.company !== exp.company || original.role !== exp.role || original.startDate !== exp.startDate) throw Error('The employment experience changed. Review its current content.');
   if (!['bullet.drop', 'bullet.add', 'bullet.rewrite', 'bullet.consolidate'].includes(p.type)) throw Error('Use the draft editor to change ordering or skills.');
@@ -61,6 +70,66 @@ export function tightenResumeWording(current: ResumeSpec): ResumeSpec {
   return next;
 }
 
+/**
+ * Undo one changed passage (e.g. an inherited-only correction) in draft back to its original capture.
+ * Preserves unrelated edits, checks current wording matches before reverting, and throws on stale/conflicting state.
+ */
+export function undoPassageInDraft(current: ResumeSpec, originalBase: ResumeSpec, trace: PassageDiffTrace): ResumeSpec {
+  const next = structuredClone(current);
+  if (trace.passage_id === 'summary') {
+    if (next.summary !== trace.final_text) {
+      throw Error('The summary has changed. Review its current wording before undoing.');
+    }
+    next.summary = trace.original_text;
+    return next;
+  }
+
+  let targetEi = trace.experience_index;
+  let targetBi = trace.bullet_index;
+
+  if (targetEi !== undefined && next.experiences[targetEi]?.bullets.some(b => b.text === trace.final_text)) {
+    const bi = next.experiences[targetEi].bullets.findIndex(b => b.text === trace.final_text);
+    if (bi < 0 || next.experiences[targetEi].bullets.filter(b => b.text === trace.final_text).length !== 1) {
+      throw Error('The affected wording changed. Review it before undoing.');
+    }
+    targetBi = bi;
+  } else {
+    const matches: { ei: number; bi: number }[] = [];
+    next.experiences.forEach((exp, ei) => {
+      exp.bullets.forEach((b, bi) => {
+        if (b.text === trace.final_text) matches.push({ ei, bi });
+      });
+    });
+    if (matches.length !== 1) {
+      throw Error('The affected wording changed. Review it before undoing.');
+    }
+    targetEi = matches[0].ei;
+    targetBi = matches[0].bi;
+  }
+
+  const exp = next.experiences[targetEi];
+  const origExp = originalBase.experiences[targetEi];
+  if (!exp) throw Error('The employment experience changed. Review its current content.');
+  if (origExp && (origExp.company !== exp.company || origExp.role !== exp.role || origExp.startDate !== exp.startDate)) {
+    throw Error('The employment experience changed. Review its current content.');
+  }
+
+  if (!trace.original_text) {
+    exp.bullets.splice(targetBi, 1);
+    return next;
+  }
+
+  const origBullet = (trace.bullet_index !== undefined && origExp?.bullets[trace.bullet_index]?.text === trace.original_text)
+    ? origExp.bullets[trace.bullet_index]
+    : origExp?.bullets.find(b => b.text === trace.original_text);
+
+  exp.bullets[targetBi] = origBullet
+    ? structuredClone(origBullet)
+    : { text: trace.original_text, citations: exp.bullets[targetBi].citations };
+
+  return next;
+}
+
 export interface PassageDiffStage {
   kind: 'original_capture' | 'job_local_correction' | 'tailored_proposal' | 'user_edit' | 'omission';
   text: string;
@@ -72,6 +141,9 @@ export interface PassageDiffTrace {
   original_text: string;
   final_text: string;
   stages: PassageDiffStage[];
+  experience_index?: number;
+  bullet_index?: number;
+  skill_group_index?: number;
 }
 
 export interface ArtifactChangesSummary {
@@ -89,6 +161,7 @@ export function computeArtifactChanges(
     originalText: string;
     experienceIndex?: number;
     bulletIndex?: number;
+    skillGroupIndex?: number;
   }
 
   const passagesList: PassageItem[] = [];
@@ -121,6 +194,18 @@ export function computeArtifactChanges(
           experienceIndex: ei,
           bulletIndex: bi,
         });
+      });
+    });
+
+    const skills = Array.isArray(originalSnapshot.skills) ? originalSnapshot.skills : [];
+    skills.forEach((g: any, gi: number) => {
+      const skillsList = Array.isArray(g?.skills) ? g.skills : [];
+      const originalText = skillsList.join(', ');
+      passagesList.push({
+        id: `skills.${gi}`,
+        path: `skills.${gi}`,
+        originalText,
+        skillGroupIndex: gi,
       });
     });
   }
@@ -166,10 +251,28 @@ export function computeArtifactChanges(
         op.target.bullet_index === passage.bulletIndex || (Array.isArray(op.source_bullets) && op.source_bullets.some((s: any) => s.bullet_index === passage.bulletIndex))
       );
       const matchesSummary = opType === 'summary.rewrite' && passage.path === 'summary';
+      const matchesSkills = (opType === 'skills.prune' || opType === 'skills.reorder') && (
+        passage.skillGroupIndex !== undefined && op.target?.skill_group_index === passage.skillGroupIndex
+      );
 
-      if (matchesBefore || matchesTarget || matchesSummary) {
+      if (matchesBefore || matchesTarget || matchesSummary || matchesSkills) {
         handledOps.add(op);
-        if (opType === 'replace' || opType === 'bullet.rewrite' || opType === 'summary.rewrite' || opType === 'bullet.consolidate') {
+        if (opType === 'skills.prune' || opType === 'skills.reorder') {
+          if (Array.isArray(op.result_skills)) {
+            currentText = op.result_skills.join(', ');
+          } else if (opType === 'skills.prune') {
+            const beforeList = Array.isArray(op.before_skills) ? op.before_skills : passage.originalText.split(/,\s*/);
+            const removeSet = new Set((op.skills ?? []).map((s: string) => s.toLowerCase()));
+            currentText = beforeList.filter((s: string) => !removeSet.has(s.toLowerCase())).join(', ');
+          } else {
+            currentText = (op.skills ?? []).join(', ');
+          }
+          stages.push({
+            kind: 'tailored_proposal',
+            text: currentText,
+            ...(timestamp ? { timestamp } : {}),
+          });
+        } else if (opType === 'replace' || opType === 'bullet.rewrite' || opType === 'summary.rewrite' || opType === 'bullet.consolidate') {
           currentText = after ?? '';
           stages.push({
             kind: 'tailored_proposal',
@@ -201,6 +304,9 @@ export function computeArtifactChanges(
         original_text: passage.originalText,
         final_text: currentText,
         stages,
+        ...(passage.experienceIndex !== undefined ? { experience_index: passage.experienceIndex } : {}),
+        ...(passage.bulletIndex !== undefined ? { bullet_index: passage.bulletIndex } : {}),
+        ...(passage.skillGroupIndex !== undefined ? { skill_group_index: passage.skillGroupIndex } : {}),
       });
     }
   }
@@ -235,6 +341,8 @@ export function computeArtifactChanges(
         original_text: '',
         final_text,
         stages,
+        ...(op.target?.experience_index !== undefined ? { experience_index: op.target.experience_index } : {}),
+        ...(op.target?.bullet_index !== undefined ? { bullet_index: op.target.bullet_index } : {}),
       });
     }
   }

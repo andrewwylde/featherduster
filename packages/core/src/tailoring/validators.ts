@@ -477,14 +477,57 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
     }
   }
 
-  // Ledger Ceiling for skills: reorder must not add skills
-  if (p.type === 'skills.reorder') {
+  // Skills operations contract and ledger ceiling
+  if (p.type === 'skills.prune' || p.type === 'skills.reorder') {
     const group = ctx.baseResume.skills[p.target.skill_group_index];
     if (group) {
-      const existing = new Set(group.skills.map((s) => s.toLowerCase()));
-      const added = p.skills.filter((s) => !existing.has(s.toLowerCase()));
-      if (added.length > 0) {
-        checks.push({ severity: 'block', kind: 'ledger_ceiling', message: `Reorder adds skills not on the resume: ${added.join(', ')}.` });
+      const lowerSkills = p.skills.map((s) => s.toLowerCase());
+      if (new Set(lowerSkills).size !== lowerSkills.length) {
+        checks.push({ severity: 'block', kind: 'skills_contract', message: 'Skills list contains duplicate entries.' });
+      }
+
+      if (p.before_skills !== undefined) {
+        const matchesBefore = p.before_skills.length === group.skills.length &&
+          p.before_skills.every((s, i) => s.toLowerCase() === group.skills[i].toLowerCase());
+        if (!matchesBefore) {
+          checks.push({ severity: 'block', kind: 'skills_contract', message: 'Target skill group content does not match before_skills.' });
+        }
+      }
+
+      if (p.type === 'skills.prune') {
+        const existing = new Set(group.skills.map((s) => s.toLowerCase()));
+        const unknown = p.skills.filter((s) => !existing.has(s.toLowerCase()));
+        if (unknown.length > 0) {
+          checks.push({ severity: 'block', kind: 'skills_contract', message: `Cannot prune unknown skills not in group: ${unknown.join(', ')}.` });
+        }
+
+        const removeSet = new Set(lowerSkills);
+        const remaining = group.skills.filter((s) => !removeSet.has(s.toLowerCase()));
+        if (group.skills.length > 0 && remaining.length === 0 && !p.allow_empty_group) {
+          checks.push({ severity: 'block', kind: 'skills_contract', message: 'Pruning all skills in a group requires explicit confirmation to remove the entire group.' });
+        }
+
+        if (p.result_skills !== undefined) {
+          const expected = (p.before_skills ?? group.skills).filter((s) => !removeSet.has(s.toLowerCase()));
+          const matchesResult = expected.length === p.result_skills.length &&
+            expected.every((s, i) => s.toLowerCase() === p.result_skills![i].toLowerCase());
+          if (!matchesResult) {
+            checks.push({ severity: 'block', kind: 'skills_contract', message: 'Declared result skills do not match the outcome of removing the specified skills.' });
+          }
+        }
+      } else if (p.type === 'skills.reorder') {
+        const existing = new Set(group.skills.map((s) => s.toLowerCase()));
+        const added = p.skills.filter((s) => !existing.has(s.toLowerCase()));
+        if (added.length > 0) {
+          checks.push({ severity: 'block', kind: 'ledger_ceiling', message: `Reorder adds skills not on the resume: ${added.join(', ')}.` });
+        }
+        if (p.result_skills !== undefined) {
+          const matchesResult = p.skills.length === p.result_skills.length &&
+            p.skills.every((s, i) => s.toLowerCase() === p.result_skills![i].toLowerCase());
+          if (!matchesResult) {
+            checks.push({ severity: 'block', kind: 'skills_contract', message: 'Declared result skills do not match the reordered skills.' });
+          }
+        }
       }
     }
   }

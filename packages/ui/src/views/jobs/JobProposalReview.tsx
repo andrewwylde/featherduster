@@ -71,7 +71,26 @@ function Editor({
     try {
       const keys = Object.keys(localStorage).filter(k => k.startsWith(prefix));
       const stored = keys.map(k => ({ revision: Number(k.slice(prefix.length)), value: JSON.parse(localStorage.getItem(k)!) })).sort((a, b) => (b.value.savedAt ?? 0) - (a.value.savedAt ?? 0))[0];
-      if (stored?.value.draft && Array.isArray(stored.value.draft.patches) && Array.isArray(stored.value.draft.groundings)) return stored;
+      if (stored?.value.draft && Array.isArray(stored.value.draft.patches) && Array.isArray(stored.value.draft.groundings)) {
+        const serverPatches = data.review.patches;
+        const genuinelyNewPatches = stored.value.draft.patches.filter((p: ProposalPatch) => {
+          const s = serverPatches.find(sp => sp.proposal_id === p.proposal_id);
+          if (!s) return true;
+          if (p.edited_after !== s.edited_after) return true;
+          if (p.decision !== s.decision) return true;
+          if (JSON.stringify(p.citations) !== JSON.stringify(s.citations)) return true;
+          if (JSON.stringify(p.order) !== JSON.stringify(s.order)) return true;
+          if (JSON.stringify(p.skills) !== JSON.stringify(s.skills)) return true;
+          if (JSON.stringify(p.omission) !== JSON.stringify(s.omission)) return true;
+          return false;
+        });
+        const hasGroundingDiff = stored.value.draft.groundings.length > 0 || !!stored.value.draft.removedGroundings?.length;
+        if (genuinelyNewPatches.length === 0 && !hasGroundingDiff && !stored.value.draft.explanation) {
+          try { localStorage.removeItem(prefix + stored.revision); } catch {}
+          return null;
+        }
+        return stored;
+      }
     } catch { /* A malformed browser draft is not server authority. */ }
     return null;
   });
@@ -159,6 +178,13 @@ function Editor({
       setDraftBaseRevision(response.review.revision);
       setStartingDrafts(new Map());
       setDraft(empty());
+      try {
+        localStorage.removeItem(prefix + base.review.revision);
+        for (const c of base_corrections) {
+          localStorage.removeItem(`starting-resume:${job.workspace_id}:${job.id}:${base.review.input_snapshot_id}:${c.path}`);
+          localStorage.removeItem(`starting-resume:${job.workspace_id}:${job.id}:${base.review.input_snapshot_id}:${c.path}:sources`);
+        }
+      } catch { /* storage cleanup failure must not fail save */ }
       setMessage(`Saved mixed edits in revision ${response.review.revision}.`);
       onSaved();
       await refresh();

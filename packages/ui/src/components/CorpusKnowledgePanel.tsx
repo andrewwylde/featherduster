@@ -45,7 +45,7 @@ export function CorpusKnowledgePanel({ evidenceId, skill, onChanged }: { evidenc
   const changed = () => { void load(); onChanged?.(); };
   const rows = view?.history.filter(({ update: { change } }) => {
     if (change.kind === 'withdrawal') return false;
-    return (!evidenceId || (change.kind === 'skill_support' ? change.value.sources.some(s => s.evidence_id === evidenceId) : change.value.evidence_id === evidenceId)) && (!skill || change.kind === 'skill_support' && change.value.skill.toLowerCase().includes(skill.toLowerCase()));
+    return (!evidenceId || (change.kind === 'skill_support' || change.kind === 'clarification' ? change.value.sources.some(s => s.evidence_id === evidenceId) : change.kind === 'evidence_amendment' && change.value.evidence_id === evidenceId)) && (!skill || change.kind === 'skill_support' && change.value.skill.toLowerCase().includes(skill.toLowerCase()));
   }) ?? [];
   const titleOf = (id: string) => view?.records.find(r => r.source.id === id)?.source.title || view?.evidence?.find(r => r.id === id)?.title || 'Missing source';
   const labels = uniqueLabels(rows.map(({ update: { change: c } }) => c.kind === 'skill_support' ? { label: withdrawLabel(c.value), detail: sourceTitles(c.value, titleOf) } : { label: c.kind === 'evidence_amendment' ? `Withdraw amendment to ${titleOf(c.value.evidence_id)}` : 'Withdraw' }));

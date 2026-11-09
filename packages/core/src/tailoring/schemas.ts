@@ -124,6 +124,10 @@ export const ProposalSchema = z.object({
   order: z.array(z.number().int()).default([]),
   /** skills.reorder: full new ordering; skills.prune: skills to remove. */
   skills: z.array(z.string()).default([]),
+  /** Structured before/result intent for skills operations (skills.prune, skills.reorder). */
+  before_skills: z.array(z.string()).optional(),
+  result_skills: z.array(z.string()).optional(),
+  allow_empty_group: z.boolean().optional(),
   citations: z.array(z.string()).default([]),
   requirement_ids: z.array(z.string()).default([]),
   rationale: z.string().default(''),

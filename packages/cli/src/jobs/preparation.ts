@@ -3,6 +3,7 @@ import { isTransientPreparationFailure, repairAutomaticReview, repairAutomaticSt
 import { checkedRender } from './checked-render.js';
 import { CorpusRepository } from '../corpus/repository.js';
 import { CorpusService } from '../corpus/service.js';
+import { sourceFingerprint } from '../corpus/load.js';
 import { ProposalRepository } from './proposal-repository.js';
 import { ProposalService } from './proposal-service.js';
 import type { SemanticService } from './semantic-service.js';
@@ -98,14 +99,16 @@ export class JobPreparation {
         if (cp.input_fingerprint !== input.fingerprint || cp.output_references.length !== 1) throw new Error('Invalid checkpoint binding');
         const bytes = r.database.files.readArtifact(cp.output_references[0]!, attempt.job_id);
         if (fingerprint(bytes) !== cp.output_fingerprint) throw new Error('Checkpoint fingerprint mismatch');
-        const envelope = z.object({ schema_version: z.literal(1), stage: z.literal(name), input_fingerprint: z.literal(input.fingerprint), data: schema }).parse(JSON.parse(bytes.toString()));
-        data = envelope.data as T;
+        const envelope = z.object({ schema_version: z.literal(1), generation_policy: z.string().optional(), stage: z.literal(name), input_fingerprint: z.literal(input.fingerprint), data: schema }).parse(JSON.parse(bytes.toString()));
+        // Explicit continuation of an old review preserves it. A new run may not reuse an old generation policy.
+        if (!selection && name === 'proposals' && envelope.generation_policy !== C.SYNTHESIS_POLICY) { prefix = false; data = schema.parse(await execute()); }
+        else data = envelope.data as T;
       } else { prefix = false; data = schema.parse(await execute()); }
       guard();
       r.database.db.transaction(() => {
         guard();
         const id = randomUUID();
-        const bytes = JSON.stringify({ schema_version: 1, stage: name, input_fingerprint: input.fingerprint, data });
+        const bytes = JSON.stringify({ schema_version: 1, generation_policy: C.SYNTHESIS_POLICY, stage: name, input_fingerprint: input.fingerprint, data });
         const ref = { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/checkpoint.json`, fingerprint: fingerprint(bytes) };
         r.database.files.writeBundle('artifacts', attempt.job_id, id, { 'checkpoint.json': bytes });
         r.saveCheckpoint({ schema_version: 1, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, completed_stage: name, input_fingerprint: input.fingerprint, output_fingerprint: ref.fingerprint, output_references: [ref], completed_at: new Date().toISOString() }, fence);
@@ -118,13 +121,14 @@ export class JobPreparation {
         r.recordAttemptProgress(fence, { model_calls: 1, repair_attempts: retry ? 1 : 0 });
         if (member) batches.reserve(member, `${attempt.id}:${name}:${retry}`, 'model');
         let raw: unknown;
-        try { raw = await abortable(runner.run({ system: C.buildSystemPrompt(skill.skill, name), prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal); }
+        const system = selection && proposalsRepository.getGeneration(selection.generation_id).generation_policy !== C.SYNTHESIS_POLICY ? C.buildSystemPrompt(skill.skill, name) : C.buildSynthesisSystemPrompt(skill.skill, name);
+        try { raw = await abortable(runner.run({ system, prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal); }
         catch (error) {
           guard();
           if (!member || !isTransientPreparationFailure(error instanceof Error ? error.message : String(error))) throw error;
           batches.reserve(member, `${attempt.id}:${name}:transient`, 'retry');
           r.recordAttemptProgress(fence, { model_calls: 1 });
-          raw = await abortable(runner.run({ system: C.buildSystemPrompt(skill.skill, name), prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal);
+          raw = await abortable(runner.run({ system, prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal);
         }
         guard(); const parsed = schema.safeParse(raw);
         if (parsed.success) return parsed.data;
@@ -147,13 +151,24 @@ export class JobPreparation {
         if (reviewed.validation.fingerprint !== selection.validation.fingerprint || reviewed.validation.status !== 'ready') throw new Error('Selected review validation mismatch');
         return { proposals: reviewed.proposals };
       }
-      const value = await model('proposals', C.buildProposalsPrompt(analysis, alignment, base, all, opts), C.ProposalSetSchema);
+      const workIds = new Set(C.inventoryPassages(base, fingerprint).map(p => p.work_id));
+      const job = r.getJob(attempt.job_id);
+      const learned = C.activeCorpusUpdates(captured.knowledge).filter(u => {
+        const c = u.change;
+        if (c.kind === 'writing_preference') return C.scopeMatches(c.value.scope, { job_id: job.id, employer: job.company ?? undefined, role: job.role ?? undefined })
+          || c.value.scope.kind === 'project' && workIds.has(c.value.scope.key);
+        return c.kind === 'clarification' && workIds.has(c.value.clarification.fact.work_id) && c.value.clarification.confirmed === true
+          && c.value.sources.every(s => all.some(e => e.id === s.evidence_id && sourceFingerprint(e) === s.evidence_fingerprint));
+      });
+      const knowledgeText = JSON.stringify(learned.map(u => u.change));
+      const safeKnowledge = runner.locality === 'cloud' ? C.redactText(knowledgeText, rules).redactedText : knowledgeText;
+      const value = await model('proposals', C.buildProposalsPrompt(analysis, alignment, base, all, opts) + `\n\n${C.SYNTHESIS_INSTRUCTIONS}\nSelected page budget: ${input.policy.page_budget}.\nExplicit saved preferences (style only) and project answers (reuse only matching work and compatible claims):\n${safeKnowledge}`, C.ProposalSetSchema);
       guard();
       const raw = JSON.stringify(value); const id = randomUUID();
       const normalized = C.normalizeGenerationProposals(value.proposals);
       const structural = member ? repairAutomaticStructure(base, normalized) : { proposals: normalized, changes: [] };
       if (member && structural.changes.length) batches.reserve(member, `${attempt.id}:structure`, 'repair');
-      const generation = proposalsRepository.saveGeneration({ schema_version: 1, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, raw_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/raw-output.json`, fingerprint: fingerprint(raw) }, proposals: { proposals: normalized }, created_at: new Date().toISOString() }, fence, raw);
+      const generation = proposalsRepository.saveGeneration({ schema_version: 1, generation_policy: C.SYNTHESIS_POLICY, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, raw_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/raw-output.json`, fingerprint: fingerprint(raw) }, proposals: { proposals: normalized }, created_at: new Date().toISOString() }, fence, raw);
       activeReview = reviews.initial(generation, fence);
       if (member && structural.changes.length) {
         const patches: C.ProposalPatch[] = [...new Set(structural.changes.map(change => change.proposal_id))].map(id => {
@@ -202,7 +217,7 @@ export class JobPreparation {
       for (let pass = 0; pass <= 2; pass++) {
         prechecked = await abortable(checkedRender(renderer, { templateId: template.id, spec: applied.candidate, rules, signal }, input.policy.page_budget), signal); guard();
         if (prechecked.status === 'ready' || !prechecked.issues.some(issue => issue.code === 'page-budget') || pass === 2) break;
-        const patches = applied.proposals.filter(p => p.decision !== 'rejected' && ['summary.rewrite', 'bullet.rewrite', 'bullet.add'].includes(p.type))
+        const patches = applied.proposals.filter(p => p.decision !== 'rejected' && ['summary.rewrite', 'bullet.rewrite', 'bullet.add', 'bullet.consolidate'].includes(p.type))
           .flatMap(p => { const before = p.edited_after ?? p.after, after = trimRepeatedSentences(before); return before !== after ? [{ proposal_id: p.id, edited_after: after }] : []; });
         if (!patches.length) break;
         batches.reserve(member, `${attempt.id}:layout:${pass}`, 'repair');

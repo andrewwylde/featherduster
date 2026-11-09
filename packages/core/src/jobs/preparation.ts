@@ -63,7 +63,7 @@ export function validateCandidateProposals(proposals: Proposal[], context: Propo
     const semantic = context.semanticSupport?.find(s => s.text === text && (s.proposal_id === p.id || s.path === p.id));
     const checks = [...original.checks, ...validated.checks.filter(c => !['metric_needed', 'metric_unverified'].includes(c.kind))];
     checks.push(...citationIssues(text, p.citations, evidence));
-    if (['summary.rewrite', 'bullet.rewrite', 'bullet.add'].includes(p.type)) {
+    if (['summary.rewrite', 'bullet.rewrite', 'bullet.add', 'bullet.consolidate'].includes(p.type)) {
       checks.push(...placeholderIssues(text));
       const cited = [...new Set([...p.citations, ...inlineCitations(text)])].map(id => evidence.get(id))
         .filter((r): r is EvidenceRecord => !!r && r.entry.confidence !== 'retracted');

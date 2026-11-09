@@ -34,26 +34,34 @@ function PreparationProgressPanel({
 }: {
   prep: any;
 }) {
+  const isFinished = !!prep.terminal_at || ['completed', 'stopped'].includes(prep.current_operation) || ['ready_to_review', 'needs_answer', 'needs_retry'].includes(prep.phase);
   const startTimeStr = prep.phase_started_at ?? prep.started_at;
   const calculateElapsed = useCallback(() => {
+    if (prep.elapsed_seconds != null && isFinished) {
+      const m = Math.floor(prep.elapsed_seconds / 60);
+      const s = prep.elapsed_seconds % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    }
     if (!startTimeStr) return '0:00';
     const startMs = new Date(startTimeStr).getTime();
     if (isNaN(startMs)) return '0:00';
-    const diffSec = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+    const endMs = prep.terminal_at ? new Date(prep.terminal_at).getTime() : Date.now();
+    const diffSec = Math.max(0, Math.floor((endMs - startMs) / 1000));
     const m = Math.floor(diffSec / 60);
     const s = diffSec % 60;
     return `${m}:${s.toString().padStart(2, '0')}`;
-  }, [startTimeStr]);
+  }, [startTimeStr, prep.elapsed_seconds, prep.terminal_at, isFinished]);
 
   const [elapsed, setElapsed] = useState(calculateElapsed);
 
   useEffect(() => {
     setElapsed(calculateElapsed());
+    if (isFinished) return;
     const interval = setInterval(() => {
       setElapsed(calculateElapsed());
     }, 1000);
     return () => clearInterval(interval);
-  }, [calculateElapsed]);
+  }, [calculateElapsed, isFinished]);
 
   const usage = prep.usage ?? prep.recorded_usage;
   const model = usage?.model ?? 'runner-default';

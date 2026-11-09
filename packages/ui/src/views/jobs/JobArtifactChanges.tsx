@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { compileMarkdownResume, computeArtifactChanges, ProposalSchema, restoreAccomplishmentInDraft, tightenResumeWording, undoProposalInDraft, type Job, type JobDraft, type ResumeSpec, type Proposal, type PassageDiffStage, type PassageDiffTrace, type ArtifactChangesSummary } from '@featherduster/core';
+import { compileMarkdownResume, computeArtifactChanges, computeSkillsListDiff, ProposalSchema, restoreAccomplishmentInDraft, tightenResumeWording, undoProposalInDraft, undoPassageInDraft, type Job, type JobDraft, type ResumeSpec, type Proposal, type PassageDiffStage, type PassageDiffTrace, type ArtifactChangesSummary } from '@featherduster/core';
 import { apiClient, type JobReview } from '../../api/client.js';
 import { cardClass, secondaryButton } from '../tailoring/ui.js';
 
@@ -38,6 +38,9 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
     if (p.type === 'bullet.add') {
       return traces.find((t: PassageDiffTrace) => t.passage_id === p.id || (t.original_text === '' && t.final_text === (p.edited_after ?? p.after)));
     }
+    if (p.type === 'skills.prune' || p.type === 'skills.reorder') {
+      return traces.find((t: PassageDiffTrace) => t.skill_group_index === p.target?.skill_group_index || t.passage_id === `skills.${p.target?.skill_group_index}`);
+    }
     const expectedPath = `experiences.${p.target.experience_index}.bullets.${p.target.bullet_index}.text`;
     const targetText = p.edited_after ?? p.after;
     return traces.find((t: PassageDiffTrace) => t.passage_id === expectedPath && (t.final_text === targetText || t.stages.some((s: PassageDiffStage) => s.text === targetText)))
@@ -46,8 +49,55 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
       ?? traces.find((t: PassageDiffTrace) => t.stages.some((s: PassageDiffStage) => s.text === p.before))
       ?? traces.find((t: PassageDiffTrace) => t.final_text === targetText);
   };
-  const active = review.draft.proposals.proposals.filter(p => p.type !== 'bullet.drop'
-    && (p.type === 'summary.rewrite' ? published.summary === (p.edited_after ?? p.after) : published.experiences[p.target.experience_index]?.bullets.some(b => b.text === (p.edited_after ?? p.after))));
+  const isSkillsActive = (p: Proposal) => {
+    const group = published.skills?.[p.target?.skill_group_index ?? -1];
+    if (!group) return false;
+    const before = p.before_skills ?? (p.before ? p.before.split(/,\s*/).map(s => s.trim()).filter(Boolean) : group.skills);
+    const expected = p.result_skills ?? (p.type === 'skills.prune'
+      ? before.filter(s => !p.skills.some(rem => rem.toLowerCase() === s.toLowerCase()))
+      : p.skills);
+    return JSON.stringify(group.skills) === JSON.stringify(expected);
+  };
+  const active = review.draft.proposals.proposals.filter(p => {
+    if (p.type === 'bullet.drop') return false;
+    if (p.type === 'summary.rewrite') return published.summary === (p.edited_after ?? p.after);
+    if (p.type === 'skills.prune' || p.type === 'skills.reorder') return isSkillsActive(p);
+    return published.experiences[p.target.experience_index]?.bullets.some(b => b.text === (p.edited_after ?? p.after));
+  });
+  const findProposalForTrace = (trace: PassageDiffTrace): Proposal | undefined => {
+    if (trace.passage_id === 'summary') {
+      return active.find(p => p.type === 'summary.rewrite');
+    }
+    if (trace.skill_group_index !== undefined) {
+      return active.find(p => (p.type === 'skills.prune' || p.type === 'skills.reorder') && p.target?.skill_group_index === trace.skill_group_index);
+    }
+    return active.find(p => {
+      if (p.id === trace.passage_id) return true;
+      const targetText = p.edited_after ?? p.after;
+      if (targetText === trace.final_text || trace.stages.some(s => s.text === targetText)) {
+        if (trace.experience_index !== undefined && p.target?.experience_index !== undefined) {
+          return p.target.experience_index === trace.experience_index;
+        }
+        return true;
+      }
+      return false;
+    });
+  };
+  const substantiveTraces = changesSummary.passages.filter(
+    t => t.original_text !== t.final_text && t.final_text.trim() !== ''
+  );
+  const matchedProposals = new Set<Proposal>();
+  const changeItems: { trace?: PassageDiffTrace; proposal?: Proposal }[] = substantiveTraces.map(trace => {
+    const p = findProposalForTrace(trace);
+    if (p) matchedProposals.add(p);
+    return { trace, proposal: p };
+  });
+  for (const p of active) {
+    if (matchedProposals.has(p)) continue;
+    if (!['summary.rewrite', 'bullet.rewrite', 'bullet.add', 'bullet.consolidate', 'skills.prune', 'skills.reorder'].includes(p.type)) continue;
+    const trace = findTrace(p);
+    changeItems.push({ trace, proposal: p });
+  }
   const generatedOmissions = review.draft.proposals.proposals.filter(p => p.decision === 'rejected'
     && ['bullet.add', 'bullet.rewrite', 'bullet.consolidate'].includes(p.type) && (p.edited_after ?? p.after).trim()
     && !published.experiences[p.target.experience_index]?.bullets.some(b => b.text === (p.edited_after ?? p.after))
@@ -109,14 +159,36 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
     <h2 className="font-semibold">Changes in this PDF</h2>
     <p className="text-sm">Final approval covers the displayed PDF and these changes. Restoring or undoing creates a new draft that needs fresh checks and approval.</p>
     {pendingChanges && <p role="status">Your saved draft has pending changes. This summary still describes the displayed PDF; open the draft below to finish its checks.</p>}
-    {active.filter(p => ['summary.rewrite', 'bullet.rewrite', 'bullet.add', 'bullet.consolidate'].includes(p.type)).map(p => {
-      const trace = findTrace(p);
-      const beforeText = p.type === 'bullet.add'
+    {changeItems.map(({ trace, proposal: p }, idx) => {
+      const key = p?.id ?? trace?.passage_id ?? `change-${idx}`;
+      const isSkills = p?.type === 'skills.prune' || p?.type === 'skills.reorder';
+      const title = p?.type === 'skills.prune' ? 'Remove skills'
+        : p?.type === 'skills.reorder' ? 'Reorder skills'
+        : p?.type === 'bullet.consolidate' ? 'Consolidation'
+        : p?.type === 'bullet.add' ? 'Addition'
+        : p?.type === 'bullet.rewrite' || p?.type === 'summary.rewrite' ? 'Rewrite'
+        : 'Correction';
+      let beforeText = (p?.type === 'bullet.add' || !trace?.original_text)
         ? '(new content)'
-        : (trace?.original_text || p.source_bullets?.map(s => s.before).join(' / ') || p.before || '(new content)');
-      const afterText = p.edited_after ?? p.after;
-      return <div key={p.id} className="border-t pt-3 text-sm space-y-2">
-        <h3 className="font-semibold">{p.type === 'bullet.consolidate' ? 'Consolidation' : p.type === 'bullet.add' ? 'Addition' : 'Rewrite'}</h3>
+        : (trace?.original_text || p?.source_bullets?.map(s => s.before).join(' / ') || p?.before || '(new content)');
+      let afterText = p ? (p.edited_after ?? p.after) : (trace?.final_text ?? '');
+
+      if (isSkills && p) {
+        const group = published.skills?.[p.target?.skill_group_index ?? -1];
+        const beforeSkills = p.before_skills ?? (p.before ? p.before.split(/,\s*/).map(s => s.trim()).filter(Boolean) : group?.skills ?? []);
+        const afterSkills = p.result_skills ?? (p.type === 'skills.prune'
+          ? beforeSkills.filter(s => !p.skills.some(rem => rem.toLowerCase() === s.toLowerCase()))
+          : p.skills.length ? p.skills : (group?.skills ?? []));
+        const diff = computeSkillsListDiff(beforeSkills, afterSkills);
+        beforeText = beforeSkills.join(', ');
+        if (p.type === 'skills.prune') {
+          afterText = `Retained: ${diff.retained.join(', ') || 'None'}${diff.removed.length ? ` (Removed: ${diff.removed.join(', ')})` : ''}`;
+        } else {
+          afterText = `Order change: ${diff.after.join(', ')}`;
+        }
+      }
+      return <div key={key} className="border-t pt-3 text-sm space-y-2">
+        <h3 className="font-semibold">{title}</h3>
         <p><strong>Before: </strong>{beforeText}</p>
         <p><strong>After: </strong>{afterText}</p>
         {trace && trace.stages.length > 1 && (
@@ -125,8 +197,8 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
               Correction history ({trace.stages.length} stages)
             </summary>
             <ol className="mt-1 space-y-1 pl-4 list-decimal">
-              {trace.stages.map((stage: PassageDiffStage, idx: number) => (
-                <li key={idx}>
+              {trace.stages.map((stage: PassageDiffStage, sIdx: number) => (
+                <li key={sIdx}>
                   <span className="font-semibold text-slate-800">{stageKindLabel(stage.kind)}: </span>
                   <span>{stage.text || '(empty)'}</span>
                 </li>
@@ -134,7 +206,25 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
             </ol>
           </details>
         )}
-        <p>{p.rationale}</p><button className={secondaryButton} disabled={disabled || busy || pendingChanges} onClick={() => { try { void saveAndCheck(undoProposalInDraft(candidate, review.base_resume, p)); } catch (e) { setMessage(String(e)); } }}>Undo change</button>
+        {p?.rationale && <p>{p.rationale}</p>}
+        <button
+          className={secondaryButton}
+          disabled={disabled || busy || pendingChanges}
+          onClick={() => {
+            try {
+              const next = p
+                ? undoProposalInDraft(candidate, review.base_resume, p)
+                : trace
+                  ? undoPassageInDraft(candidate, originalBase, trace)
+                  : null;
+              if (next) void saveAndCheck(next);
+            } catch (e) {
+              setMessage(e instanceof Error ? e.message : String(e));
+            }
+          }}
+        >
+          Undo change
+        </button>
       </div>;
     })}
     <h3 className="font-semibold">Omitted accomplishments ({omissions.length + generatedOmissions.length})</h3>
@@ -142,7 +232,7 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
       <button className={secondaryButton} disabled={disabled || busy || pendingChanges} onClick={() => { try { void saveAndCheck(restoreAccomplishmentInDraft(candidate, review.base_resume, p)); } catch (e) { setMessage(String(e)); } }}>Restore accomplishment</button></div>)}
     {omissions.map(p => <div key={p.id} className="border-t pt-3 text-sm space-y-2"><p>{p.before}</p><p>{p.rationale}</p>
       <button className={secondaryButton} disabled={disabled || busy || pendingChanges} onClick={() => { try { void saveAndCheck(undoProposalInDraft(candidate, review.base_resume, p)); } catch (e) { setMessage(String(e)); } }}>Restore accomplishment</button></div>)}
-    <details open={!active.length && !omissions.length}>
+    <details open={!changeItems.length && !omissions.length}>
       <summary>Complete before and after text</summary>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-3 text-sm">
         <section><h3 className="font-semibold">Before</h3><pre className="whitespace-pre-wrap break-words font-sans">{compileMarkdownResume(originalBase)}</pre></section>

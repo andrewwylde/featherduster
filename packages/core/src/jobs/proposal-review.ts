@@ -276,7 +276,7 @@ export function applyProposalPatches(generation: Proposal[], current: ProposalPa
       }
       seen.add(patch.proposal_id);
       const original = generation.find(p => p.id === patch.proposal_id)!;
-      if ((patch.order && original.type !== 'bullet.reorder') || (patch.skills && original.type !== 'skills.reorder')) throw new Error('Structural overlay does not match the original proposal type');
+      if ((patch.order && original.type !== 'bullet.reorder') || (patch.skills && original.type !== 'skills.reorder' && original.type !== 'skills.prune')) throw new Error('Structural overlay does not match the original proposal type');
       if (isIncoming && ((patch.edited_after !== undefined && patch.edited_after !== (previous?.edited_after ?? original.after)) || (patch.citations !== undefined && JSON.stringify(patch.citations) !== JSON.stringify(previous?.citations ?? original.citations)))) changed.add(patch.proposal_id);
       overlay.set(patch.proposal_id, { ...previous, ...patch });
     }

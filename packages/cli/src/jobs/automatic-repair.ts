@@ -31,7 +31,7 @@ export async function repairAutomaticReview(reviews: ProposalService, semantic: 
     const facts = semantic.read(current.job_id), overlay = C.applyProposalPatches(generation.proposals.proposals, [], current.patches).proposals;
     const patches: C.ProposalPatch[] = [], records: AutomaticRepairRecord[] = [];
     for (const proposal of overlay) {
-      if (!['bullet.rewrite', 'summary.rewrite'].includes(proposal.type) || proposal.decision === 'rejected') continue;
+      if (!['bullet.rewrite', 'bullet.consolidate', 'bullet.add', 'summary.rewrite'].includes(proposal.type) || proposal.decision === 'rejected') continue;
       const before = proposal.edited_after ?? proposal.after;
       const affected = facts.facts.filter(f => f.passage.text === before);
       if (!affected.some(f => f.state === 'needs_clarification' && !f.resolution) || affected.some(f => ['contradicted', 'unavailable'].includes(f.state))) continue;
@@ -85,7 +85,7 @@ export function repairAutomaticStructure(base: C.ResumeSpec, proposals: C.Propos
   const changes: { proposal_id: string; before: string; after: string; reason: string }[] = [];
   const repaired = proposals.map(proposal => {
     const next = structuredClone(proposal);
-    if (['summary.rewrite', 'bullet.rewrite', 'bullet.add'].includes(next.type)) {
+    if (['summary.rewrite', 'bullet.rewrite', 'bullet.add', 'bullet.consolidate'].includes(next.type)) {
       const before = next.edited_after ?? next.after;
       let after = before;
       for (const id of next.citations) {

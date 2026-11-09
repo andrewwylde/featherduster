@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { compileTemplateResume, LatexTemplateProfileSchema, type LatexTemplateProfile, type PrivacyRulesConfig, type ResumeSpec } from '@featherduster/core';
-import { listLatexTemplates } from '../jobs/templates.js';
+import { listLatexTemplates, getLatexTemplate } from '../jobs/templates.js';
 import { PdfVerifier, readPdf, type PdfPreview, type PdfValidationReport } from './pdf-verifier.js';
 import { checkAbort, detectTool, diagnostic, positiveLimit, runTool, type ToolLimits, type ToolOptions } from './tool-process.js';
 
@@ -22,7 +22,7 @@ export class LatexRenderer {
   private readonly profiles: LatexTemplateProfile[];
   private readonly verifier: PdfVerifier;
   constructor(private readonly options: LatexRendererOptions = {}) {
-    this.profiles = (options.profiles ?? listLatexTemplates()).map(p => LatexTemplateProfileSchema.parse(p));
+    this.profiles = (options.profiles ?? [...listLatexTemplates(), getLatexTemplate('career-master')]).map(p => LatexTemplateProfileSchema.parse(p));
     if (new Set(this.profiles.map(p => p.id)).size !== this.profiles.length) throw new Error('Duplicate template IDs');
     this.verifier = options.verifier ?? new PdfVerifier(options);
     positiveLimit(options.timeoutMs, 30000); positiveLimit(options.probeTimeoutMs, 5000); positiveLimit(options.outputLimit, 1024 * 1024);

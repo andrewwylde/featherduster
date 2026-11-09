@@ -4,7 +4,8 @@ import * as fs from 'node:fs';
 vi.mock('node:fs', async importOriginal => ({ ...await importOriginal<typeof import('node:fs')>() }));
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { DEFAULT_STARTER_RESUME, type Job } from '@featherduster/core';
+import { DEFAULT_STARTER_RESUME, type Job, computeArtifactChanges, undoPassageInDraft } from '@featherduster/core';
+import * as C from '@featherduster/core';
 import { openJobsDatabase, type JobsDatabase } from '../src/jobs/database.js';
 import { JobsRepository } from '../src/jobs/repository.js';
 import { JobArtifactsService } from '../src/jobs/artifacts.js';
@@ -215,4 +216,93 @@ it('publishes manual edits once without claiming another preparation attempt', (
   expect(f.repo.active()).toEqual([]);
   expect(f.repo.listEvents(f.job.id).filter(e => e.payload.kind === 'resume_review')).toHaveLength(0);
   expect(() => f.service.publishManualCandidate({ ...request, idempotency_key: 'stale' })).toThrow();
+});
+
+it('persists inherited-only corrections and proposal changes in immutable artifact changes summary (SL-BUG-003)', () => {
+  const f = fixture();
+  const rawBase = {
+    profile: { name: 'Test', title: 'Engineer', email: 'test@example.com' },
+    summary: 'Original broad summary.',
+    experiences: [
+      {
+        company: 'Acme',
+        role: 'Engineer',
+        startDate: '2020',
+        endDate: 'Present',
+        bullets: [
+          { text: 'Audited and engineered accessible components across apps.', citations: ['audit'] },
+          { text: 'Built real-time messaging using v1 lib.', citations: ['realtime'] },
+        ],
+      },
+    ],
+    skills: [],
+    education: [],
+  };
+  const baseCorrections = [
+    {
+      path: 'experiences.0.bullets.0.text',
+      before: 'Audited and engineered accessible components across apps.',
+      after: 'Engineered accessible components for internal tools.',
+      recorded_by: 'human',
+      recorded_at: time,
+    },
+    {
+      path: 'experiences.0.bullets.1.text',
+      before: 'Built real-time messaging using v1 lib.',
+      after: 'Built real-time messaging using WebSockets.',
+      recorded_by: 'human',
+      recorded_at: time,
+    },
+  ];
+  const summaryProposal = {
+    id: 'prop-summary',
+    type: 'summary.rewrite' as const,
+    target: { experience_index: -1, bullet_index: -1 },
+    before: 'Original broad summary.',
+    after: 'Focused fullstack engineer with web expertise.',
+    citations: ['summary'],
+    decision: 'accepted' as const,
+  };
+
+  const summary = C.computeArtifactChanges(rawBase, baseCorrections, [summaryProposal]);
+  expect(summary.passages).toHaveLength(3);
+
+  const bulletATrace = summary.passages.find(p => p.original_text.startsWith('Audited and engineered'));
+  expect(bulletATrace).toBeDefined();
+  expect(bulletATrace?.final_text).toBe('Engineered accessible components for internal tools.');
+  expect(bulletATrace?.stages).toHaveLength(1);
+  expect(bulletATrace?.stages[0].kind).toBe('job_local_correction');
+  expect(bulletATrace?.experience_index).toBe(0);
+  expect(bulletATrace?.bullet_index).toBe(0);
+
+  const bulletBTrace = summary.passages.find(p => p.original_text.startsWith('Built real-time messaging using v1'));
+  expect(bulletBTrace).toBeDefined();
+  expect(bulletBTrace?.final_text).toBe('Built real-time messaging using WebSockets.');
+  expect(bulletBTrace?.stages).toHaveLength(1);
+  expect(bulletBTrace?.stages[0].kind).toBe('job_local_correction');
+
+  const summaryTrace = summary.passages.find(p => p.passage_id === 'summary');
+  expect(summaryTrace).toBeDefined();
+  expect(summaryTrace?.final_text).toBe('Focused fullstack engineer with web expertise.');
+  expect(summaryTrace?.stages[0].kind).toBe('tailored_proposal');
+
+  // Verify undoPassageInDraft restores inherited-only bullet A without touching B or summary
+  const currentCandidate = {
+    ...rawBase,
+    summary: summaryProposal.after,
+    experiences: [
+      {
+        ...rawBase.experiences[0],
+        bullets: [
+          { text: 'Engineered accessible components for internal tools.', citations: ['audit'] },
+          { text: 'Built real-time messaging using WebSockets.', citations: ['realtime'] },
+        ],
+      },
+    ],
+  };
+
+  const undone = C.undoPassageInDraft(currentCandidate, rawBase, bulletATrace!);
+  expect(undone.experiences[0].bullets[0].text).toBe('Audited and engineered accessible components across apps.');
+  expect(undone.experiences[0].bullets[1].text).toBe('Built real-time messaging using WebSockets.');
+  expect(undone.summary).toBe('Focused fullstack engineer with web expertise.');
 });
