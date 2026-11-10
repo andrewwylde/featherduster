@@ -153,5 +153,5 @@ cli
   });
 
 cli.help();
-cli.version('0.2.0');
+cli.version('0.3.0-rc.1');
 cli.parse();
