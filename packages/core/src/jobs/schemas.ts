@@ -56,6 +56,11 @@ export const JobPostingMetadataSchema = z.object({
   captured_at: z.string(),
 }).strict();
 export type JobPostingMetadata = z.infer<typeof JobPostingMetadataSchema>;
+export const PostingCaptureAttemptSchema = z.object({
+  method: z.enum(['http', 'browser']), outcome: z.enum(['captured', 'failed']),
+  code: text.optional(), status: z.number().int().min(100).max(599).optional(), url: z.string().url().optional(),
+}).strict();
+export type PostingCaptureAttempt = z.infer<typeof PostingCaptureAttemptSchema>;
 
 export const JobPreparationUsageSchema = z.object({
   model: z.string().default('runner-default'),
@@ -115,6 +120,7 @@ export const JobSchema = z.object({
   context_url: z.string().url().refine(url => /^https?:\/\//i.test(url), 'Use an HTTP or HTTPS link').nullable().optional(),
   parent_discovery_id: uuid.nullable(), posting_snapshot_id: uuid.nullable(),
   posting_metadata: JobPostingMetadataSchema.optional(),
+  capture_attempts: z.array(PostingCaptureAttemptSchema).max(2).optional(),
   preparation_progress: JobPreparationProgressSchema.optional(),
   preparation_state: PreparationStateSchema, application_lifecycle: ApplicationLifecycleSchema,
   preparation_stage: PreparationStageSchema.nullable(), base_resume_id: text.nullable(), template_id: text.nullable(),
@@ -129,6 +135,7 @@ export const PostingSnapshotSchema = z.object({
   final_url: z.string().url().nullable(), retrieved_at: timestamp.nullable(), captured_at: timestamp,
   text, content_fingerprint: text,
   posting_metadata: JobPostingMetadataSchema.optional(),
+  capture_attempts: z.array(PostingCaptureAttemptSchema).max(2).optional(),
 }).strict().refine(s => s.source_kind !== 'url' || !!(s.original_url && s.final_url && s.retrieved_at), {
   message: 'URL capture requires original/final URLs and retrieval time.',
 });

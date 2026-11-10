@@ -32,6 +32,14 @@ export function extractPosting(html: string, finalUrl: string): ExtractedPosting
   const semantic = $('main,article').first();
   const text = plain(semantic.length ? semantic.html() ?? '' : $('body').html() ?? '');
   if (/captcha|access denied|verify you are human|sign in to continue/i.test(text)) throw new PostingExtractionError();
+  const description = semantic.clone(); description.find('h1').remove();
+  const descriptionText = plain(description.html() ?? '');
+  const pending = semantic.is('[aria-busy="true"]') || semantic.parents('[aria-busy="true"]').length > 0
+    || /^loading(?:\s+(?:job|posting|position)(?:\s+details)?)?[\s.…!]*$/i.test(descriptionText)
+    || (semantic.find('h1').length > 0 && !descriptionText);
+  // A semantic <main> can be an SPA placeholder. A complete structured
+  // description remains usable even while its visual shell is loading.
+  if (pending && !unique.some(job => string(job.description))) throw new PostingExtractionError();
   const heading = $('h1').first().text();
   const index = /careers|open (positions|roles)|job openings|current (openings|vacancies)/i.test(heading);
   const candidates = new Map<string, Opening>();

@@ -38,6 +38,7 @@ export interface JobsRuntimeDependencies {
   runnerFactory?: RunnerFactory;
   renderer?: PreparationDependencies['renderer'];
   fetcher?: NonNullable<ConstructorParameters<typeof PostingIntakeService>[1]>['fetcher'];
+  browserFetcher?: NonNullable<ConstructorParameters<typeof PostingIntakeService>[1]>['browserFetcher'];
   automaticDrain?: boolean;
 }
 export interface InputSelection { base_resume_id?: string; template_id?: string; runner?: RunnerId; evidence_ids?: string[]; automatic?: boolean }
@@ -46,7 +47,7 @@ export function createJobsRuntime(workspace: string, deps: JobsRuntimeDependenci
   const repository = new JobsRepository(database);
   const artifacts = new JobArtifactsService(repository);
   const batches = new PreparationBatchRepository(repository);
-  const intake = new PostingIntakeService(repository, { fetcher: deps.fetcher });
+  const intake = new PostingIntakeService(repository, { fetcher: deps.fetcher, browserFetcher: deps.browserFetcher });
   const corpusListeners = new Set<(event: { revision: number; update_ids: string[] }) => void>();
   const corpusRepository = new CorpusRepository(repository);
   let corpusCursor = corpusRepository.snapshot().revision;

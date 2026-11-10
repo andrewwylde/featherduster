@@ -16,7 +16,7 @@ export function JobFitReview({ job, onSaved, navigate }: { job: Job; onSaved(): 
   const intent = useIntentKey();
   const ids = selected ?? sources.data?.map(e => e.id) ?? [];
   const active = job.preparation_state === 'preparing' || job.preparation_state === 'queued';
-  const stateReason = hasRecoveredCapture(job) ? null : describeStateReason(job.state_reason);
+  const stateReason = hasRecoveredCapture(job) ? null : describeStateReason(job.state_reason, job.capture_attempts);
   const assess = async () => {
     if (pending.current) return;
     pending.current = true; setBusy(true); setFailure('');

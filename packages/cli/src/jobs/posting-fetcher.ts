@@ -5,9 +5,14 @@ import ipaddr from 'ipaddr.js';
 import { canonicalizeJobUrl } from '@featherduster/core';
 
 export const MAX_POSTING_BYTES = 2 * 1024 * 1024;
-export type FetchErrorCode = 'invalid_url' | 'blocked_destination' | 'dns_error' | 'redirect_error' | 'timeout' | 'too_large' | 'http_error' | 'unsupported_content' | 'network_error';
+export type FetchErrorCode = 'invalid_url' | 'blocked_destination' | 'dns_error' | 'redirect_error' | 'timeout' | 'too_large' | 'http_error' | 'unsupported_content' | 'network_error' | 'browser_unavailable' | 'browser_busy';
 export class PostingFetchError extends Error {
-  constructor(readonly code: FetchErrorCode) { super(`${code}: Unable to retrieve posting. Paste posting text instead.`); }
+  readonly status?: number;
+  readonly url?: string;
+  constructor(readonly code: FetchErrorCode, detail: { status?: number; url?: string } = {}) {
+    super(`${code}${detail.status ? ` (HTTP ${detail.status})` : ''}: Unable to retrieve posting. Paste posting text instead.`);
+    this.status = detail.status; this.url = detail.url;
+  }
 }
 export interface PostingFetchResult { original_url: string; final_url: string; html: string; retrieved_at: string }
 export interface FetchOptions {
@@ -20,6 +25,18 @@ export function isPublicAddress(address: string): boolean {
     const parsed = ipaddr.process(address);
     return parsed.range() === 'unicast' && parsed.toString() !== '168.63.129.16';
   } catch { return false; }
+}
+// Both transports pin the address they validate, including every redirect or
+// browser subrequest. A second unvalidated DNS lookup would permit rebinding.
+export async function postingAddress(input: string, resolve: NonNullable<FetchOptions['resolve']> = host => lookup(host, { all: true })) {
+  try { canonicalizeJobUrl(input); } catch { throw new PostingFetchError('invalid_url'); }
+  const url = new URL(input), host = url.hostname.replace(/^\[|\]$/g, '');
+  let addresses: { address: string; family: number }[];
+  try { addresses = ipaddr.isValid(host) ? [{ address: host, family: ipaddr.parse(host).kind() === 'ipv4' ? 4 : 6 }] : await resolve(host); }
+  catch { throw new PostingFetchError('dns_error'); }
+  if (!addresses.length) throw new PostingFetchError('dns_error');
+  if (addresses.some(a => !isPublicAddress(a.address))) throw new PostingFetchError('blocked_destination');
+  return addresses[0]!;
 }
 export async function fetchPosting(input: string, options: FetchOptions = {}): Promise<PostingFetchResult> {
   let active: ClientRequest | undefined;
@@ -37,16 +54,10 @@ export async function fetchPosting(input: string, options: FetchOptions = {}): P
       const url = new URL(current); url.hash = '';
       if (seen.has(url.href)) throw new PostingFetchError('redirect_error');
       seen.add(url.href);
-      const host = url.hostname.replace(/^\[|\]$/g, '');
-      let addresses: { address: string; family: number }[];
-      try { addresses = ipaddr.isValid(host) ? [{ address: host, family: ipaddr.parse(host).kind() === 'ipv4' ? 4 : 6 }] : await (options.resolve ?? (name => lookup(name, { all: true })))(host); }
-      catch { throw new PostingFetchError('dns_error'); }
+      const address = await postingAddress(url.href, options.resolve);
       if (expired) throw new PostingFetchError('timeout');
-      if (!addresses.length) throw new PostingFetchError('dns_error');
-      if (addresses.some(a => !isPublicAddress(a.address))) throw new PostingFetchError('blocked_destination');
-      const address = addresses[0]!;
       const result = await new Promise<{ redirect: string } | { html: string }>((resolve, reject) => {
-        const fail = (code: FetchErrorCode) => { reject(new PostingFetchError(code)); response?.destroy(); active?.destroy(); };
+        const fail = (code: FetchErrorCode, status?: number) => { reject(new PostingFetchError(code, { status, url: url.href })); response?.destroy(); active?.destroy(); };
         active = (options.request ?? httpsRequest)(url, {
           method: 'GET', agent: false, headers: { 'Accept-Encoding': 'identity', Accept: 'text/html, application/xhtml+xml' },
           lookup: (_host, opts, callback) => {
@@ -63,7 +74,7 @@ export async function fetchPosting(input: string, options: FetchOptions = {}): P
             if (!res.headers.location || hop === 5) { fail('redirect_error'); return; }
             resolve({ redirect: res.headers.location }); res.destroy(); return;
           }
-          if (status < 200 || status >= 300) { fail('http_error'); return; }
+          if (status < 200 || status >= 300) { fail('http_error', status); return; }
           if (!/^(text\/html|application\/xhtml\+xml)(;|$)/i.test(res.headers['content-type'] ?? '') || (res.headers['content-encoding'] && res.headers['content-encoding'] !== 'identity')) { fail('unsupported_content'); return; }
           if (Number(res.headers['content-length']) > MAX_POSTING_BYTES) { fail('too_large'); return; }
           const chunks: Buffer[] = []; let size = 0;

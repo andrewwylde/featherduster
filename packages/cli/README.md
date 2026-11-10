@@ -16,6 +16,14 @@ Not published to npm yet; use Node 20+ and run it from a clone with `node packag
 numbers with evidence values. `build` does not run `check`, and `brief` output is unredacted
 private preparation material. Initialize Git before `init --block-push` to activate the hook.
 
+## Job URL capture
+
+URL capture can open a temporary Chromium window when a direct request is
+refused or cannot expose a usable posting. Run `npx playwright install chromium`
+once from the repository after installing dependencies. A desktop session is
+required; unavailable or blocked captures retain paste recovery. See
+[capture behavior and diagnostics](../../docs/job-url-capture.md).
+
 ## License
 
 MIT

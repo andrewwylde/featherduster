@@ -3,6 +3,7 @@ import { Plus, Eye, Link2, FileText, CheckCircle2, AlertCircle, ArrowUpRight, Sp
 import { apiClient, type IntakePreview, type IntakeResult } from '../../api/client.js';
 import { useIntentKey } from '../../hooks/useJobsData.js';
 import { cardClass, inputClass, primaryButton, secondaryButton } from '../tailoring/ui.js';
+import { JobCaptureDetails } from './JobCaptureDetails.js';
 
 export function JobIntake({
   onSaved,
@@ -177,7 +178,7 @@ export function JobIntake({
           </button>
         )}
 
-        {busy && <span className="text-xs text-slate-500 animate-pulse">Checking postings…</span>}
+        {busy && <span role="status" className="text-xs text-slate-500 animate-pulse">Checking postings… A temporary browser may open for capture (up to 40 seconds).</span>}
       </div>
 
       {items.length > 0 && (
@@ -200,6 +201,13 @@ export function JobIntake({
                         <CheckCircle2 className="h-3 w-3" />
                         {String(row.disposition)}
                       </span>
+                    ) : row.fallback_available ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+                        <AlertCircle className="h-3 w-3" />
+                        Link only — posting needed
+                      </span>
+                    ) : row.duplicate_id ? (
+                      <span>Already saved</span>
                     ) : row.valid ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-950/40 dark:text-sky-300">
                         <Sparkles className="h-3 w-3" />
@@ -220,6 +228,14 @@ export function JobIntake({
                     {row.error.message}
                   </p>
                 )}
+
+                {row.capture_method === 'browser' && !row.error && (
+                  <p className="text-slate-600 dark:text-slate-300">
+                    Captured with browser.{row.capture_attempts?.some(a => a.method === 'http' && a.status === 403) ? ' The direct request was refused (HTTP 403).' : ' The direct request did not expose a usable posting.'}
+                  </p>
+                )}
+
+                <JobCaptureDetails attempts={row.capture_attempts} />
 
                 {row.fallback_available && (
                   <p className="text-amber-600 dark:text-amber-400 text-[11px]">
