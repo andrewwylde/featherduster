@@ -14,7 +14,8 @@ export interface ParseRubricOptions {
 function parseLevelHeader(header: string): { id: string; name: string } {
   const trimmed = header.trim();
   // e.g. "L3: Junior / Mid" or "L4 - Senior Engineer" or "Level 5 – Staff" or "L6 — Principal"
-  const delimMatch = trimmed.match(/^([A-Za-z0-9_.\-\s]+?)\s*[:\-–—]\s*(.+)$/);
+  // Note: Hyphen requires surrounding whitespace to avoid splitting hyphenated terms like "Mid-level"
+  const delimMatch = trimmed.match(/^([A-Za-z0-9_.\-\s]+?)(?:\s*[:–—]\s*|\s+-\s+)(.+)$/);
   if (delimMatch) {
     return { id: delimMatch[1].trim(), name: delimMatch[2].trim() || delimMatch[1].trim() };
   }

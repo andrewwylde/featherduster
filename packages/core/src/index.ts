@@ -10,6 +10,7 @@ export * from './integrity/redaction-engine.js';
 export * from './parsers/rubric-table-parser.js';
 export * from './rubric/gap-analyzer.js';
 export * from './rubric/presets/swe-ic.js';
+export * from './rubric/presets/industry-swe-ic.js';
 export * from './schemas/resume.js';
 export * from './compilers/markdown-compiler.js';
 export * from './compilers/html-print-compiler.js';

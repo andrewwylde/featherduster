@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+import yaml from 'js-yaml';
 import {
   parseRubricTable,
   analyzeCompetencyGaps,
   SWE_IC_RUBRIC,
+  INDUSTRY_SWE_IC_RUBRIC,
   LevelingRubricSchema,
   EvidenceStore,
   EvidenceEntry,
@@ -450,5 +454,98 @@ describe('SWE_IC_RUBRIC', () => {
         expect(comp.levels[lvl].trim().length).toBeGreaterThan(10);
       });
     });
+  });
+});
+
+describe('INDUSTRY_SWE_IC_RUBRIC', () => {
+  it('conforms to LevelingRubricSchema', () => {
+    const parsed = LevelingRubricSchema.parse(INDUSTRY_SWE_IC_RUBRIC);
+    expect(parsed.id).toBe('us-industry-swe-ic');
+    expect(parsed.title).toBe('U.S. Industry Software Engineering (IC) Leveling Framework');
+    expect(parsed.target_level).toBe('Senior');
+  });
+
+  it('defines 5 behavioral levels from Junior to Principal', () => {
+    const levelIds = INDUSTRY_SWE_IC_RUBRIC.levels.map((l) => l.id);
+    expect(levelIds).toEqual(['Junior', 'Mid-level', 'Senior', 'Staff', 'Principal']);
+
+    const junior = INDUSTRY_SWE_IC_RUBRIC.levels.find((l) => l.id === 'Junior')!;
+    expect(junior.name).toMatch(/junior/i);
+
+    const mid = INDUSTRY_SWE_IC_RUBRIC.levels.find((l) => l.id === 'Mid-level')!;
+    expect(mid.name).toMatch(/mid/i);
+
+    const senior = INDUSTRY_SWE_IC_RUBRIC.levels.find((l) => l.id === 'Senior')!;
+    expect(senior.name).toMatch(/senior/i);
+
+    const staff = INDUSTRY_SWE_IC_RUBRIC.levels.find((l) => l.id === 'Staff')!;
+    expect(staff.name).toMatch(/staff/i);
+
+    const principal = INDUSTRY_SWE_IC_RUBRIC.levels.find((l) => l.id === 'Principal')!;
+    expect(principal.name).toMatch(/principal/i);
+  });
+
+  it('covers all competencies with rich criteria for all 5 levels', () => {
+    const competencyNames = INDUSTRY_SWE_IC_RUBRIC.competencies.map((c) => c.name);
+    expect(competencyNames).toContain('Scope & Problem Complexity');
+    expect(competencyNames).toContain('Execution & Autonomy');
+    expect(competencyNames).toContain('System Design & Craft Depth');
+    expect(competencyNames).toContain('Technical Leadership & Mentorship');
+    expect(competencyNames).toContain('Interview Signals & Behavioral Calibration');
+    expect(competencyNames).toContain('Representative Project Scope');
+
+    const expectedLevels = ['Junior', 'Mid-level', 'Senior', 'Staff', 'Principal'];
+    INDUSTRY_SWE_IC_RUBRIC.competencies.forEach((comp) => {
+      expectedLevels.forEach((lvl) => {
+        expect(comp.levels[lvl]).toBeDefined();
+        expect(comp.levels[lvl].trim().length).toBeGreaterThan(20);
+      });
+    });
+  });
+
+  it('can be parsed from the pure markdown table format', () => {
+    const tableMd = `
+| Competency | Junior | Mid-level | Senior | Staff | Principal |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Scope & Problem Complexity | Completes well-defined tasks with guidance | Owns small-to-medium scoped problems | Leads complex features and systems | Solves high-impact, ambiguous problems | Defines long-term technical vision |
+| Execution & Autonomy | Works with guidance | Self-directed on scoped work | Self-directed across multiple people | Drives cross-team initiatives | Sets company-wide technical strategy |
+`;
+    const parsed = parseRubricTable(tableMd, {
+      id: 'us-industry-swe-ic',
+      title: 'U.S. Industry SWE IC Ladder',
+      target_level: 'Senior',
+    });
+
+    expect(parsed.id).toBe('us-industry-swe-ic');
+    expect(parsed.levels.map((l) => l.id)).toEqual(['Junior', 'Mid-level', 'Senior', 'Staff', 'Principal']);
+    expect(parsed.competencies).toHaveLength(2);
+    expect(parsed.competencies[0].levels['Senior']).toBe('Leads complex features and systems');
+  });
+
+  it('validates workspace rubrics/us-industry-swe-ic.yaml against LevelingRubricSchema', () => {
+    const yamlPath = path.resolve(__dirname, '../../../rubrics/us-industry-swe-ic.yaml');
+    expect(fs.existsSync(yamlPath)).toBe(true);
+
+    const raw = fs.readFileSync(yamlPath, 'utf-8');
+    const parsedYaml = yaml.load(raw);
+    const validated = LevelingRubricSchema.parse(parsedYaml);
+
+    expect(validated.id).toBe('us-industry-swe-ic');
+    expect(validated.levels).toHaveLength(5);
+    expect(validated.competencies).toHaveLength(6);
+  });
+
+  it('parses workspace rubrics/us-industry-swe-ic-table.md via parseRubricTable', () => {
+    const tablePath = path.resolve(__dirname, '../../../rubrics/us-industry-swe-ic-table.md');
+    expect(fs.existsSync(tablePath)).toBe(true);
+
+    const raw = fs.readFileSync(tablePath, 'utf-8');
+    const parsed = parseRubricTable(raw, {
+      id: 'us-industry-swe-ic-table',
+      title: 'U.S. Industry SWE IC Ladder',
+    });
+
+    expect(parsed.levels.map((l) => l.id)).toEqual(['Junior', 'Mid-level', 'Senior', 'Staff', 'Principal']);
+    expect(parsed.competencies).toHaveLength(6);
   });
 });
