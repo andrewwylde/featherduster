@@ -51,7 +51,19 @@ const input = context.input;
     return { view, context, rules, binding };
   }
 
+  /** Queue admission checks the same current-resume guards without compiling
+   * download formats. Verified bytes are reused only during this synchronous
+   * operation, so the next read still detects changed inputs or artifacts.
+   */
+  validateResume(jobId: string, request: Pick<JobExportRequest, 'artifact_id' | 'artifact_fingerprint'>): void {
+    this.r.database.files.withReadScope(() => this.resolve(jobId, { ...request, dossier: false }));
+  }
+
   files(jobId: string, request: JobExportRequest) {
+    return this.r.database.files.withReadScope(() => this.compileFiles(jobId, request));
+  }
+
+  private compileFiles(jobId: string, request: JobExportRequest) {
     const { view, context, rules, binding } = this.resolve(jobId, request);
     const spec = view.draft.candidate;
     const files: File[] = [];

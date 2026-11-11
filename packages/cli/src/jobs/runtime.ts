@@ -235,7 +235,7 @@ const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.l
   const coordinator = new PreparationCoordinator(batches, service, proposals, drafts, semantic, flushEvents);
   const questions = new PreparationQuestions(batches, semantic, coordinator, proposals);
   const prepareBatch = (request: unknown) => { const result = batches.create(request, (id, revision) => captureInputs(id, revision, { automatic: true })); coordinator.initialize(); coordinator.wake(); return result; };
-  const readBatch = (id: string) => {
+  const readBatch = (id: string) => database.files.withReadScope(() => {
     const batch = batches.get(id), members = batches.members(id).map(member => {
       const job = repository.getJob(member.job_id);
       return { ...member, company: job.company, role: job.role, recovery_action: job.recovery?.action, ...(job.recovery?.kind === 'stale_inputs' ? { state: 'technical' as const, diagnostic: 'Starting inputs changed. Review current inputs before preparing this job again.' } : {}) };
@@ -244,7 +244,7 @@ const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.l
       const job = repository.getJob(member.job_id), artifactId = job.artifact_version_ids.at(-1);
       if (!artifactId || !['ready'].includes(member.state)) return [];
       const artifact = artifacts.getArtifact(artifactId);
-      try { exports.files(job.id, { artifact_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint, dossier: false }); }
+      try { exports.validateResume(job.id, { artifact_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint }); }
       catch { return []; }
       const approved = repository.listEvents(job.id).some(e => e.payload.kind === 'resume_review' && e.payload.artifact_version_id === artifact.id && e.payload.artifact_fingerprint === artifact.version_fingerprint);
       return [{ job_id: job.id, artifact_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint, approved, company: job.company, role: job.role, posting_url: job.canonical_url ?? job.original_url ?? job.context_url }];
@@ -255,7 +255,7 @@ const drafts = new JobDraftFinalization(repository, artifacts, selectFit, deps.l
     return { batch, members, queue, repairs, decisions, counts: { preparing: members.filter(m => ['pending', 'running'].includes(m.state)).length,
       questions: members.filter(m => ['question', 'later'].includes(m.state)).length, technical: members.filter(m => m.state === 'technical').length,
       ready: queue.filter(q => !q.approved).length, approved: queue.filter(q => q.approved).length } };
-  };
+  });
   const undoRepair = (jobId: string, repairId: string, request: { expected_revision: number; idempotency_key: string }) => {
     const result = repository.withReceipt('automatic_repair_undo', request.idempotency_key, { jobId, repairId, ...request }, () => {
       const job = repository.getJob(jobId);
