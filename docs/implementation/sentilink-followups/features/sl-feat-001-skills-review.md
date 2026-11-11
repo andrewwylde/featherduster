@@ -81,4 +81,4 @@ unrelated content. A real one-page PDF smoke contains the exact corrected
 lists. No factual answer or PDF approval was supplied to complete that fixture.
 The final build, full suite, and independent reviews pass; see the
 [release assessment](../../../releases/v0.3.0-rc.1-validation.md) for evidence
-and the pending local restart/publication boundaries.
+and the local restart/publication boundaries.

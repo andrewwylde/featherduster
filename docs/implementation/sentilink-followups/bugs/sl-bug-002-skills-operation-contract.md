@@ -94,4 +94,4 @@ lineage. Existing legacy records retain their semantics without regeneration.
 Actual runner, default-demo, automatic-repair, save/Apply/reload, recovery, and
 undo regressions pass. The final build and 1,862-test suite pass, as do three
 independent reviews. See the [release assessment](../../../releases/v0.3.0-rc.1-validation.md)
-for evidence, publication status, and the pending local server restart.
+for evidence, publication status, and the verified local server restart.
