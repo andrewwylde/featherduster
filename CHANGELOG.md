@@ -29,6 +29,21 @@ unpublished GitHub draft; this entry does not imply a prior public release.
   failure isolation. Keep technical failures separate from factual questions.
 - Expand supported accomplishment selection and shared employment-fact support,
   while retaining source bindings, job-specific drafts, and final PDF approval.
+- Require explicit before/result list intent for fresh skills proposals in both
+  generation workflows. Preserve saved legacy proposals and prevent model or
+  editor overrides from waiving fresh structural checks.
+- Open pruning and reorder editors from unified review, show actual list
+  differences, and preserve corrections and undo across reload. Keep long skill
+  names and controls visible in desktop sidebars and on mobile.
+- Validate ready-job queues without compiling download bundles, retaining
+  currentness and integrity checks on each request. This resolves the seven-job
+  preparation deadline failure without changing its budget or test deadline.
+
+### Dependencies
+
+- Update `@hono/node-server`, `undici`, and Zod to resolve the three audit
+  findings. Adapt validation to Zod 4 while preserving saved GUID compatibility,
+  schema defaults, and strict persisted contracts. The current audit is clean.
 
 ### Installation and remaining work
 
@@ -37,13 +52,10 @@ run `npx playwright install chromium` after `npm ci`. It uses a fresh session,
 not the user's logged-in browser. See [capture details](docs/job-url-capture.md).
 
 This is a release candidate, not a claim that every walkthrough finding is
-resolved. Fresh skills operations can still contradict their intended result,
-and the skills editor remains unreachable from the unified review path.
-The current dependency audit reports three findings requiring disposition,
-and the seven-job automatic-preparation test fails its readiness deadline.
-See the [release assessment](docs/releases/v0.3.0-rc.1-validation.md) before
-publication. No tag, push, npm publication, or GitHub release accompanies this
-local version bump.
+resolved. See the [release assessment](docs/releases/v0.3.0-rc.1-validation.md)
+for the original failures, corrections, verification, and remaining scope.
+Publication requires explicit approval. No tag, push, npm publication, or
+GitHub release accompanies this local version bump.
 
 ## 0.2.0 — 2026-10-22
 

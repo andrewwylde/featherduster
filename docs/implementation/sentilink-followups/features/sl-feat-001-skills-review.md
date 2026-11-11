@@ -1,6 +1,6 @@
 # SL-FEAT-001: Review and edit actual skills-list changes
 
-Priority: P1. Status: proposed. Triage: ready-for-agent. Task Master: 67.
+Priority: P1. Status: implemented in local v0.3.0-rc.1. Task Master: 67.
 
 ## User outcome and evidence
 
@@ -65,3 +65,20 @@ draft, rechecks affected content/page fit, and requires fresh approval.
 Dependencies: Task 66 (SL-BUG-002) and Task 63 (SL-BUG-004/existing mixed-save
 work). Coordinate passage cards with Task 57; its implementation can proceed
 independently.
+
+## Resolution
+
+The unified resume surface now reaches membership and keyboard reorder editors.
+Changes displays captured originals and actual list results, supports explicit
+whole-group removal, and preserves mixed saves, reload, and guarded undo.
+Published-PDF differences use the displayed candidate. Inherited assertions
+remain explicitly separate from list-change validation.
+
+Real Chromium tests verify prune/reorder text and controls in narrow desktop,
+mobile, and wide containers. A disposable real-API walkthrough verifies
+correction/save/reload/undo and whole-group restoration without changing
+unrelated content. A real one-page PDF smoke contains the exact corrected
+lists. No factual answer or PDF approval was supplied to complete that fixture.
+The final build, full suite, and independent reviews pass; see the
+[release assessment](../../../releases/v0.3.0-rc.1-validation.md) for evidence
+and the pending local restart/publication boundaries.
