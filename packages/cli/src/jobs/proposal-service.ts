@@ -92,10 +92,10 @@ export class ProposalService {
     const supportFor = (p: C.Proposal): C.SkillSupport[] => [...ctx.captured.skillSupport, ...review.groundings.filter(x => x.proposal_id === p.id).map(x => ({ skill: x.term, facet: x.term, permitted_terms: [x.term], support: 'direct' as const, scope: { kind: 'job' as const, key: g.job_id }, sources: x.sources, explanation: x.explanation }))];
     const intended = C.applyProposals(base, overlay.proposals.filter(p => p.decision !== 'rejected').map(p => ({ ...p, decision: 'accepted' as const, checks: [] })));
     const semantic = semanticEnabled && this.semantic ? this.semantic.support(g.job_id, g.input_snapshot_id, intended, overlay.proposals) : undefined;
-    const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport, semanticSupport: semantic?.support }, ctx.rules, supportFor, review.revision);
+    const result = C.validateProposalReview(base, overlay.proposals, { analysis: ctx.analysis, alignment: ctx.alignment, evidence: ctx.captured.evidence.getAll(), skillSupport: ctx.captured.skillSupport, semanticSupport: semantic?.support, requireSkillsIntent: C.requiresSkillsIntent(g.generation_policy) }, ctx.rules, supportFor, review.revision);
     const automatic = this.jobs.database.db.prepare('SELECT 1 FROM preparation_members WHERE job_id=? AND input_snapshot_id=? LIMIT 1').get(g.job_id, g.input_snapshot_id);
     const userDropIds = new Set(review.patches.filter(p => p.omission && p.decision !== 'rejected').flatMap(p => p.omission!.source_bullets.map(source => `${p.proposal_id}:${source.bullet_index}`)));
-    if (automatic && g.generation_policy !== C.SYNTHESIS_POLICY) for (const proposal of overlay.proposals.filter(p => !userDropIds.has(p.id) && p.decision !== 'rejected' && ['bullet.drop', 'skills.prune'].includes(p.type))) {
+    if (automatic && !C.isSynthesisPolicy(g.generation_policy)) for (const proposal of overlay.proposals.filter(p => !userDropIds.has(p.id) && p.decision !== 'rejected' && ['bullet.drop', 'skills.prune'].includes(p.type))) {
       const original = base.experiences[proposal.target.experience_index ?? -1]?.bullets[proposal.target.bullet_index ?? -1];
       const duplicate = proposal.type === 'bullet.drop' && original
         && base.experiences[proposal.target.experience_index!].bullets.filter(b => b.text === original.text && canonical(b.citations ?? []) === canonical(original.citations ?? [])).length > 1

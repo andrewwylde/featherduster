@@ -8,6 +8,10 @@ import {
   DefensibilityBriefSchema,
   JobAnalysisSchema,
   ProposalSetSchema,
+  FreshProposalSetSchema,
+  SYNTHESIS_POLICY,
+  normalizeGenerationProposals,
+  requiresSkillsIntent,
   RedactionBlockedError,
   ResumeSpecSchema,
   STEP_JSON_SCHEMAS,
@@ -599,6 +603,7 @@ export class TailoringOrchestrator {
       const manifest = this.associatedManifest(slug);
       manifest.steps[step] = {
         status: 'done',
+        ...(step === 'proposals' ? { generation_policy: SYNTHESIS_POLICY } : {}),
         completed_at: this.now().toISOString(),
         input_hash: hash(system + prompt),
         error: null,
@@ -648,7 +653,7 @@ export class TailoringOrchestrator {
 
   private parseStepOutput(step: TailoringStep, raw: unknown): { success: true; data: unknown } | { success: false; error: string } {
     const schema: ZodType<unknown> =
-      step === 'analysis' ? JobAnalysisSchema : step === 'alignment' ? AlignmentMatrixSchema : step === 'proposals' ? ProposalSetSchema : DefensibilityBriefSchema;
+      step === 'analysis' ? JobAnalysisSchema : step === 'alignment' ? AlignmentMatrixSchema : step === 'proposals' ? FreshProposalSetSchema : DefensibilityBriefSchema;
     const result = schema.safeParse(raw);
     if (result.success) return { success: true, data: result.data };
     return {
@@ -680,7 +685,7 @@ export class TailoringOrchestrator {
       }
       case 'proposals': {
         const set = data as ProposalSet;
-        const fresh = set.proposals.map((p) => ({ ...p, decision: 'pending' as const, edited_after: undefined, checks: [] }));
+        const fresh = normalizeGenerationProposals(set.proposals, SYNTHESIS_POLICY);
         publish({ proposals: this.revalidateProposals(slug, manifest, fresh) });
         return;
       }
@@ -707,6 +712,7 @@ export class TailoringOrchestrator {
         baseResume: base.spec,
         evidence: (corpus?.evidence ?? this.deps.loadEvidence()).getAll(),
         skillSupport: corpus?.support,
+        requireSkillsIntent: requiresSkillsIntent(manifest.steps.proposals.generation_policy),
         deslopWarnBand: this.config().deslop_warn_band,
       }
     );
@@ -720,6 +726,14 @@ export class TailoringOrchestrator {
               { severity: 'warn' as const, kind: 'page_budget', message: `Accepted edits add ~${budget.overBy} line(s) beyond the base resume.` },
             ],
           }
+        : p
+    ).map(p =>
+      // Explicit intent and target conflicts describe actual list effects. A
+      // wording override cannot authorize a different effect on fresh captures.
+      requiresSkillsIntent(manifest.steps.proposals.generation_policy)
+        && p.type.startsWith('skills.')
+        && p.checks.some(check => check.severity === 'block')
+        ? { ...p, override: undefined }
         : p
     );
   }

@@ -105,6 +105,7 @@ Types:
 - bullet.reorder: target.experience_index; order = permutation of original bullet indices, most relevant first.
 - skills.reorder: target.skill_group_index; skills = the SAME skills in a new order.
 - skills.prune: target.skill_group_index; skills = skills to remove.
+- Skills operations also give before_skills (the exact original group), result_skills (the exact applied result), and allow_empty_group (false unless intentionally clearing the group). For non-skills operations use empty lists and false. Never use the intended retained list as the removal list.
 Rules:
 - Ledger Ceiling: never introduce a technology, skill, or claim not present in the cited evidence or the base resume.
 - Transferable requirements keep the candidate's true tool name; do not substitute the posting's tool.

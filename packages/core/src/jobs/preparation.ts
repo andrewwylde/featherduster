@@ -5,6 +5,7 @@ import type { ResumeSpec } from '../schemas/resume.js';
 import type { EvidenceRecord } from '../parsers/index-store.js';
 import { auditSlop, cleanSlop } from '../integrity/deslop-engine.js';
 import { applyProposals } from '../tailoring/apply.js';
+import { overlappingProposalIds } from '../tailoring/operations.js';
 import { containsTerm, effectiveAfter, isBlocked, validateProposals, type ProposalValidationContext } from '../tailoring/validators.js';
 import { TAILORING_STEPS, type Proposal, type StepRecord, type TailoringStep, type ValidationIssue } from '../tailoring/schemas.js';
 import { InputSnapshotSchema, type InputSnapshot, type PreparationPolicy } from './schemas.js';
@@ -101,6 +102,8 @@ export interface CandidateApplicationResult {
 /** Applies a working copy; neither this result nor its machine checks are human approval. */
 export function applyCandidateProposals(baseResume: ResumeSpec, proposals: Proposal[], context: Omit<ProposalValidationContext, 'baseResume'>, supportFor?: (proposal: Proposal) => ProposalValidationContext['skillSupport']): CandidateApplicationResult {
   const validated = supportFor ? proposals.flatMap(p => validateCandidateProposals([p], { ...context, baseResume, skillSupport: supportFor(p) })) : validateCandidateProposals(proposals, { ...context, baseResume });
+  const conflicts = overlappingProposalIds(proposals, context.requireSkillsIntent);
+  for (const proposal of validated) if (conflicts.has(proposal.id) && !proposal.checks.some(c => c.kind === 'target_conflict')) proposal.checks.push(block('target_conflict', 'Overlapping edits target the same original content. Keep only one operation.'));
   const selected = validated.filter(p => p.decision !== 'rejected' && !isBlocked(p));
   const candidate = applyProposals(structuredClone(baseResume), structuredClone(selected).map(p => ({ ...p, decision: 'accepted' })));
   const issues = validated.filter(p => p.decision !== 'rejected').flatMap(p => p.checks);

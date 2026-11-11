@@ -37,6 +37,7 @@ export function JobProposalEditor({
   fact,
   factConfirmed,
   onConfirmFact,
+  capturedBeforeSkills,
 }: {
   /** Only needed when one passage shows several changes; keeps accessible names unique. */
   position?: { index: number; total: number };
@@ -55,17 +56,17 @@ export function JobProposalEditor({
   factConfirmed?: boolean;
   onConfirmFact?: () => Promise<void>;
   onAdvanceNext?: () => void;
+  capturedBeforeSkills?: string[];
 }) {
   const [choosing, setChoosing] = useState(false);
   const close = useCallback(() => setChoosing(false), []);
   const p = proposal;
   const isRejected = p.decision === 'rejected';
   const isSkills = p.type === 'skills.prune' || p.type === 'skills.reorder';
-  const beforeSkills: string[] = p.before_skills ?? (p.before ? p.before.split(/,\s*/).map(s => s.trim()).filter(Boolean) : []);
+  const beforeSkills: string[] = capturedBeforeSkills ?? p.before_skills ?? (p.before ? p.before.split(/,\s*/).map(s => s.trim()).filter(Boolean) : []);
   const currentSkills = p.skills ?? [];
-  const currentOrder = p.type === 'skills.reorder' && currentSkills.length === beforeSkills.length
-    ? currentSkills
-    : beforeSkills;
+  const ordered = currentSkills.map(skill => beforeSkills.find(original => original.toLowerCase() === skill.toLowerCase())).filter((skill): skill is string => Boolean(skill));
+  const currentOrder = p.type === 'skills.reorder' ? [...ordered, ...beforeSkills.filter(skill => !ordered.includes(skill))] : beforeSkills;
   const skillsDiff = computeSkillsListDiff(
     beforeSkills,
     p.type === 'skills.prune'
@@ -96,7 +97,7 @@ export function JobProposalEditor({
       <div className="flex flex-wrap gap-2 text-xs">
         {p.rationale && <span className="font-medium text-slate-700 dark:text-slate-300">{p.rationale}</span>}
         {requirements.map((r, i) => (
-          <span key={i} className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300">
+          <span key={i} className="inline-flex min-w-0 max-w-full [overflow-wrap:anywhere] items-center gap-1 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded-md text-slate-700 dark:text-slate-300">
             Requirement: {r}
           </span>
         ))}
@@ -110,10 +111,10 @@ export function JobProposalEditor({
         </details>
       </div>
 
-      {/* Side-by-Side Comparison Layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+      {/* Compare side by side only when the editor's container has room. */}
+      <div className="grid min-w-0 gap-4 pt-1" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 18rem), 1fr))' }}>
         {/* Left Column: Original Text */}
-        <div className="rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-3.5 space-y-1.5">
+        <div className="min-w-0 [overflow-wrap:anywhere] rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/40 p-3.5 space-y-1.5">
           <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
             Original from your resume
           </span>
@@ -123,12 +124,12 @@ export function JobProposalEditor({
         </div>
 
         {/* Right Column: Proposed for this Job */}
-        <div className={`rounded-lg border p-3.5 space-y-2 transition-all ${
+        <div className={`min-w-0 [overflow-wrap:anywhere] rounded-lg border p-3.5 space-y-2 transition-all ${
           isRejected
             ? 'border-slate-300 dark:border-slate-800 bg-slate-100/50 dark:bg-slate-950/30 opacity-70'
             : 'border-vermilion-200 dark:border-vermilion-900/50 bg-vermilion-50/20 dark:bg-vermilion-950/10'
         }`}>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-[11px] font-semibold uppercase tracking-wider text-vermilion-600 dark:text-vermilion-400 flex items-center gap-1">
               <Sparkles className="h-3 w-3" />
               {isSkills ? (p.type === 'skills.prune' ? 'Skill removal' : 'Skill order') : 'Proposed wording'}{n}
@@ -148,6 +149,13 @@ export function JobProposalEditor({
           {isSkills ? (
             p.type === 'skills.prune' ? (
               <div className="space-y-3 pt-1">
+                <label className="flex items-center gap-2 text-sm min-h-[44px]">
+                  <input type="checkbox" aria-label="Remove this entire skills group" disabled={isRejected}
+                    checked={Boolean(p.allow_empty_group && currentSkills.length === beforeSkills.length && beforeSkills.length)}
+                    onChange={e => onPatch({ proposal_id: p.id, skills: e.target.checked ? [...beforeSkills] : [], allow_empty_group: e.target.checked })} />
+                  Remove this entire skills group
+                </label>
+                {beforeSkills.length > 0 && skillsDiff.retained.length === 0 && !p.allow_empty_group && <p role="alert" className="text-sm">Choose Remove this entire skills group to explicitly allow an empty list, or retain a skill.</p>}
                 <div className="flex flex-wrap gap-2 text-xs">
                   <span className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
                     Removed ({skillsDiff.removed.length}): {skillsDiff.removed.join(', ') || 'None'}
@@ -162,9 +170,9 @@ export function JobProposalEditor({
                     return (
                       <label
                         key={sIdx}
-                        className="flex items-center justify-between p-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer min-h-[44px]"
+                        className="flex min-w-0 items-center justify-between gap-2 p-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60 cursor-pointer min-h-[44px]"
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
                           <input
                             type="checkbox"
                             aria-label={`Retain ${skill}`}
@@ -174,15 +182,15 @@ export function JobProposalEditor({
                               const nextRemoved = e.target.checked
                                 ? currentSkills.filter(rem => rem.toLowerCase() !== skill.toLowerCase())
                                 : [...currentSkills, skill];
-                              onPatch({ proposal_id: p.id, skills: nextRemoved });
+                              onPatch({ proposal_id: p.id, skills: nextRemoved, ...(p.allow_empty_group && nextRemoved.length < beforeSkills.length ? { allow_empty_group: false } : {}) });
                             }}
-                            className="rounded border-slate-300 text-vermilion-600 focus:ring-vermilion-500 h-4 w-4"
+                            className="shrink-0 rounded border-slate-300 text-vermilion-600 focus:ring-vermilion-500 h-4 w-4"
                           />
-                          <span className={`text-sm ${isRemoved ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200 font-medium'}`}>
+                          <span className={`min-w-0 text-sm ${isRemoved ? 'line-through text-slate-400 dark:text-slate-500' : 'text-slate-800 dark:text-slate-200 font-medium'}`}>
                             {skill}
                           </span>
                         </div>
-                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${isRemoved ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'}`}>
+                        <span className={`shrink-0 text-xs font-semibold px-2 py-0.5 rounded ${isRemoved ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/50 dark:text-rose-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'}`}>
                           {isRemoved ? 'Removed' : 'Retained'}
                         </span>
                       </label>
@@ -198,13 +206,13 @@ export function JobProposalEditor({
                 {currentOrder.map((skill, sIdx) => (
                   <div
                     key={sIdx}
-                    className="flex items-center justify-between p-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 min-h-[44px]"
+                    className="flex min-w-0 items-center justify-between gap-2 p-2 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 min-h-[44px]"
                   >
-                    <span className="text-sm font-medium text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                      <span className="text-xs text-slate-400 w-5">{sIdx + 1}.</span>
-                      {skill}
+                    <span className="min-w-0 flex-1 text-sm font-medium text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                      <span className="shrink-0 text-xs text-slate-400 w-5">{sIdx + 1}.</span>
+                      <span className="min-w-0">{skill}</span>
                     </span>
-                    <div className="flex items-center gap-1">
+                    <div className="flex shrink-0 items-center gap-1">
                       <button
                         type="button"
                         aria-label={`Move ${skill} up`}

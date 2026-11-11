@@ -44,7 +44,17 @@ export const SetupDraftPayloadSchema = SetupPayloadSchema;
 export type SetupPayload = z.infer<typeof SetupPayloadSchema>;
 export type SetupDraftPayload = SetupPayload;
 
-const issue = z.object({ severity: z.enum(['block', 'warn']), kind: text, message: text }).strict();
+const diagnosticSpan = z.tuple([z.number().int().nonnegative().max(DRAFT_MAX_TEXT_LENGTH), z.number().int().nonnegative().max(DRAFT_MAX_TEXT_LENGTH)])
+  .refine(([start, end]) => end >= start, 'Diagnostic span must be ordered');
+const issue = z.object({
+  severity: z.enum(['block', 'warn']), kind: text, message: text,
+  gaps: z.array(z.object({ span: diagnosticSpan, text }).strict()).max(10_000).optional(),
+  target: z.object({
+    scope: z.enum(['retained_baseline', 'draft_candidate', 'generated_patch']),
+    text, text_fingerprint: text, span: diagnosticSpan.optional(),
+    revision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+  }).strict().optional(),
+}).strict();
 export const DraftAnalysisSchema = z.object({
   company: text, role: text, seniority: text, mission: text,
   requirements: z.array(z.object({ id, tier: RequirementTierSchema, text, quote: text, terms: strings.default([]), ungrounded: z.boolean().optional() }).strict()).max(10_000),
@@ -61,6 +71,9 @@ export const DraftProposalsSchema = z.object({ proposals: z.array(z.object({
   id, type: ProposalTypeSchema, target: ProposalTargetSchema.strict(),
   before: text.default(''), after: text.default(''), order: z.array(z.number().int()).max(10_000).default([]),
   skills: strings.default([]), citations: strings.default([]), requirement_ids: strings.default([]),
+  before_skills: strings.optional(), result_skills: strings.optional(), allow_empty_group: z.boolean().optional(),
+  source_bullets: z.array(z.object({ bullet_index: z.number().int().nonnegative(), before: text }).strict()).max(10_000).optional(),
+  claim_bindings: z.array(z.object({ text, citations: strings }).strict()).max(10_000).optional(),
   rationale: text.default(''), decision: ProposalDecisionSchema.default('pending'),
   edited_after: text.optional(), override: z.boolean().optional(), checks: z.array(issue).max(10_000).default([]),
 }).strict()).max(10_000) }).strict();

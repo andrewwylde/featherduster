@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { compileMarkdownResume, computeArtifactChanges, computeSkillsListDiff, ProposalSchema, restoreAccomplishmentInDraft, tightenResumeWording, undoProposalInDraft, undoPassageInDraft, type Job, type JobDraft, type ResumeSpec, type Proposal, type PassageDiffStage, type PassageDiffTrace, type ArtifactChangesSummary } from '@featherduster/core';
+import { compileMarkdownResume, computeArtifactChanges, ProposalSchema, restoreAccomplishmentInDraft, tightenResumeWording, undoProposalInDraft, undoPassageInDraft, type Job, type JobDraft, type ResumeSpec, type Proposal, type PassageDiffStage, type PassageDiffTrace, type ArtifactChangesSummary } from '@featherduster/core';
 import { apiClient, type JobReview } from '../../api/client.js';
 import { cardClass, secondaryButton } from '../tailoring/ui.js';
+import { skillsReviewChange } from './skills-review.js';
 
 function stageKindLabel(kind: string): string {
   switch (kind) {
@@ -50,13 +51,10 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
       ?? traces.find((t: PassageDiffTrace) => t.final_text === targetText);
   };
   const isSkillsActive = (p: Proposal) => {
-    const group = published.skills?.[p.target?.skill_group_index ?? -1];
-    if (!group) return false;
-    const before = p.before_skills ?? (p.before ? p.before.split(/,\s*/).map(s => s.trim()).filter(Boolean) : group.skills);
-    const expected = p.result_skills ?? (p.type === 'skills.prune'
-      ? before.filter(s => !p.skills.some(rem => rem.toLowerCase() === s.toLowerCase()))
-      : p.skills);
-    return JSON.stringify(group.skills) === JSON.stringify(expected);
+    if (p.decision === 'rejected') return false;
+    const expected = skillsReviewChange(p, review.base_resume);
+    const actual = skillsReviewChange(p, review.base_resume, published);
+    return !actual.ambiguous && !actual.missing && JSON.stringify(actual.after) === JSON.stringify(expected.after) && JSON.stringify(actual.before) !== JSON.stringify(actual.after);
   };
   const active = review.draft.proposals.proposals.filter(p => {
     if (p.type === 'bullet.drop') return false;
@@ -161,9 +159,11 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
     {pendingChanges && <p role="status">Your saved draft has pending changes. This summary still describes the displayed PDF; open the draft below to finish its checks.</p>}
     {changeItems.map(({ trace, proposal: p }, idx) => {
       const key = p?.id ?? trace?.passage_id ?? `change-${idx}`;
-      const isSkills = p?.type === 'skills.prune' || p?.type === 'skills.reorder';
-      const title = p?.type === 'skills.prune' ? 'Remove skills'
-        : p?.type === 'skills.reorder' ? 'Reorder skills'
+      const skillsOperation = p?.type === 'skills.prune' || p?.type === 'skills.reorder' ? p
+        : trace?.skill_group_index !== undefined ? review.draft.proposals.proposals.find(operation => (operation.type === 'skills.prune' || operation.type === 'skills.reorder') && operation.target.skill_group_index === trace.skill_group_index) : undefined;
+      const isSkills = Boolean(skillsOperation);
+      const title = skillsOperation?.type === 'skills.prune' ? 'Remove skills'
+        : skillsOperation?.type === 'skills.reorder' ? 'Reorder skills'
         : p?.type === 'bullet.consolidate' ? 'Consolidation'
         : p?.type === 'bullet.add' ? 'Addition'
         : p?.type === 'bullet.rewrite' || p?.type === 'summary.rewrite' ? 'Rewrite'
@@ -173,15 +173,11 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
         : (trace?.original_text || p?.source_bullets?.map(s => s.before).join(' / ') || p?.before || '(new content)');
       let afterText = p ? (p.edited_after ?? p.after) : (trace?.final_text ?? '');
 
-      if (isSkills && p) {
-        const group = published.skills?.[p.target?.skill_group_index ?? -1];
-        const beforeSkills = p.before_skills ?? (p.before ? p.before.split(/,\s*/).map(s => s.trim()).filter(Boolean) : group?.skills ?? []);
-        const afterSkills = p.result_skills ?? (p.type === 'skills.prune'
-          ? beforeSkills.filter(s => !p.skills.some(rem => rem.toLowerCase() === s.toLowerCase()))
-          : p.skills.length ? p.skills : (group?.skills ?? []));
-        const diff = computeSkillsListDiff(beforeSkills, afterSkills);
-        beforeText = beforeSkills.join(', ');
-        if (p.type === 'skills.prune') {
+      if (skillsOperation) {
+        const diff = skillsReviewChange(skillsOperation, originalBase, published);
+        beforeText = diff.before.join(', ');
+        if (diff.ambiguous) afterText = 'The displayed skills group cannot be identified uniquely. Review its captured target before undoing.';
+        else if (skillsOperation.type === 'skills.prune') {
           afterText = `Retained: ${diff.retained.join(', ') || 'None'}${diff.removed.length ? ` (Removed: ${diff.removed.join(', ')})` : ''}`;
         } else {
           afterText = `Order change: ${diff.after.join(', ')}`;
@@ -207,9 +203,10 @@ export function JobArtifactChanges({ job, review, disabled, onSaved }: { job: Jo
           </details>
         )}
         {p?.rationale && <p>{p.rationale}</p>}
+        {isSkills && !p && <p>The displayed list differs from the original operation. Open the draft to review it before undoing.</p>}
         <button
           className={secondaryButton}
-          disabled={disabled || busy || pendingChanges}
+          disabled={disabled || busy || pendingChanges || Boolean(skillsOperation && (!p || skillsReviewChange(skillsOperation, originalBase, published).ambiguous))}
           onClick={() => {
             try {
               const next = p

@@ -2,13 +2,12 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import yaml from 'js-yaml';
 import { initWorkspace } from '../packages/cli/dist/commands/init.js';
 
 export async function makeAutomaticResumeFixture() {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'featherduster-automatic-resume-'));
   await initWorkspace({ workspace, silent: true });
-  fs.writeFileSync(path.join(workspace, '.featherduster/privacy-rules.yaml'), yaml.dump({ banned_keywords: ['FIXTURE_PRIVATE'], replacements: [], strip_patterns: [] }));
+  fs.writeFileSync(path.join(workspace, '.featherduster/privacy-rules.yaml'), JSON.stringify({ banned_keywords: ['FIXTURE_PRIVATE'], replacements: [], strip_patterns: [] }));
   fs.writeFileSync(path.join(workspace, '.automatic-resume-disposable'), 'Fixture only; never a live career workspace.');
   const baseline = { profile: { name: 'Jordan Morgan', title: 'Software Engineer', email: 'jordan@example.com' },
     experiences: [{ company: 'Harbor Systems', role: 'Engineer', startDate: '2022-01', endDate: 'Present', bullets: [
@@ -20,7 +19,7 @@ export async function makeAutomaticResumeFixture() {
   specs[1].experiences[0].bullets[0] = { text: 'Implemented caching.', citations: ['harbor-cache'] };
   for (const i of [2, 3]) specs[i].experiences[0].bullets[0] = { text: 'Implemented AI Analytics.', citations: ['harbor-analytics'] };
   for (const i of [2, 3]) specs[i].experiences[0].bullets.push({ text: 'Deployed release tooling.', citations: ['harbor-prototype'] });
-  for (const [i, spec] of specs.entries()) fs.writeFileSync(path.join(workspace, 'resumes/templates', `automatic-${i + 1}.yaml`), yaml.dump(spec));
+  for (const [i, spec] of specs.entries()) fs.writeFileSync(path.join(workspace, 'resumes/templates', `automatic-${i + 1}.yaml`), JSON.stringify(spec));
   const entries = [
     ['harbor-api', 'Gateway support', 'Maintained “gateway” request handlers.'],
     ['harbor-release', 'Release automation', 'Built release automation.'],
@@ -31,7 +30,7 @@ export async function makeAutomaticResumeFixture() {
     ['cedar-other', 'Other project', 'Led delivery of a production analytics system.'],
   ].map(([id, title, summary]) => ({ id, company: id === 'cedar-other' ? 'Cedar Labs' : 'Harbor Systems', title, summary,
     date: '2026-01-01', impact: 'Documented implementation', themes: ['engineering'], confidence: 'verified', in_flight: false, metrics: [], internal_references: [] }));
-  fs.writeFileSync(path.join(workspace, 'evidence/evidence-ledger.yaml'), yaml.dump({ entries }));
+  fs.writeFileSync(path.join(workspace, 'evidence/evidence-ledger.yaml'), JSON.stringify({ entries }));
   return { workspace, specs };
 }
 export function automaticFixtureRunner(dispatches, options = {}) {
@@ -71,7 +70,7 @@ export function automaticFixtureRunner(dispatches, options = {}) {
       else if (operation === 'proposals') result = { proposals: caseId === 2 ? [
         { id: 'cache-wording', type: 'bullet.rewrite', target: { experience_index: 0, bullet_index: 0 }, before: 'Implemented caching.', after: 'Led implementation of caching.', citations: ['harbor-cache'] },
         { id: 'reorder', type: 'bullet.reorder', target: { experience_index: 0 }, order: [1, 0] },
-        { id: 'skills', type: 'skills.reorder', target: { skill_group_index: 0 }, skills: ['SQL', 'SQL', 'Invented capability'] },
+        { id: 'skills', type: 'skills.reorder', target: { skill_group_index: 0 }, skills: ['SQL', 'SQL', 'Invented capability'], before_skills: ['TypeScript', 'SQL'], result_skills: ['SQL', 'SQL', 'Invented capability'], allow_empty_group: false },
       ] : caseId === 5 ? [{ id: 'material-omission', type: 'bullet.drop', target: { experience_index: 0, bullet_index: 1 }, before: 'Built release automation.', rationale: 'Omitting this unique outcome would require your decision.' }] : caseId === 6 ? [{ id: 'repeated-layout', type: 'bullet.rewrite', target: { experience_index: 0, bullet_index: 1 }, before: 'Built release automation.', after: 'Built release automation. '.repeat(400).trim(), citations: ['harbor-release'] }] : [] };
       else result = { anchor_stories: [], bridges: [], gaps: [] };
       record.result = result;

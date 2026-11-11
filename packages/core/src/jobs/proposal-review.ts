@@ -8,6 +8,8 @@ import { SourceSupportSchema } from '../corpus/schemas.js';
 import { ResumeSpecSchema } from '../schemas/resume.js';
 import { ProposalSchema, ValidationIssueSchema, type Proposal, type ValidationIssue } from '../tailoring/schemas.js';
 import { ImmutableReferenceSchema } from './schemas.js';
+import { requiresSkillsIntent } from './generation-policy.js';
+import { FreshProposalSetSchema } from '../tailoring/schemas.js';
 
 const text = z.string().min(1);
 const uuid = z.string().guid();
@@ -18,7 +20,13 @@ export const ProposalGenerationSchema = z.object({
   generation_policy: z.string().optional(),
   ...binding, id: uuid, attempt_id: uuid, raw_output: ImmutableReferenceSchema,
   proposals: z.object({ proposals: z.array(strictProposal) }).strict(), created_at: z.string().datetime(),
-}).strict().refine(g => new Set(g.proposals.proposals.map(p => p.id)).size === g.proposals.proposals.length, 'Proposal IDs must be unique');
+}).strict().superRefine((g, ctx) => {
+  if (new Set(g.proposals.proposals.map(p => p.id)).size !== g.proposals.proposals.length) ctx.addIssue({ code: 'custom', message: 'Proposal IDs must be unique' });
+  if (requiresSkillsIntent(g.generation_policy)) {
+    const parsed = FreshProposalSetSchema.safeParse(g.proposals);
+    if (!parsed.success) for (const issue of parsed.error.issues) ctx.addIssue({ code: 'custom', path: ['proposals', ...issue.path], message: issue.message });
+  }
+});
 export type ProposalGeneration = z.infer<typeof ProposalGenerationSchema>;
 export const ExperienceAnchorSchema = z.object({ company: z.string(), role: z.string(), startDate: z.string() }).strict();
 export const AccomplishmentOmissionSchema = z.object({
@@ -28,8 +36,8 @@ export const AccomplishmentOmissionSchema = z.object({
 }).strict();
 export const ProposalPatchSchema = z.object({
   proposal_id: text, omission: AccomplishmentOmissionSchema.optional(), edited_after: z.string().optional(), citations: z.array(text).optional(), decision: z.enum(['pending', 'rejected']).optional(),
-  order: z.array(z.number().int()).optional(), skills: z.array(text).optional(),
-}).strict().refine(p => p.edited_after !== undefined || p.citations !== undefined || p.decision !== undefined || p.order !== undefined || p.skills !== undefined || p.omission !== undefined, 'Empty patch');
+  order: z.array(z.number().int()).optional(), skills: z.array(text).optional(), allow_empty_group: z.boolean().optional(),
+}).strict().refine(p => p.edited_after !== undefined || p.citations !== undefined || p.decision !== undefined || p.order !== undefined || p.skills !== undefined || p.allow_empty_group !== undefined || p.omission !== undefined, 'Empty patch');
 export type ProposalPatch = z.infer<typeof ProposalPatchSchema>;
 export const ClaimGroundingSchema = z.object({
   id: uuid, review_id: uuid, review_revision: revision, proposal_id: text, claim_fingerprint: text,
@@ -68,6 +76,7 @@ export const MixedDraftGeneratedPatchSchema = z.object({
   decision: z.enum(['pending', 'rejected']).optional(),
   order: z.array(z.number().int()).optional(),
   skills: z.array(z.string()).optional(),
+  allow_empty_group: z.boolean().optional(),
   omission: AccomplishmentOmissionSchema.optional(),
 }).strict();
 export type MixedDraftGeneratedPatch = z.infer<typeof MixedDraftGeneratedPatchSchema>;
@@ -245,7 +254,7 @@ export const ProposalReviewRevisionSchema = z.object({
 export type ProposalReviewRevision = z.infer<typeof ProposalReviewRevisionSchema>;
 
 /** Run once at ingestion, before publishing immutable generation metadata. */
-export function normalizeGenerationProposals(values: unknown[]): Proposal[] {
+export function normalizeGenerationProposals(values: unknown[], generationPolicy?: string): Proposal[] {
   const used = new Set<string>();
   const reserved = new Set(values.map(v => (v as { id?: unknown })?.id).filter((v): v is string => typeof v === 'string' && !!v.trim()));
   return values.map((value, index) => {
@@ -253,7 +262,7 @@ export function normalizeGenerationProposals(values: unknown[]): Proposal[] {
     let id = typeof raw.id === 'string' ? raw.id.trim() : '';
     if (!id || used.has(id)) { id = `proposal-${index + 1}`; while (used.has(id) || reserved.has(id)) id += '-normalized'; }
     used.add(id);
-    return ProposalSchema.parse({ ...raw, id, decision: 'pending', edited_after: undefined, checks: [] });
+    return ProposalSchema.parse({ ...raw, id, ...(requiresSkillsIntent(generationPolicy) ? { override: undefined } : {}), decision: 'pending', edited_after: undefined, checks: [] });
   });
 }
 
@@ -276,12 +285,21 @@ export function applyProposalPatches(generation: Proposal[], current: ProposalPa
       }
       seen.add(patch.proposal_id);
       const original = generation.find(p => p.id === patch.proposal_id)!;
-      if ((patch.order && original.type !== 'bullet.reorder') || (patch.skills && original.type !== 'skills.reorder' && original.type !== 'skills.prune')) throw new Error('Structural overlay does not match the original proposal type');
+      if ((patch.order && original.type !== 'bullet.reorder') || ((patch.skills || patch.allow_empty_group !== undefined) && original.type !== 'skills.reorder' && original.type !== 'skills.prune')) throw new Error('Structural overlay does not match the original proposal type');
       if (isIncoming && ((patch.edited_after !== undefined && patch.edited_after !== (previous?.edited_after ?? original.after)) || (patch.citations !== undefined && JSON.stringify(patch.citations) !== JSON.stringify(previous?.citations ?? original.citations)))) changed.add(patch.proposal_id);
       overlay.set(patch.proposal_id, { ...previous, ...patch });
     }
   }
-  const proposals: Proposal[] = generation.map(p => { const { proposal_id: _, omission: _omission, ...patch } = overlay.get(p.id) ?? { proposal_id: p.id }; return { ...structuredClone(p), decision: 'pending' as const, ...structuredClone(patch), ...(patch.edited_after !== undefined || patch.citations !== undefined ? { claim_bindings: undefined } : {}), checks: [] }; });
+  const proposals: Proposal[] = generation.map(p => {
+    const { proposal_id: _, omission: _omission, ...patch } = overlay.get(p.id) ?? { proposal_id: p.id };
+    const result = { ...structuredClone(p), decision: 'pending' as const, ...structuredClone(patch), ...(patch.edited_after !== undefined || patch.citations !== undefined ? { claim_bindings: undefined } : {}), checks: [] };
+    if (patch.skills !== undefined && p.before_skills) {
+      const remove = new Set(patch.skills.map(s => s.toLowerCase()));
+      result.result_skills = p.type === 'skills.prune' ? p.before_skills.filter(s => !remove.has(s.toLowerCase())) : [...patch.skills];
+      if (result.result_skills.length > 0) result.allow_empty_group = false;
+    }
+    return result;
+  });
   const omitted = new Set<string>();
   for (const patch of overlay.values()) {
     const o = patch.omission;
@@ -330,8 +348,8 @@ export function normalizeProposalIssues(items: { subject: ProposalIssue['subject
   }
   return [...result.values()];
 }
-export function detectProposalConflicts(proposals: Proposal[]): ProposalIssue[] {
-  const conflicts = overlappingProposalIds(proposals);
+export function detectProposalConflicts(proposals: Proposal[], requireSkillsIntent = false): ProposalIssue[] {
+  const conflicts = overlappingProposalIds(proposals, requireSkillsIntent);
   return normalizeProposalIssues([...conflicts].map(id => ({ subject: { kind: 'proposal' as const, proposal_id: id }, issues: [{ severity: 'block' as const, kind: 'target_conflict', message: `Competing edits: ${[...conflicts].join(', ')}` }] })));
 }
 
@@ -375,7 +393,7 @@ export function validateProposalReview(base: z.infer<typeof ResumeSpecSchema>, p
     });
   }
 
-  const issues = [...normalizeProposalIssues(items), ...detectProposalConflicts(proposals)];
+  const issues = [...normalizeProposalIssues(items), ...detectProposalConflicts(proposals, context.requireSkillsIntent)];
   return { ...result, issues, valid: !issues.some(i => i.details.some(d => d.severity === 'block')) };
 }
 

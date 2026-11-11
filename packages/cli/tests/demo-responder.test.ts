@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { STEP_JSON_SCHEMAS } from '@featherduster/core';
+import { FreshProposalSetSchema, LEGACY_PROPOSALS_JSON_SCHEMA, ProposalSetSchema, STEP_JSON_SCHEMAS } from '@featherduster/core';
 import { createDemoResponder } from '../src/runners/demo-responder.js';
 import type { RunnerRequest } from '../src/runners/types.js';
 
@@ -196,6 +196,30 @@ JSON`;
         expect(backedRow.citations.length).toBeLessThanOrEqual(2);
       }
     });
+  });
+
+  it('emits exactly the current or captured legacy proposal wire fields', () => {
+    const prompt = '## Approved Alignment Matrix\n[{"requirement_id":"r1","classification":"backed","citations":["ev-1"]}]\n## Base Resume\n' + JSON.stringify({ summary: 'Engineer', experiences: [{ bullets: [{ bullet_index: 0, text: 'First' }, { bullet_index: 1, text: 'Second' }] }], skills: [{ skill_group_index: 0, skills: ['TypeScript', 'SQL'] }] }) + '\n## Cited Evidence\n[{"id":"ev-1","title":"Delivery","impact":"Built services"}]\n## Requirements\n[{"id":"r1","text":"SQL experience"}]';
+    const responder = createDemoResponder();
+    for (const schema of [STEP_JSON_SCHEMAS.proposals, LEGACY_PROPOSALS_JSON_SCHEMA]) {
+      const result = responder(createRequest(schema, prompt)) as any;
+      const item = (schema.properties as any).proposals.items;
+      expect(result.proposals).toHaveLength(5);
+      for (const proposal of result.proposals) expect(Object.keys(proposal).sort()).toEqual([...item.required].sort());
+      expect(ProposalSetSchema.safeParse(result).success).toBe(true);
+      for (const p of result.proposals) expect(p.claim_bindings).toEqual(['summary.rewrite', 'bullet.add'].includes(p.type) ? [{ text: p.after, citations: p.citations }] : []);
+      const skills = result.proposals.find((p: any) => p.type === 'skills.reorder');
+      expect(skills.skills).toEqual(['SQL', 'TypeScript']);
+      if (schema === STEP_JSON_SCHEMAS.proposals) {
+        expect(FreshProposalSetSchema.safeParse(result).success).toBe(true);
+        expect(skills).toMatchObject({ before_skills: ['TypeScript', 'SQL'], result_skills: ['SQL', 'TypeScript'], allow_empty_group: false });
+        for (const p of result.proposals.filter((p: any) => !p.type.startsWith('skills.'))) expect(p).toMatchObject({ before_skills: [], result_skills: [], allow_empty_group: false, source_bullets: [] });
+      } else {
+        expect(skills).not.toHaveProperty('before_skills');
+        expect(skills).not.toHaveProperty('result_skills');
+        expect(skills).not.toHaveProperty('allow_empty_group');
+      }
+    }
   });
 
   describe('proposals response', () => {

@@ -1,4 +1,4 @@
-import type { DraftBase, RunManifest } from '@featherduster/core';
+import { SYNTHESIS_POLICY, type DraftBase, type RunManifest } from '@featherduster/core';
 import type { RunnerFactory } from '../runners/registry.js';
 import type { RunnerId } from '../runners/types.js';
 import type { TailoringConfig } from './config.js';
@@ -15,5 +15,5 @@ export function prepareRun(input: CreateRunInput, base: DraftBase | null, config
   const runner = factory(runnerId, config.runner);
   if (!runner) throw new DraftRepositoryError(400, 'invalid_runner', `Unknown or disabled runner "${runnerId}".`);
   const step = () => ({ status: 'pending' as const, completed_at: null, input_hash: null, error: null, raw_output: null });
-  return { posting: posting + '\n', manifest: { slug, title: typeof input.label === 'string' ? input.label.trim() : '', created: now.toISOString(), updated: now.toISOString(), runner: runnerId, model: runner.model, base_resume: base.resumeId, state: 'draft', error: null, finalized_path: null, steps: { analysis: step(), alignment: step(), proposals: step(), brief: step() } } };
+  return { posting: posting + '\n', manifest: { slug, title: typeof input.label === 'string' ? input.label.trim() : '', created: now.toISOString(), updated: now.toISOString(), runner: runnerId, model: runner.model, base_resume: base.resumeId, state: 'draft', error: null, finalized_path: null, steps: { analysis: step(), alignment: step(), proposals: { ...step(), generation_policy: SYNTHESIS_POLICY }, brief: step() } } };
 }

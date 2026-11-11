@@ -259,7 +259,7 @@ export async function updateSelectedClarificationDrafts(r: JobsRuntime, request:
         idempotency_key: `correction-pdf:${request.idempotency_key}:${selection.job_id}` });
       if (!draft && check.status === 'ready') {
         const view = r.proposals.read(selection.job_id), job = r.repository.getJob(selection.job_id);
-        if (view.availability === 'available' && view.generation.generation_policy === C.SYNTHESIS_POLICY && job.preparation_state === 'needs_input')
+        if (view.availability === 'available' && C.isSynthesisPolicy(view.generation.generation_policy) && job.preparation_state === 'needs_input')
           r.proposals.continue({ job_id: job.id, review_id: view.review.id, expected_job_revision: job.revision,
             expected_review_revision: view.review.revision, input_fingerprint: view.review.input_fingerprint,
             validation_fingerprint: view.review.validation.fingerprint, idempotency_key: `correction-pdf:${request.idempotency_key}:${job.id}` });

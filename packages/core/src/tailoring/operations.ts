@@ -35,13 +35,13 @@ export function consolidationError(p: Proposal, base: ResumeSpec): string | unde
   if (!(p.edited_after ?? p.after).trim()) return 'Consolidated accomplishment is empty.';
 }
 
-export function overlappingProposalIds(proposals: Proposal[]): Set<string> {
+export function overlappingProposalIds(proposals: Proposal[], includeSkillPrunes = false): Set<string> {
   const owners = new Map<string, string[]>();
   for (const p of proposals.filter(p => p.decision !== 'rejected')) {
     const keys = originalBulletTargets(p).map(i => `bullet:${p.target.experience_index}:${i}`);
     if (p.type === 'summary.rewrite') keys.push('summary');
     if (p.type === 'bullet.reorder') keys.push(`order:${p.target.experience_index}`);
-    if (p.type === 'skills.reorder') keys.push(`skills:${p.target.skill_group_index}`);
+    if (p.type === 'skills.reorder' || (includeSkillPrunes && p.type === 'skills.prune')) keys.push(`skills:${p.target.skill_group_index}`);
     for (const key of keys) owners.set(key, [...(owners.get(key) ?? []), p.id]);
   }
   return new Set([...owners.values()].filter(ids => ids.length > 1).flat());

@@ -3,6 +3,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState, type Reac
 import { proposalForPassage, isFindingStaleForPreview, type EvidenceRecord, type JobFacts, type Proposal, type ProposalPatch, type ProposalIssue, type ResumeSpec } from '@featherduster/core';
 import { apiClient } from '../../api/client.js';
 import { cardClass, inputClass, secondaryButton } from '../tailoring/ui.js';
+import { isSkillsProposal, skillsReviewChange } from './skills-review.js';
 
 export function passageCheckState(facts: JobFacts | null, text: string, blocked: boolean, path?: string): 'Needs your answer' | 'Checking' | 'Needs retry' | 'Needs changes' | 'Needs saving' | 'Resolved' {
   if (facts?.execution === 'checking') return 'Checking';
@@ -15,9 +16,9 @@ export function passageCheckState(facts: JobFacts | null, text: string, blocked:
   return 'Needs retry';
 }
 
-export function resumeReviewRows(resume: ResumeSpec, proposals: Proposal[], facts: JobFacts | null, issues: ProposalIssue[]) {
+export function resumeReviewRows(resume: ResumeSpec, proposals: Proposal[], facts: JobFacts | null, issues: ProposalIssue[], startingResume?: ResumeSpec) {
   const passages = [{ path: 'summary', text: resume.summary ?? '' }, ...resume.experiences.flatMap((e, ei) => e.bullets.map((b, bi) => ({ path: `experiences.${ei}.bullets.${bi}.text`, text: b.text })))].filter(p => p.text);
-  return passages.map(p => {
+  const wording = passages.map(p => {
     const proposal = proposalForPassage(proposals, p.path, p.text);
     const findings = issues.filter(i => i.subject.kind === 'candidate' ? i.subject.path === p.path : i.subject.proposal_id === proposal?.id);
     const hasActiveBlockers = findings.some(i => i.details.some(d => {
@@ -35,22 +36,33 @@ export function resumeReviewRows(resume: ResumeSpec, proposals: Proposal[], fact
           .find(({ d, target }) => d.severity === 'block' && (!target || !isFindingStaleForPreview(target, p.text)))?.d.message;
     return { ...p, id: proposal?.id ?? `base:${p.path}`, status, findings, label, question };
   });
+  const skills = proposals.filter(isSkillsProposal).map(proposal => {
+    const diff = skillsReviewChange(proposal, startingResume, resume);
+    const path = `skills.${proposal.target.skill_group_index}`;
+    const findings = issues.filter(issue => issue.subject.kind === 'proposal' ? issue.subject.proposal_id === proposal.id : issue.subject.path === path);
+    const blocked = proposal.decision !== 'rejected' && (diff.missing || diff.ambiguous || findings.some(issue => issue.details.some(detail => detail.severity === 'block')));
+    return { id: proposal.id, path, text: diff.after.join(', '), label: `${diff.category} · skills`, findings,
+      status: blocked ? 'Needs changes' as const : 'Resolved' as const,
+      question: blocked ? 'Correct this list change against the captured skills group.' : undefined };
+  });
+  return [...wording, ...skills];
 }
 export interface ResumeReviewNavigation { reviewNext(): void }
 export interface ResolutionNavigation { focusRequest: number; action: ReturnType<typeof passageCheckState> }
 
 export const ResumeDraftSurface = forwardRef<ResumeReviewNavigation, {
-  resume: ResumeSpec; proposals: Proposal[]; omissions?: ProposalPatch[]; facts: JobFacts | null; issues: ProposalIssue[]; evidence: EvidenceRecord[]; workspaceId: string; disabled: boolean;
+  resume: ResumeSpec; startingResume?: ResumeSpec; proposals: Proposal[]; omissions?: ProposalPatch[]; facts: JobFacts | null; issues: ProposalIssue[]; evidence: EvidenceRecord[]; workspaceId: string; disabled: boolean;
   onSelect(id: string): void; onToggle(id: string, rejected: boolean): void;
   renderResolution?(id: string, path: string, text: string, navigation: ResolutionNavigation): ReactNode;
-}>(function ResumeDraftSurface({ resume, proposals, omissions = [], facts, issues, evidence, workspaceId, disabled, onSelect, onToggle, renderResolution }, ref) {
+}>(function ResumeDraftSurface({ resume, startingResume, proposals, omissions = [], facts, issues, evidence, workspaceId, disabled, onSelect, onToggle, renderResolution }, ref) {
   const [selected, setSelected] = useState<string>();
   const panel = useRef<HTMLElement>(null);
   const [focusRequest, setFocusRequest] = useState(0);
   const resolutionPanel = useRef<HTMLElement>(null);
   const select = (id: string) => { setSelected(id); setFocusRequest(n => n + 1); onSelect(id); };
   const [style, setStyle] = useState(''), [notice, setNotice] = useState('');
-  const rows = resumeReviewRows(resume, proposals, facts, issues);
+  const rows = resumeReviewRows(resume, proposals, facts, issues, startingResume);
+  const hasSkills = proposals.some(isSkillsProposal);
   const current = rows.find(r => r.id === selected) ?? rows.find(r => r.status !== 'Resolved');
   const pending = rows.filter(r => r.status !== 'Resolved');
   const next = pending.length > 1 || (pending.length === 1 && pending[0].id !== current?.id)
@@ -66,7 +78,7 @@ export const ResumeDraftSurface = forwardRef<ResumeReviewNavigation, {
   }, [focusRequest, current?.id, current?.status]);
   const omittedProposals = new Set(omissions.filter(p => p.decision !== 'rejected').map(p => p.omission?.replaces_proposal_id));
   const omissionOperations = new Set(omissions.flatMap(p => p.omission?.source_bullets.map(source => `${p.proposal_id}:${source.bullet_index}`) ?? []));
-  const changes = proposals.filter(p => !omissionOperations.has(p.id) && !omittedProposals.has(p.id) && !['bullet.reorder', 'skills.reorder'].includes(p.type));
+  const changes = proposals.filter(p => !omissionOperations.has(p.id) && !omittedProposals.has(p.id) && p.type !== 'bullet.reorder');
   return <div className="space-y-4">
     <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(18rem,0.55fr)] gap-5 items-start">
       <article aria-label="Complete resume draft" className={`${cardClass} p-6 min-w-0`}>
@@ -89,7 +101,8 @@ export const ResumeDraftSurface = forwardRef<ResumeReviewNavigation, {
         {!!rows.length && <div className="space-y-1">
           <p className="text-sm">{rows.length - pending.length} of {rows.length} passages resolved</p>
           <progress aria-label="Resume passage review progress" className="w-full h-3 accent-emerald-600" max={rows.length} value={rows.length - pending.length} />
-          {!pending.length && <p className="text-xs">Factual review complete. Resume and PDF checks follow before final approval.</p>}
+          {!pending.length && <p className="text-xs">{hasSkills ? 'Wording and list-change review complete. Resume and PDF checks follow before final approval.' : 'Factual review complete. Resume and PDF checks follow before final approval.'}</p>}
+          {hasSkills && <p className="text-xs">Skills rows check list changes only. Inherited skills are not independently verified by these checks.</p>}
         </div>}
         {current && <>
           <label className="block text-sm font-medium">Passage to review
@@ -125,7 +138,7 @@ export const ResumeDraftSurface = forwardRef<ResumeReviewNavigation, {
           </section>
         </>}
         {!rows.length && <p>Needs retry — no checked passages are available yet.</p>}
-        {rows.length > 0 && !pending.length && <p role="status">Resolved — all displayed passages have persisted support.</p>}
+        {rows.length > 0 && !pending.length && <p role="status">{hasSkills ? 'Resolved — displayed wording and list-change checks are complete.' : 'Resolved — all displayed passages have persisted support.'}</p>}
         <details><summary className="cursor-pointer font-medium">All passages ({rows.length})</summary>
           <div className="space-y-2 pt-2">{rows.map(row => <button key={row.id} className={`${secondaryButton} block w-full text-left whitespace-normal`} onClick={() => select(row.id)}>
             <span className="block font-semibold">{row.label} · {row.status}</span>
@@ -144,9 +157,16 @@ export const ResumeDraftSurface = forwardRef<ResumeReviewNavigation, {
         <button className={secondaryButton} disabled={disabled} onClick={() => onToggle(p.proposal_id, p.decision !== 'rejected')}>{p.decision === 'rejected' ? 'Leave out again' : 'Restore accomplishment'}</button>
       </section>)}
       {changes.map(p => <section key={p.id} className="border-t pt-3 space-y-2">
-        <h3 className="text-sm font-semibold">{p.type === 'bullet.consolidate' ? 'Consolidation' : p.type === 'bullet.drop' ? 'Omission' : p.type === 'bullet.add' ? 'Addition' : 'Rewrite'} · {p.decision === 'rejected' ? 'Undone' : 'Included in draft'}</h3>
-        <p className="text-sm"><strong>Before: </strong>{p.source_bullets?.map(s => s.before).join(' / ') || p.before || '(new content)'}</p>
-        <p className="text-sm"><strong>After: </strong>{p.type === 'bullet.drop' ? '(omitted)' : p.edited_after ?? p.after}</p>
+        <h3 className="text-sm font-semibold">{p.type === 'skills.prune' ? 'Remove skills' : p.type === 'skills.reorder' ? 'Reorder skills' : p.type === 'bullet.consolidate' ? 'Consolidation' : p.type === 'bullet.drop' ? 'Omission' : p.type === 'bullet.add' ? 'Addition' : 'Rewrite'} · {p.decision === 'rejected' ? 'Undone' : 'Included in draft'}</h3>
+        {isSkillsProposal(p) ? (() => { const diff = skillsReviewChange(p, startingResume, resume); return <>
+          <p className="text-sm"><strong>{diff.category}</strong></p>
+          <p className="text-sm"><strong>Before: </strong>{diff.before.join(', ') || '(empty group)'}</p>
+          <p className="text-sm"><strong>After: </strong>{diff.ambiguous ? 'The current group cannot be identified uniquely. Review the captured target before saving.' : diff.after.join(', ') || '(empty group)'}</p>
+          <p className="text-xs">Removed: {diff.removed.join(', ') || 'None'}{diff.reordered ? ' · Order changed' : ''}</p>
+        </>; })() : <>
+          <p className="text-sm"><strong>Before: </strong>{p.source_bullets?.map(s => s.before).join(' / ') || p.before || '(new content)'}</p>
+          <p className="text-sm"><strong>After: </strong>{p.type === 'bullet.drop' ? '(omitted)' : p.edited_after ?? p.after}</p>
+        </>}
         <p className="text-xs">{p.rationale}</p>
         <button className={secondaryButton} disabled={disabled} onClick={() => onToggle(p.id, p.decision !== 'rejected')}>{p.decision === 'rejected' ? 'Restore change' : p.type === 'bullet.drop' ? 'Restore accomplishment' : 'Undo change'}</button>
         <button className={secondaryButton} disabled={disabled} onClick={() => { select(p.id); }}>Edit wording or evidence</button>
