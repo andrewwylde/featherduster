@@ -245,6 +245,8 @@ export function alignmentSummary(matrix: AlignmentMatrix): Record<'backed' | 'tr
 // ---------------------------------------------------------------------------
 
 export interface ProposalValidationContext {
+  /** Required by the captured fresh-generation policy, never inferred from fields. */
+  requireSkillsIntent?: boolean;
   semanticSupport?: SemanticSupport[];
   /** Source-verified and scope-filtered by the caller. */
   skillSupport?: SkillSupport[];
@@ -479,6 +481,9 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
 
   // Skills operations contract and ledger ceiling
   if (p.type === 'skills.prune' || p.type === 'skills.reorder') {
+    if (ctx.requireSkillsIntent && (p.before_skills === undefined || p.result_skills === undefined || p.allow_empty_group === undefined)) {
+      checks.push({ severity: 'block', kind: 'skills_contract', message: 'Fresh skills operations require captured before/result lists and explicit whole-group intent.' });
+    }
     const group = ctx.baseResume.skills[p.target.skill_group_index];
     if (group) {
       const lowerSkills = p.skills.map((s) => s.toLowerCase());
@@ -488,10 +493,13 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
 
       if (p.before_skills !== undefined) {
         const matchesBefore = p.before_skills.length === group.skills.length &&
-          p.before_skills.every((s, i) => s.toLowerCase() === group.skills[i].toLowerCase());
+          p.before_skills.every((s, i) => ctx.requireSkillsIntent ? s === group.skills[i] : s.toLowerCase() === group.skills[i].toLowerCase());
         if (!matchesBefore) {
           checks.push({ severity: 'block', kind: 'skills_contract', message: 'Target skill group content does not match before_skills.' });
         }
+      }
+      if (ctx.requireSkillsIntent && [p.before_skills, p.result_skills].some(list => list && (list.some(s => !s.trim()) || new Set(list.map(s => s.toLowerCase())).size !== list.length))) {
+        checks.push({ severity: 'block', kind: 'skills_contract', message: 'Skills before/result lists contain empty or duplicate entries.' });
       }
 
       if (p.type === 'skills.prune') {
@@ -502,6 +510,7 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
         }
 
         const removeSet = new Set(lowerSkills);
+        if (ctx.requireSkillsIntent && removeSet.size === 0) checks.push({ severity: 'block', kind: 'skills_contract', message: 'A fresh prune must remove at least one captured skill.' });
         const remaining = group.skills.filter((s) => !removeSet.has(s.toLowerCase()));
         if (group.skills.length > 0 && remaining.length === 0 && !p.allow_empty_group) {
           checks.push({ severity: 'block', kind: 'skills_contract', message: 'Pruning all skills in a group requires explicit confirmation to remove the entire group.' });
@@ -521,6 +530,9 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
         if (added.length > 0) {
           checks.push({ severity: 'block', kind: 'ledger_ceiling', message: `Reorder adds skills not on the resume: ${added.join(', ')}.` });
         }
+        if (ctx.requireSkillsIntent && (p.skills.length !== group.skills.length || existing.size !== p.skills.length)) {
+          checks.push({ severity: 'block', kind: 'skills_contract', message: 'A fresh reorder must contain every captured skill exactly once.' });
+        }
         if (p.result_skills !== undefined) {
           const matchesResult = p.skills.length === p.result_skills.length &&
             p.skills.every((s, i) => s.toLowerCase() === p.result_skills![i].toLowerCase());
@@ -537,7 +549,7 @@ export function validateProposal(proposal: Proposal, ctx: ProposalValidationCont
 
 export function validateProposals(proposals: Proposal[], ctx: ProposalValidationContext): Proposal[] {
   const seen = new Set<string>();
-  const conflicts = overlappingProposalIds(proposals);
+  const conflicts = overlappingProposalIds(proposals, ctx.requireSkillsIntent);
   return proposals.map((p, idx) => {
     let id = p.id.trim() || `p${idx + 1}`;
     while (seen.has(id)) id = `${id}-${idx + 1}`;

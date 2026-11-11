@@ -78,9 +78,11 @@ export interface JobReview {
   validation_report: unknown; preview_count: number;
 }
 export interface IntakeItem {
-  index: number; original: string; valid: boolean; error: { code: string; message: string } | null;
+  index: number; original: string; valid: boolean; error: { code: string; message: string; status?: number; url?: string } | null;
   fallback_available: boolean; job: Job | null; duplicate_id: string | null;
   candidates: { company: string; role: string; original_url: string }[];
+  capture_method?: 'http' | 'browser';
+  capture_attempts?: { method: 'http' | 'browser'; outcome: 'captured' | 'failed'; code?: string; status?: number; url?: string }[];
 }
 export interface IntakePreview { preview_id: string; preview: { workspace_id: string; items: IntakeItem[] } }
 export interface IntakeResult { items: (IntakeItem & { disposition: string; job_id: string | null; replayed?: boolean })[] }

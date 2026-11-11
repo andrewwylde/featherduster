@@ -45,7 +45,7 @@ export async function runJobsCommand(action: string, argument?: string, options:
         const filters = jobFilters.parse({ preparation_state: options.preparationState, application_lifecycle: options.applicationLifecycle, kind: options.kind });
         result = { jobs: r.listJobs().filter(j => Object.entries(filters).every(([k, v]) => v === undefined || j[k as keyof typeof j] === v)) }; break;
       }
-      case 'get': result = jobDetail(runtime, z.string().uuid().parse(argument)); break;
+      case 'get': result = jobDetail(runtime, z.string().guid().parse(argument)); break;
       case 'start': result = { ...service.startAutomaticPreparation(key), message: 'Automatic preparation enabled; open a host or run jobs process to execute work.' }; break;
       case 'stop': result = service.stopProcessing(key); break;
       case 'import': {
@@ -56,7 +56,7 @@ export async function runJobsCommand(action: string, argument?: string, options:
       }
       case 'prepare': case 'resume': case 'retry': {
         const request = preparationRequest.parse({ expected_revision: options.expectedRevision === undefined ? undefined : Number(options.expectedRevision), input_snapshot_id: options.inputSnapshot, idempotency_key: key });
-        const job_id = z.string().uuid().parse(argument);
+        const job_id = z.string().guid().parse(argument);
         const receipt = service[action]({ ...request, job_id });
         await service.worker.whenIdle();
         if (interrupted) throw new Error('Interrupted');

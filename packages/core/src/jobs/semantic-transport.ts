@@ -5,20 +5,20 @@ import { HumanProvenanceSchema } from '../corpus/schemas.js';
 import type { ProposalIssue } from './proposal-review.js';
 const key = z.string().min(1), revision = z.number().int().nonnegative();
 export const SemanticTargetSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('review'), review_id: z.string().uuid(), review_revision: revision }).strict(),
-  z.object({ kind: z.literal('draft'), draft_id: z.string().uuid(), candidate: DraftResumeSpecSchema }).strict(),
+  z.object({ kind: z.literal('review'), review_id: z.string().guid(), review_revision: revision }).strict(),
+  z.object({ kind: z.literal('draft'), draft_id: z.string().guid(), candidate: DraftResumeSpecSchema }).strict(),
 ]);
 export const StartSemanticCheckSchema = z.object({ expected_job_revision: revision, expected_semantic_revision: revision,
   input_fingerprint: key, target: SemanticTargetSchema, reason: z.enum(['edit', 'check', 'retry']), idempotency_key: key }).strict();
 export const SaveFactClarificationSchema = z.object({ target: SemanticTargetSchema,
   expected_job_revision: revision, expected_semantic_revision: revision, input_fingerprint: key, idempotency_key: key,
   claim_ids: z.array(key).min(1), fact: FactSchema, assertion: key, kind: z.enum(['confirmation', 'correction']),
-  corrected_assertion: key.optional(), effective_date: key.optional(), source_ids: z.array(key).default([]), supersedes: z.string().uuid().nullable().default(null),
+  corrected_assertion: key.optional(), effective_date: key.optional(), source_ids: z.array(key).default([]), supersedes: z.string().guid().nullable().default(null),
   supporting_quotes: z.array(SourceQuoteSchema).optional(),
   confirmed: z.boolean().optional(),
   reuse: z.enum(['job', 'project', 'employer']).optional(),
   expected_corpus_revision: revision.optional(),
-  supersedes_shared: z.string().uuid().optional(),
+  supersedes_shared: z.string().guid().optional(),
   support_basis: z.enum(['captured_evidence', 'human_confirmation', 'both']).optional(),
   human_provenance: HumanProvenanceSchema.optional(),
   employment_id: key.optional(),

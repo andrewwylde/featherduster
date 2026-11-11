@@ -1,4 +1,4 @@
-import { STEP_JSON_SCHEMAS } from '@featherduster/core';
+import { LEGACY_PROPOSALS_JSON_SCHEMA, STEP_JSON_SCHEMAS } from '@featherduster/core';
 import type { RunnerRequest } from './types.js';
 
 /**
@@ -100,18 +100,20 @@ function proposals(prompt: string) {
   const evidence = json<Array<Record<string, any>>>(s, 'Cited Evidence', []);
   const reqs = json<Array<{ id: string; text: string }>>(s, 'Requirements', []);
   const out: any[] = [];
-  const blank = { before: '', after: '', order: [] as number[], skills: [] as string[] };
+  const blank = { before: '', after: '', order: [] as number[], skills: [] as string[], before_skills: [] as string[], result_skills: [] as string[], allow_empty_group: false, source_bullets: [], claim_bindings: [] };
   const backed = matrix.filter((r) => r.classification === 'backed' && r.citations.length > 0);
   const lead = evidence.find((e) => backed.some((b) => b.citations.includes(e.id)));
 
   if (lead && resume.summary) {
+    const after = `${resume.summary.replace(/\.$/, '')}, with recent ownership of ${String(lead.title).toLowerCase()}.`;
     out.push({
       id: 'p1',
       type: 'summary.rewrite',
       target: { experience_index: -1, bullet_index: -1, skill_group_index: -1 },
       ...blank,
       before: resume.summary,
-      after: `${resume.summary.replace(/\.$/, '')}, with recent ownership of ${String(lead.title).toLowerCase()}.`,
+      after,
+      claim_bindings: [{ text: after, citations: [lead.id] }],
       citations: [lead.id],
       requirement_ids: backed.slice(0, 1).map((b) => b.requirement_id),
       rationale: 'Leads with the most relevant verified project.',
@@ -120,12 +122,14 @@ function proposals(prompt: string) {
 
   const exp = resume.experiences?.[0];
   if (exp && lead) {
+    const after = `${lead.title}: ${lead.impact}`;
     out.push({
       id: 'p2',
       type: 'bullet.add',
       target: { experience_index: 0, bullet_index: 0, skill_group_index: -1 },
       ...blank,
-      after: `${lead.title}: ${lead.impact}`,
+      after,
+      claim_bindings: [{ text: after, citations: [lead.id] }],
       citations: [lead.id],
       requirement_ids: backed.map((b) => b.requirement_id).slice(0, 2),
       rationale: 'Surfaces verified evidence for a must-have requirement.',
@@ -165,6 +169,8 @@ function proposals(prompt: string) {
       target: { experience_index: -1, bullet_index: -1, skill_group_index: group.skill_group_index ?? 0 },
       ...blank,
       skills: prioritized,
+      before_skills: [...group.skills],
+      result_skills: [...prioritized],
       citations: [],
       requirement_ids: [],
       rationale: 'Front-loads skills named in the posting.',
@@ -199,6 +205,7 @@ export function createDemoResponder(): (req: RunnerRequest) => unknown {
     if (req.schema === STEP_JSON_SCHEMAS.analysis) return analysis(req.prompt);
     if (req.schema === STEP_JSON_SCHEMAS.alignment) return alignment(req.prompt);
     if (req.schema === STEP_JSON_SCHEMAS.proposals) return proposals(req.prompt);
+    if (req.schema === LEGACY_PROPOSALS_JSON_SCHEMA) return { proposals: proposals(req.prompt).proposals.map(({ before_skills: _before, result_skills: _result, allow_empty_group: _empty, ...proposal }) => proposal) };
     if (req.schema === STEP_JSON_SCHEMAS.brief) return brief(req.prompt);
     throw new Error('Demo responder: unknown schema');
   };

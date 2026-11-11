@@ -31,10 +31,26 @@ export function undoProposalInDraft(current: ResumeSpec, base: ResumeSpec, propo
   if (p.type === 'skills.prune' || p.type === 'skills.reorder') {
     const gi = p.target.skill_group_index;
     const origGroup = base.skills?.[gi];
-    const curGroup = next.skills?.[gi];
-    if (!origGroup || !curGroup) throw Error('The skills group changed. Review its current content.');
-    curGroup.skills = [...origGroup.skills];
-    curGroup.category = origGroup.category;
+    if (!origGroup || base.skills.filter(g => g.category === origGroup.category).length !== 1) throw Error('The captured skills group is missing or ambiguous. Review its current content.');
+    const matches = next.skills.flatMap((g, index) => g.category === origGroup.category ? [index] : []);
+    if (matches.length > 1) throw Error('The current skills group is ambiguous. Review its current content.');
+    const remove = new Set(p.skills.map(s => s.toLowerCase()));
+    const canonical = new Map(origGroup.skills.map(s => [s.toLowerCase(), s]));
+    const ordered = p.skills.map(s => canonical.get(s.toLowerCase())).filter((s): s is string => s !== undefined);
+    const expected = p.type === 'skills.prune' ? origGroup.skills.filter(s => !remove.has(s.toLowerCase()))
+      : [...ordered, ...origGroup.skills.filter(s => !ordered.includes(s))];
+    if (matches.length) {
+      const curGroup = next.skills[matches[0]];
+      if (JSON.stringify(curGroup.skills) !== JSON.stringify(expected)) throw Error('The skills wording changed. Review its current content before undoing.');
+      curGroup.skills = [...origGroup.skills];
+    } else {
+      if (expected.length) throw Error('The skills group changed. Review its current content.');
+      const following = base.skills.slice(gi + 1).find(g => next.skills.some(v => v.category === g.category));
+      const previous = base.skills.slice(0, gi).reverse().find(g => next.skills.some(v => v.category === g.category));
+      const at = following ? next.skills.findIndex(g => g.category === following.category)
+        : previous ? next.skills.findIndex(g => g.category === previous.category) + 1 : Math.min(gi, next.skills.length);
+      next.skills.splice(at, 0, structuredClone(origGroup));
+    }
     return next;
   }
   const original = base.experiences[p.target.experience_index], exp = next.experiences[p.target.experience_index];

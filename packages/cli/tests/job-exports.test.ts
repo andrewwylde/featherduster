@@ -42,7 +42,7 @@ async function fixture() {
   const input = runtime.captureInputs(job.id, job.revision);
   runtime.service.prepare({ job_id: job.id, expected_revision: job.revision, input_snapshot_id: input.id, idempotency_key: 'resume' });
   await runtime.service.worker.whenIdle();
-  const ready = runtime.repository.getJob(job.id); expect(ready.preparation_state).toBe('resume_ready');
+  const ready = runtime.repository.getJob(job.id); expect(ready.preparation_state, ready.state_reason ?? '').toBe('resume_ready');
   const artifact = runtime.artifacts.getArtifact(ready.artifact_version_ids[0]);
   const selection = { artifact_id: artifact.id, artifact_fingerprint: artifact.version_fingerprint, dossier: false };
   const app = new Hono(); mountJobsRoutes(app, () => runtime);
@@ -66,6 +66,52 @@ it('exports all resume formats from one binding, exact validated PDF/source and 
   expect(response.status).toBe(200); expect(response.headers.get('Content-Disposition')).toContain('resume.html');
   expect(await response.text()).toContain('Synthetic');
   expect(f.run).not.toHaveBeenCalled(); expect(f.deps.renderer.renderPdf).not.toHaveBeenCalled(); expect(f.runtime.repository.listEvents(f.job.id)).toEqual(before);
+});
+async function queueFixture(seed?: Awaited<ReturnType<typeof fixture>>) {
+  const f = seed ?? await fixture(), job = f.runtime.repository.getJob(f.job.id);
+  const batch = f.runtime.batches.create({ members: [{ job_id: job.id, expected_revision: job.revision }], idempotency_key: 'queue' }, () => f.input).result;
+  const member = f.runtime.batches.members(batch.id)[0];
+  f.runtime.batches.save({ ...member, state: 'ready' });
+  return { ...f, batch };
+}
+it('admits queue entries without serializing export files', async () => {
+  const f = await queueFixture();
+  const files = vi.spyOn(f.runtime.exports, 'files').mockImplementation(() => { throw new Error('Queue reads must not serialize export files.'); });
+  f.run.mockClear(); f.deps.renderer.renderPdf.mockClear();
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(1);
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(1);
+  expect(files).not.toHaveBeenCalled(); expect(f.run).not.toHaveBeenCalled(); expect(f.deps.renderer.renderPdf).not.toHaveBeenCalled();
+});
+it.each(['privacy', 'evidence', 'inputs'] as const)('rejects queued resumes when %s changes after admission', async kind => {
+  const f = await queueFixture();
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(1);
+  if (kind === 'privacy') f.privacy({ banned_keywords: ['Synthetic'] });
+  else if (kind === 'evidence') f.evidence.add({ ...f.evidence.getAll()[0].entry, summary: 'Changed captured work' });
+  else f.runtime.captureInputs(f.job.id, f.runtime.repository.getJob(f.job.id).revision);
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(0);
+});
+it('rejects a queued checked artifact when semantic support changes', async () => {
+  const checked = await checkedFixture();
+  const finalized = await checked.runtime.drafts.finalize(checked.job.id, checked.draft.id, checked.request);
+  const f = await queueFixture({ ...checked, artifact: finalized.artifact });
+  expect(f.artifact.semantic_binding).toBeDefined();
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(1);
+  vi.spyOn(f.runtime.semantic, 'binding').mockReturnValue({ ...f.artifact.semantic_binding!, revision: f.artifact.semantic_binding!.revision + 1 });
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(0);
+});
+it('revalidates immutable input and artifact bytes on every queue read', async () => {
+  const f = await queueFixture();
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(1);
+  const inputPath = path.join(f.root, f.input.base_resume.id), originalInput = fs.readFileSync(inputPath);
+  fs.writeFileSync(inputPath, 'changed input');
+  expect(() => f.runtime.readBatch(f.batch.id)).toThrow(/changed|mismatch|corrupt/i);
+  fs.writeFileSync(inputPath, originalInput);
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(1);
+  const pdfPath = path.join(f.root, f.artifact.pdf!.id), originalPdf = fs.readFileSync(pdfPath);
+  fs.writeFileSync(pdfPath, 'changed artifact');
+  expect(() => f.runtime.readBatch(f.batch.id)).toThrow(/changed|mismatch|corrupt/i);
+  fs.writeFileSync(pdfPath, originalPdf);
+  expect(f.runtime.readBatch(f.batch.id).queue).toHaveLength(1);
 });
 it('saves actual files atomically, replays idempotently, reopens shelf, preserves history after privacy/input changes, rejects wrong-job and tampering', async () => {
   const f = await fixture();

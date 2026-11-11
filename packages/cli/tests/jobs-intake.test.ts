@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fetchPosting, MAX_POSTING_BYTES, type FetchOptions } from '../src/jobs/posting-fetcher.js';
+import { fetchPosting, PostingFetchError, MAX_POSTING_BYTES, type FetchOptions } from '../src/jobs/posting-fetcher.js';
 import { extractPosting } from '../src/jobs/posting-extractor.js';
 import { PostingIntakeService } from '../src/jobs/intake.js';
 import { openJobsDatabase } from '../src/jobs/database.js';
@@ -26,6 +26,11 @@ function transport(pages: { status?: number; headers?: Record<string, string>; b
   return { request: request as unknown as NonNullable<FetchOptions['request']>, spy: request, resolve: vi.fn(async () => [{ address: '8.8.8.8', family: 4 }]) };
 }
 describe('safe posting fetch', () => {
+  it('retains the HTTP status and failed URL for capture diagnostics', async () => {
+    await expect(fetchPosting('https://example.com/role', transport([{ status: 403 }]))).rejects.toMatchObject({
+      code: 'http_error', status: 403, url: 'https://example.com/role',
+    });
+  });
   it.each(['http://example.com', 'https://user@example.com', 'https://example.com:444'])('rejects invalid URL %s', async url => {
     const t = transport([]); await expect(fetchPosting(url, t)).rejects.toMatchObject({ code: 'invalid_url' }); expect(t.spy).not.toHaveBeenCalled();
   });
@@ -93,6 +98,64 @@ function setup() {
   return { repo, service: new PostingIntakeService(repo, { fetcher }), fetcher };
 }
 describe('durable intake', () => {
+  it('recovers a refused direct request through browser capture and keeps provenance', async () => {
+    const { repo } = setup();
+    const browserFetcher = vi.fn(async (url: string) => ({ original_url: url, final_url: 'https://example.com/rendered', retrieved_at: new Date().toISOString(), html: '<main><h1>Platform Engineer</h1><p>Build services.</p></main>' }));
+    const service = new PostingIntakeService(repo, {
+      fetcher: async () => { throw new PostingFetchError('http_error', { status: 403, url: 'https://example.com/role' }); },
+      browserFetcher,
+    });
+    const preview = await service.preview({ mode: 'urls', input: 'https://example.com/role' });
+    const row = preview.items[0]!;
+    expect(row.error).toBeNull(); expect(row.capture_method).toBe('browser');
+    expect(row.capture_attempts).toEqual([expect.objectContaining({ method: 'http', code: 'http_error', status: 403 }), expect.objectContaining({ method: 'browser', outcome: 'captured' })]);
+    expect(browserFetcher).toHaveBeenCalledOnce();
+    const id = service.commit(preview, 'browser-capture')[0]!.job_id!;
+    const job = repo.getJob(id); expect(job.original_url).toBe('https://example.com/role');
+    expect(repo.getPostingSnapshot(job.posting_snapshot_id!).final_url).toBe('https://example.com/rendered');
+    expect(repo.getPostingSnapshot(job.posting_snapshot_id!).capture_attempts).toEqual(row.capture_attempts);
+    expect(repo.getJob(id).capture_attempts).toEqual(row.capture_attempts);
+    expect(repo.active()).toHaveLength(0);
+  });
+  it('keeps both failures, a specific message, and a saveable paste fallback', async () => {
+    const { repo } = setup();
+    const service = new PostingIntakeService(repo, {
+      fetcher: async () => { throw new PostingFetchError('http_error', { status: 403, url: 'https://example.com/role' }); },
+      browserFetcher: async () => { throw new PostingFetchError('http_error', { status: 403, url: 'https://example.com/role' }); },
+    });
+    const preview = await service.preview({ mode: 'urls', input: 'https://example.com/role' });
+    const row = preview.items[0]!;
+    expect(row.error?.message).toContain('HTTP 403'); expect(row.error?.message).toContain('browser');
+    expect(row.error?.status).toBe(403); expect(row.capture_attempts).toHaveLength(2);
+    expect(row.fallback_available).toBe(true);
+    const saved = service.commit(preview, 'still-blocked')[0]!;
+    expect(repo.getJob(saved.job_id!).state_reason).toContain('HTTP 403');
+    expect(repo.getJob(saved.job_id!).capture_attempts).toEqual(row.capture_attempts);
+  });
+  it.each(['blocked_destination', 'invalid_url', 'dns_error', 'too_large'])('never uses a browser to bypass %s', async code => {
+    const { repo } = setup(); const browserFetcher = vi.fn();
+    const service = new PostingIntakeService(repo, { fetcher: async () => { throw new PostingFetchError(code as any); }, browserFetcher });
+    await service.preview({ mode: 'urls', input: 'https://example.com/role' });
+    expect(browserFetcher).not.toHaveBeenCalled();
+  });
+  it.each([404, 429, 503])('preserves HTTP %s without retrying it in a browser', async status => {
+    const { repo } = setup(); const browserFetcher = vi.fn();
+    const service = new PostingIntakeService(repo, { fetcher: async () => { throw new PostingFetchError('http_error', { status }); }, browserFetcher });
+    const preview = await service.preview({ mode: 'urls', input: 'https://example.com/role' });
+    expect(preview.items[0]!.error?.message).toContain(`HTTP ${status}`);
+    expect(browserFetcher).not.toHaveBeenCalled();
+  });
+  it.each(['<div id="root"></div>', '<main aria-busy="true">Loading...</main>', '<main>Loading job details...</main>', '<main><h1>Engineer</h1><p>Loading...</p></main>', '<main><h1>Engineer</h1></main>'])('renders an unfinished response (%s) and keeps browser-unavailable recovery explicit', async shell => {
+    const { repo } = setup();
+    const fetched = { original_url: 'https://example.com/role', final_url: 'https://example.com/role', retrieved_at: new Date().toISOString() };
+    const browserFetcher = vi.fn(async () => ({ ...fetched, html: '<main><h1>Engineer</h1><p>Rendered description</p></main>' }));
+    const service = new PostingIntakeService(repo, { fetcher: async () => ({ ...fetched, html: shell + '<script src="/app.js"></script>' }), browserFetcher });
+    expect((await service.preview({ mode: 'urls', input: fetched.original_url })).items[0]!.capture_method).toBe('browser');
+    browserFetcher.mockRejectedValueOnce(new PostingFetchError('browser_unavailable'));
+    const failed = (await service.preview({ mode: 'urls', input: fetched.original_url })).items[0]!;
+    expect(failed.error?.message).toContain('Browser capture is unavailable');
+    expect(failed.fallback_available).toBe(true);
+  });
   it('previews read-only, preserves batch errors, commits and replays independently', async () => {
     const { repo, service } = setup(); const control = repo.getControl();
     const preview = await service.preview({ mode: 'urls', input: 'https://example.com/a\n\nhttps://example.com/blocked\nhttps://example.com/careers' });

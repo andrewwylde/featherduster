@@ -7,7 +7,7 @@ import { fingerprint } from './files.js';
 
 const edit = z.object({ path: z.string(), before: z.string(), after: z.string().min(1) }).strict();
 export const SelectedUpdatesSchema = z.object({ expected_corpus_revision: z.number().int().nonnegative(), idempotency_key: z.string().min(1),
-  jobs: z.array(z.object({ job_id: z.string().uuid(), fingerprint: z.string(), edits: z.array(edit).min(1) }).strict()).min(1).max(30),
+  jobs: z.array(z.object({ job_id: z.string().guid(), fingerprint: z.string(), edits: z.array(edit).min(1) }).strict()).min(1).max(30),
 }).strict();
 
 /** Derives affected jobs from persisted answers and captured work identities, never employer-name similarity. */
@@ -259,7 +259,7 @@ export async function updateSelectedClarificationDrafts(r: JobsRuntime, request:
         idempotency_key: `correction-pdf:${request.idempotency_key}:${selection.job_id}` });
       if (!draft && check.status === 'ready') {
         const view = r.proposals.read(selection.job_id), job = r.repository.getJob(selection.job_id);
-        if (view.availability === 'available' && view.generation.generation_policy === C.SYNTHESIS_POLICY && job.preparation_state === 'needs_input')
+        if (view.availability === 'available' && C.isSynthesisPolicy(view.generation.generation_policy) && job.preparation_state === 'needs_input')
           r.proposals.continue({ job_id: job.id, review_id: view.review.id, expected_job_revision: job.revision,
             expected_review_revision: view.review.revision, input_fingerprint: view.review.input_fingerprint,
             validation_fingerprint: view.review.validation.fingerprint, idempotency_key: `correction-pdf:${request.idempotency_key}:${job.id}` });

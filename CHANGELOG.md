@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.3.0-rc.1 — local candidate, November 10, 2026
+
+This candidate adds browser-assisted posting capture and incorporates the
+recent resume-review, recovery, and evidence-workflow changes. It is prepared
+locally for review and has not been published. Version 0.2.0 also remains an
+unpublished GitHub draft; this entry does not imply a prior public release.
+
+### Job capture
+
+- Preserve specific HTTP failures and capture-attempt history through save and
+  reload. Distinguish a saved link needing posting text from a captured job.
+- Recover HTTP 403 and unusable HTML through a temporary, isolated Chromium
+  window. Validate and pin public destinations for browser network traffic,
+  preserve bounded work, and retain paste recovery when capture remains blocked.
+- Reject loading-only and busy page shells. Wait for rendered posting content,
+  including when the title appears before the description, instead of saving
+  navigation or placeholder text as a completed capture.
+
+### Resume preparation and review
+
+- Save generated wording changes and inherited-resume corrections together,
+  preserve acknowledged edits across reload, and show inherited corrections in
+  the final PDF change summary.
+- Show the captured starting resume separately from the next-run selection,
+  with searchable, namespaced resume identities.
+- Improve progress stage, dispatched-call counts, terminal timing, and semantic
+  failure isolation. Keep technical failures separate from factual questions.
+- Expand supported accomplishment selection and shared employment-fact support,
+  while retaining source bindings, job-specific drafts, and final PDF approval.
+- Require explicit before/result list intent for fresh skills proposals in both
+  generation workflows. Preserve saved legacy proposals and prevent model or
+  editor overrides from waiving fresh structural checks.
+- Open pruning and reorder editors from unified review, show actual list
+  differences, and preserve corrections and undo across reload. Keep long skill
+  names and controls visible in desktop sidebars and on mobile.
+- Validate ready-job queues without compiling download bundles, retaining
+  currentness and integrity checks on each request. This resolves the seven-job
+  preparation deadline failure without changing its budget or test deadline.
+
+### Dependencies
+
+- Update `@hono/node-server`, `undici`, and Zod to resolve the three audit
+  findings. Adapt validation to Zod 4 while preserving saved GUID compatibility,
+  schema defaults, and strict persisted contracts. The current audit is clean.
+
+### Installation and remaining work
+
+Browser capture requires a desktop session and the matching Chromium binary:
+run `npx playwright install chromium` after `npm ci`. It uses a fresh session,
+not the user's logged-in browser. See [capture details](docs/job-url-capture.md).
+
+This is a release candidate, not a claim that every walkthrough finding is
+resolved. See the [release assessment](docs/releases/v0.3.0-rc.1-validation.md)
+for the original failures, corrections, verification, and remaining scope.
+Publication requires explicit approval. No tag, push, npm publication, or
+GitHub release accompanies this local version bump.
+
 ## 0.2.0 — 2026-10-22
 
 This first GitHub release brings together Featherduster's local evidence ledger,

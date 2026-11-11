@@ -1,6 +1,6 @@
 {
   "name": "@featherduster/core",
-  "version": "0.2.0",
+  "version": "0.3.0-rc.1",
   "description": "Core schemas, evidence store, compilers, and integrity linters for Featherduster",
   "license": "MIT",
   "type": "module",
@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "js-yaml": "^4.1.0",
-    "zod": "^3.23.8"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",

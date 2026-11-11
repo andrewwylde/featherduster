@@ -38,7 +38,7 @@ export class ProposalRepository {
       const parent = files.bundlePath('artifacts', g.job_id, g.id);
       if (g.raw_output.id !== `${parent}/raw-output.json` || g.raw_output.fingerprint !== fingerprint(rawOutput)) this.fail('invalid_relationship', 'Raw output binding mismatch');
       let normalized: C.Proposal[];
-      try { normalized = C.normalizeGenerationProposals(JSON.parse(rawOutput).proposals); }
+      try { normalized = C.normalizeGenerationProposals(JSON.parse(rawOutput).proposals, g.generation_policy); }
       catch { return this.fail('invalid_relationship', 'Raw proposals are malformed'); }
       if (canonical(normalized) !== canonical(g.proposals.proposals)) this.fail('invalid_relationship', 'Normalized generation differs from raw output');
       const row = this.jobs.database.db.prepare('SELECT payload FROM proposal_generations WHERE id=?').get(g.id);

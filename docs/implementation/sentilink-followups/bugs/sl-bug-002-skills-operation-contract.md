@@ -1,6 +1,6 @@
 # SL-BUG-002: Validate the actual effect of skills operations
 
-Priority: P1. Status: open. Triage: ready-for-agent. Task Master: 66.
+Priority: P1. Status: implemented in local v0.3.0-rc.1. Task Master: 66.
 
 ## Problem and evidence
 
@@ -81,3 +81,17 @@ them. Do not add new resume skills merely because a posting requests them.
   and runner transport tests with before/result and inverse-list fixtures.
 
 Dependencies: none. Pair with SL-FEAT-001 to review valid model choices.
+
+## Resolution
+
+Fresh Jobs and Tailor generation use `accomplishments-2` with required captured
+before/result intent and explicit whole-group choice. Validation rejects the
+inverted fixture and stale, unknown, duplicate, incomplete, or overlapping
+effects. Model output cannot authorize overrides. New runs capture policy
+before generation; recovery preserves trusted server policy and guards its
+lineage. Existing legacy records retain their semantics without regeneration.
+
+Actual runner, default-demo, automatic-repair, save/Apply/reload, recovery, and
+undo regressions pass. The final build and 1,862-test suite pass, as do three
+independent reviews. See the [release assessment](../../../releases/v0.3.0-rc.1-validation.md)
+for evidence, publication status, and the verified local server restart.

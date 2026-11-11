@@ -12,12 +12,12 @@ import { ResumeSpecSchema, DraftRevisionTokenSchema, canonicalJson, DraftContext
 import { DraftRepository, DraftRepositoryError } from './repository.js';
 import { DraftOperationRunner, type DraftOperation } from './operations.js';
 import { mergeDraftResume, mergedManual, rebaseProposals } from './upstream.js';
-import { applyProposals, mergeEqual, DraftRunArtifactsSchema, type MergeChoice } from '@featherduster/core';
+import { applyProposals, mergeEqual, DraftRunArtifactsSchema, SYNTHESIS_POLICY, type MergeChoice } from '@featherduster/core';
 import { resolveResume } from '../../resumes/variants.js';
 
 export const DraftSeedSchema = z.discriminatedUnion('kind', [
-  z.object({ id: z.string().uuid(), kind: z.literal('setup'), payload: SetupPayloadSchema, context: DraftContextSchema.optional() }).strict(),
-  z.object({ id: z.string().uuid(), kind: z.literal('manual'), payload: ManualDraftPayloadSchema, context: DraftContextSchema.optional() }).strict(),
+  z.object({ id: z.string().guid(), kind: z.literal('setup'), payload: SetupPayloadSchema, context: DraftContextSchema.optional() }).strict(),
+  z.object({ id: z.string().guid(), kind: z.literal('manual'), payload: ManualDraftPayloadSchema, context: DraftContextSchema.optional() }).strict(),
 ]);
 export type DraftSeed = z.infer<typeof DraftSeedSchema>;
 export interface DraftServiceDependencies {
@@ -210,7 +210,7 @@ export class DraftService {
     const root = path.join(this.dependencies.workspaceDir, 'tailoring-drafts', 'operations');
     if (!fs.existsSync(root)) return result;
     for (const owner of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!owner.isDirectory() || !z.string().uuid().safeParse(owner.name).success) continue;
+      if (!owner.isDirectory() || !z.string().guid().safeParse(owner.name).success) continue;
       for (const file of fs.readdirSync(path.join(root, owner.name))) {
         if (!file.endsWith('.json')) continue;
         const id = file.slice(0, -5);
@@ -477,7 +477,7 @@ export class DraftService {
     const draft = this.get(id);
     if (canonicalJson(draft.token) !== canonicalJson(expected)) throw new DraftRepositoryError(409, 'stale_revision', 'Completed version changed');
     if (draft.record.lifecycle !== 'completed' || !draft.record.completion) throw new DraftRepositoryError(409, 'invalid_lifecycle', 'Continue requires a completed version');
-    const snapshotPath = `tailoring-drafts/completions/${z.string().uuid().parse(draft.record.completion.outputId)}.json`;
+    const snapshotPath = `tailoring-drafts/completions/${z.string().guid().parse(draft.record.completion.outputId)}.json`;
     const bytes = fs.readFileSync(path.join(this.dependencies.workspaceDir, snapshotPath), 'utf8');
     const snapshot = DraftRecordSchema.parse(JSON.parse(bytes));
     if (snapshot.id !== id || snapshot.lifecycle !== 'completed' || canonicalJson(snapshot.completion) !== canonicalJson(draft.record.completion)) throw new DraftRepositoryError(409, 'invalid_snapshot', 'Completed snapshot identity differs');
@@ -527,10 +527,37 @@ export class DraftService {
       next: { ...record, payload: { ...record.appliedContent, proposalTextById: {}, artifactTokens: record.payload.artifactTokens } },
     }).acknowledgement;
   }
+  private recoveryProposalPolicy(id: string): { policy: string | undefined; sources: NonNullable<DraftOperation['sources']> } {
+    // Recovery payloads (including their runSlug) are client content. Only the
+    // existing server record and its associated manifest can establish legacy
+    // provenance. Unavailable or inconsistent lineage uses today's contract.
+    let parent: DraftEnvelope;
+    try { parent = this.repository.read(id); }
+    catch (error) {
+      if (error instanceof DraftRepositoryError && [404, 422].includes(error.status)) return { policy: SYNTHESIS_POLICY, sources: [] };
+      throw error;
+    }
+    if (parent.record.kind !== 'run' || !parent.record.runSlug) return { policy: SYNTHESIS_POLICY, sources: [] };
+    const recordPath = `tailoring-drafts/${parent.record.id}.json`;
+    const recordBytes = fs.readFileSync(path.join(this.dependencies.workspaceDir, recordPath), 'utf8');
+    if (canonicalJson(DraftRecordSchema.parse(JSON.parse(recordBytes).record)) !== canonicalJson(parent.record)) throw new DraftRepositoryError(409, 'source_conflict', 'Recovery parent changed while reading its policy');
+    const bytes = new RunStore(this.dependencies.workspaceDir).readText(parent.record.runSlug, RUN_FILES.manifest);
+    let manifest: unknown;
+    try { manifest = bytes === null ? null : yaml.load(bytes); }
+    catch (error) { if (!(error instanceof yaml.YAMLException)) throw error; }
+    const parsed = RunManifestSchema.safeParse(manifest);
+    if (!parsed?.success || parsed.data.draft_id !== parent.record.id || parsed.data.slug !== parent.record.runSlug) return { policy: SYNTHESIS_POLICY, sources: [] };
+    const captured = parsed.data.steps.proposals.generation_policy;
+    const policy = captured === undefined || captured === 'accomplishments-1' ? captured : SYNTHESIS_POLICY;
+    return { policy, sources: [
+      { path: recordPath, expectedHash: completionHash(recordBytes) },
+      { path: `tailoring/${parent.record.runSlug}/${RUN_FILES.manifest}`, expectedHash: completionHash(bytes!) },
+    ] };
+  }
   /** A recovery snapshot is content, never authority to inherit a workflow approval. */
   fork(id: string, expected: RevisionToken, operationId: string, sourceSnapshot: unknown) {
     const source = DraftRecordSchema.parse(sourceSnapshot);
-    if (source.id !== z.string().uuid().parse(id).toLowerCase()) throw new DraftRepositoryError(400, 'invalid_source', 'Recovery draft identity differs');
+    if (source.id !== z.string().guid().parse(id).toLowerCase()) throw new DraftRepositoryError(400, 'invalid_source', 'Recovery draft identity differs');
     const request = JSON.parse(JSON.stringify({ id, expected, sourceSnapshot: source }));
     const prior = this.operations.lookup(operationId);
     if (prior) {
@@ -552,6 +579,7 @@ export class DraftService {
     const common = { schemaVersion: 1, id: freshId, lifecycle: 'draft', revision: 0, createdAt: now.toISOString(), editedAt: now.toISOString(), savedAt: now.toISOString(), context: source.context, base, appliedContent: {} };
     let next;
     const writes: DraftOperation['writes'] = [];
+    const lineage = source.kind === 'run' ? this.recoveryProposalPolicy(source.id) : { policy: undefined, sources: [] };
     if (source.kind === 'run') {
       const slug = `recovered-${freshId}`;
       const payload = structuredClone(source.payload);
@@ -565,11 +593,11 @@ export class DraftService {
         try { const parent = this.repository.read(id).record; if (parent.kind === 'run' && parent.runSlug) posting = new RunStore(this.dependencies.workspaceDir).readText(parent.runSlug, RUN_FILES.posting) ?? ''; }
         catch (error) { if (!(error instanceof DraftRepositoryError) || error.status !== 404) throw error; }
       }
-      const manifest = RunManifestSchema.parse({ slug, draft_id: freshId, title: source.originSetup?.label ?? 'Recovered draft', created: now.toISOString(), updated: now.toISOString(), runner: source.originSetup?.runner || loadTailoringConfig(this.dependencies.workspaceDir).runner.default, model: '', base_resume: base!.resumeId, state: 'draft', error: null, finalized_path: null, steps: { analysis: step(), alignment: step(), proposals: step(), brief: step() } });
+      const manifest = RunManifestSchema.parse({ slug, draft_id: freshId, title: source.originSetup?.label ?? 'Recovered draft', created: now.toISOString(), updated: now.toISOString(), runner: source.originSetup?.runner || loadTailoringConfig(this.dependencies.workspaceDir).runner.default, model: '', base_resume: base!.resumeId, state: 'draft', error: null, finalized_path: null, steps: { analysis: step(), alignment: step(), proposals: { ...step(), ...(lineage.policy === undefined ? {} : { generation_policy: lineage.policy }) }, brief: step() } });
       next = DraftRecordSchema.parse({ ...common, kind: 'run', runSlug: slug, payload, ...(source.originSetup ? { originSetup: source.originSetup } : {}), legacyBaseNotice: 'Recovered edits require review and Apply. Historical approvals and artifacts were not copied.' });
       writes.push({ path: `tailoring/${slug}/${RUN_FILES.posting}`, expectedHash: null, content: posting }, { path: `tailoring/${slug}/${RUN_FILES.manifest}`, expectedHash: null, content: yaml.dump(manifest, { indent: 2, lineWidth: 120 }) });
     } else next = DraftRecordSchema.parse({ ...common, kind: source.kind, payload: source.payload });
-    return this.operations.execute({ operationId, draftId: freshId, command: 'fork', expected: null, next, request, writes, result: {} }).acknowledgement;
+    return this.operations.execute({ operationId, draftId: freshId, command: 'fork', expected: null, next, request, sources: lineage.sources, writes, result: {} }).acknowledgement;
   }
 }
 

@@ -1,4 +1,4 @@
-import type { Job, JobEvent } from '@featherduster/core';
+import type { Job, JobEvent, PostingCaptureAttempt } from '@featherduster/core';
 
 /** Automatic work links to its actual question or recovery context, never the Posting tab. */
 export function preparationDestination(job: Job, link?: { batch_id: string; state: string }): string | null {
@@ -33,6 +33,9 @@ const reasonDescriptions: Record<string, string> = {
   http_error: "The posting's website returned an error. Paste the posting text instead.",
   unsupported_content: "The posting link didn't return a readable web page. Paste the posting text instead.",
   network_error: "The posting couldn't be reached over the network. Paste the posting text instead.",
+  browser_unavailable: 'Browser capture is unavailable on this computer. Paste posting text instead.',
+  browser_busy: 'Browser capture is busy. Try again shortly, or paste posting text.',
+  extraction_failed: 'The page did not expose a usable job description, or requires a human check. Paste posting text instead.',
 };
 /** Only the whitelisted codes above are treated as codes. */
 const knownReasonCode = (reason: string | null | undefined) => {
@@ -43,9 +46,16 @@ const knownReasonCode = (reason: string | null | undefined) => {
 const looksLikeReasonCode = (reason: string) => /^[a-z][a-z0-9]*(?:_[a-z0-9]+)+:\s/.test(reason);
 
 /** Human text for a job's state reason; raw `code: detail` reasons are never shown. */
-export function describeStateReason(reason: string | null | undefined): string | null {
+export function describeStateReason(reason: string | null | undefined, attempts?: PostingCaptureAttempt[]): string | null {
   if (!reason) return null;
   const code = knownReasonCode(reason);
+  const failed = attempts?.at(-1);
+  if (code === 'http_error' && failed?.status) {
+    const transport = failed.method === 'browser' ? 'browser capture' : 'the direct request';
+    return failed.status === 403 ? `The site refused ${transport} (HTTP 403). Paste posting text instead.`
+      : failed.status === 429 ? 'The site is rate limiting requests (HTTP 429). Try again later, or paste posting text.'
+      : `The site returned HTTP ${failed.status}. Paste posting text instead.`;
+  }
   if (code) return reasonDescriptions[code];
   return looksLikeReasonCode(reason) ? 'Preparation stopped and needs a look. Check Posting and History for details.' : reason;
 }

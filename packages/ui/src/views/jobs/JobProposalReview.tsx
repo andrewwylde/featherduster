@@ -11,7 +11,7 @@ import {
   compileMarkdownResume,
   effectiveBaseResume,
   sameFact,
-  SYNTHESIS_POLICY,
+  isSynthesisPolicy,
   isFindingStaleForPreview,
   computeUnifiedReviewSummary,
   type CorpusScope,
@@ -81,6 +81,7 @@ function Editor({
           if (JSON.stringify(p.citations) !== JSON.stringify(s.citations)) return true;
           if (JSON.stringify(p.order) !== JSON.stringify(s.order)) return true;
           if (JSON.stringify(p.skills) !== JSON.stringify(s.skills)) return true;
+          if (p.allow_empty_group !== s.allow_empty_group) return true;
           if (JSON.stringify(p.omission) !== JSON.stringify(s.omission)) return true;
           return false;
         });
@@ -160,6 +161,7 @@ function Editor({
       decision: p.decision,
       order: p.order,
       skills: p.skills,
+      allow_empty_group: p.allow_empty_group,
       omission: p.omission,
     }));
 
@@ -424,7 +426,7 @@ function Editor({
 
   const autoContinued = useRef('');
   const autoChecked = useRef('');
-  const unified = base.generation.generation_policy === SYNTHESIS_POLICY;
+  const unified = isSynthesisPolicy(base.generation.generation_policy);
   const recheckInFlight = useRef<Promise<void>>();
   const [refreshingChecks, setRefreshingChecks] = useState(false);
   const recheckSaved = () => {
@@ -457,7 +459,7 @@ function Editor({
     }
   }, [unified, base.review, factsData, busy, dirty, stale, active, job.preparation_state]);
   useEffect(() => {
-    if (base.generation.generation_policy !== SYNTHESIS_POLICY || busy || dirty || stale || active || job.preparation_state !== 'needs_input'
+    if (!isSynthesisPolicy(base.generation.generation_policy) || busy || dirty || stale || active || job.preparation_state !== 'needs_input'
       || base.review.validation.status !== 'ready' || !factsData?.facts.length || !factsData.facts.every(f => f.resolution)) return;
     const identity = `${base.review.id}:${base.review.revision}`;
     if (autoContinued.current === identity) return;
@@ -466,7 +468,7 @@ function Editor({
   }, [base.review, factsData, busy, dirty, stale, active, job.preparation_state]);
 
   const unifiedResume = unified ? applyProposals(startingResume, overlay.proposals.map(p => ({ ...p, checks: [], decision: p.decision === 'rejected' ? 'rejected' : 'accepted' }))) : startingResume;
-  const reviewRows = unified ? resumeReviewRows(unifiedResume, overlay.proposals, factsData, base.review.validation.issues) : [];
+  const reviewRows = unified ? resumeReviewRows(unifiedResume, overlay.proposals, factsData, base.review.validation.issues, startingResume) : [];
   const hasRetainedAnswers = reviewRows.some(r => r.status === 'Needs saving');
   const hasQuestions = reviewRows.some(r => r.status === 'Needs your answer');
   const changeCount = reviewRows.filter(r => r.status === 'Needs changes').length;
@@ -542,17 +544,19 @@ function Editor({
     {(loadError || overlayError) && <p role="alert">{loadError || overlayError}</p>}
     {stale && <p role="alert">The saved review changed. Your local edits are retained. <button className={secondaryButton} onClick={() => { setBase(data); setRevision(job.revision); setDraftBaseRevision(data.review.revision); }}>Reconcile current review and keep edits</button></p>}
     <button ref={saveDraftButton} className={primaryButton} disabled={busy || active || stale || (!dirty && startingDrafts.size === 0)} onClick={() => startingDrafts.size > 0 ? void saveMixedDrafts() : void save(false)}>Save draft</button>
-    <ResumeDraftSurface ref={resumeNavigation} resume={unifiedResume}
+    <ResumeDraftSurface ref={resumeNavigation} resume={unifiedResume} startingResume={startingResume}
       proposals={overlay.proposals} omissions={overlay.patches.filter(p => p.omission)} facts={factsData} issues={base.review.validation.issues} evidence={base.captured.evidence} workspaceId={job.workspace_id}
       disabled={busy || active || stale} onSelect={setSelectedProposal} onToggle={(id, rejected) => patch({ proposal_id: id, decision: rejected ? 'rejected' : 'pending' })}
       renderResolution={(id, path, text, navigation) => {
         const proposal = overlay.proposals.find(p => p.id === id);
+        const skills = proposal?.type === 'skills.prune' || proposal?.type === 'skills.reorder';
         const originalPath = originalPassagePath(startingResume, path, text);
         return <div className="space-y-3">
-          {dirty ? <p>Save draft to check the changed wording and evidence.</p> : !active && !stale && <JobFacts jobId={job.id} passagePath={path} passageText={text} focusRequest={navigation.focusRequest} wordingChangesRequired={navigation.action === 'Needs changes'} checksPending={refreshingChecks} onFactsChanged={acceptFacts} onResolved={recheckSaved} />}
-          <details key={`${id}:${navigation.focusRequest}`} open={navigation.action === 'Needs changes'}><summary className="cursor-pointer font-medium underline">Edit wording or evidence instead</summary>
+          {skills ? <p className="text-sm">Review the captured membership and exact list result. These controls do not add skills or confirm inherited assertions.</p> : dirty ? <p>Save draft to check the changed wording and evidence.</p> : !active && !stale && <JobFacts jobId={job.id} passagePath={path} passageText={text} focusRequest={navigation.focusRequest} wordingChangesRequired={navigation.action === 'Needs changes'} checksPending={refreshingChecks} onFactsChanged={acceptFacts} onResolved={recheckSaved} />}
+          <details key={`${id}:${navigation.focusRequest}`} open={skills || navigation.action === 'Needs changes'}><summary className="cursor-pointer font-medium underline">{skills ? 'Edit this skills list' : 'Edit wording or evidence instead'}</summary>
           {path.startsWith('experiences.') && <div className="space-y-2 py-2"><button className={secondaryButton} disabled={busy || active || stale} onClick={() => omitAccomplishment(path, text)}>Leave out of this draft</button><p className="text-xs">Removes this whole accomplishment from this job’s resume. Restore it later under Changes.</p></div>}
           {proposal ? <JobProposalEditor proposal={proposal} position={{ index: 1, total: 1 }} evidence={base.captured.evidence} support={base.captured.skillSupport}
+            capturedBeforeSkills={skills ? startingResume.skills[proposal.target.skill_group_index ?? -1]?.skills ?? [] : undefined}
             disabled={busy || active || stale} onPatch={patch} onSave={() => void save(false)} saveDisabled={stale}
             issues={base.review.validation.issues.filter(i => i.subject.kind === 'proposal' && i.subject.proposal_id === id)}
             requirements={base.captured.analysis.requirements.filter(r => proposal.requirement_ids.includes(r.id)).map(r => r.text)}
@@ -914,7 +918,7 @@ export function JobProposalReview({
   if (!data) return <p role="status">Loading proposal review…</p>;
 
   if (data.availability === 'available') {
-    if (data.generation.generation_policy === SYNTHESIS_POLICY) return <Editor key={`${job.workspace_id}:${job.id}:${data.generation.id}`} job={job} data={data} onSaved={onSaved} refresh={refresh} loadError={error ?? undefined} initialFacts={initialFacts} />;
+    if (isSynthesisPolicy(data.generation.generation_policy)) return <Editor key={`${job.workspace_id}:${job.id}:${data.generation.id}`} job={job} data={data} onSaved={onSaved} refresh={refresh} loadError={error ?? undefined} initialFacts={initialFacts} />;
     return (
       <div className="space-y-4">
         {message && <p role="status">{message}</p>}

@@ -3,7 +3,7 @@ import { ImmutableReferenceSchema } from './schemas.js';
 import { ValidationIssueSchema } from '../tailoring/schemas.js';
 
 const text = z.string().trim().min(1).max(100000);
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 
 /** Source quotes are evidence to inspect, never authority to waive factual checks. */
 export const MaterialSourceSchema = z.object({

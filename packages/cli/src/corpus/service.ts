@@ -8,15 +8,15 @@ import { RepositoryError } from '../jobs/repository.js';
 
 const clientSupport = C.SkillSupportSchema.extend({ sources: z.array(C.SourceSupportSchema.omit({ source_status: true }).strict()).min(1) }).strict();
 export const CorpusRequestSchema = z.object({
-  workspace_id: z.string().uuid(), expected_revision: z.number().int().nonnegative(),
+  workspace_id: z.string().guid(), expected_revision: z.number().int().nonnegative(),
   idempotency_key: z.string().trim().min(1), explanation: z.string().trim().min(1),
-  supersedes: z.string().uuid().nullable().default(null),
+  supersedes: z.string().guid().nullable().default(null),
   change: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('clarification'), value: C.SharedClarificationSchema }).strict(),
     z.object({ kind: z.literal('writing_preference'), value: C.WritingPreferenceSchema }).strict(),
     z.object({ kind: z.literal('skill_support'), value: clientSupport }).strict(),
     z.object({ kind: z.literal('evidence_amendment'), value: C.EvidenceAmendmentSchema }).strict(),
-    z.object({ kind: z.literal('withdrawal'), update_id: z.string().uuid(), reason: z.string().trim().min(1) }).strict(),
+    z.object({ kind: z.literal('withdrawal'), update_id: z.string().guid(), reason: z.string().trim().min(1) }).strict(),
   ]),
 }).strict();
 export type CorpusRequest = z.infer<typeof CorpusRequestSchema>;

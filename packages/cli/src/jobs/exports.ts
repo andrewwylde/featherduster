@@ -12,13 +12,13 @@ import type { SemanticService } from './semantic-service.js';
 
 const canonical = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
 export const JobExportRequestSchema = z.object({
-  artifact_id: z.string().uuid(), artifact_fingerprint: z.string().min(1),
-  cover_letter: z.string().uuid().optional(), interview_brief: z.string().uuid().optional(),
+  artifact_id: z.string().guid(), artifact_fingerprint: z.string().min(1),
+  cover_letter: z.string().guid().optional(), interview_brief: z.string().guid().optional(),
   dossier: z.boolean().default(false),
 }).strict();
 export type JobExportRequest = z.infer<typeof JobExportRequestSchema>;
 const fileSchema = z.object({ name: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/), type: z.string(), confidential: z.boolean(), reference: C.ImmutableReferenceSchema });
-const releaseSchema = z.object({ schema_version: z.literal(1), id: z.string().uuid(), job_id: z.string().uuid(), workspace_id: z.string().uuid(), created_at: z.string(), binding: z.unknown(), files: z.array(fileSchema) }).strict();
+const releaseSchema = z.object({ schema_version: z.literal(1), id: z.string().guid(), job_id: z.string().guid(), workspace_id: z.string().guid(), created_at: z.string(), binding: z.unknown(), files: z.array(fileSchema) }).strict();
 export type JobRelease = z.infer<typeof releaseSchema>;
 type File = { name: string; type: string; confidential: boolean; bytes: string | Uint8Array };
 
@@ -51,7 +51,19 @@ const input = context.input;
     return { view, context, rules, binding };
   }
 
+  /** Queue admission checks the same current-resume guards without compiling
+   * download formats. Verified bytes are reused only during this synchronous
+   * operation, so the next read still detects changed inputs or artifacts.
+   */
+  validateResume(jobId: string, request: Pick<JobExportRequest, 'artifact_id' | 'artifact_fingerprint'>): void {
+    this.r.database.files.withReadScope(() => this.resolve(jobId, { ...request, dossier: false }));
+  }
+
   files(jobId: string, request: JobExportRequest) {
+    return this.r.database.files.withReadScope(() => this.compileFiles(jobId, request));
+  }
+
+  private compileFiles(jobId: string, request: JobExportRequest) {
     const { view, context, rules, binding } = this.resolve(jobId, request);
     const spec = view.draft.candidate;
     const files: File[] = [];

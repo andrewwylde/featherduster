@@ -56,6 +56,7 @@ export class JobPreparation {
     const reviews = new ProposalService(r, proposalsRepository, artifacts, new CorpusService(new CorpusRepository(r), () => new C.EvidenceStore()), undefined, this.deps.semantic);
     const selection = proposalsRepository.getAttemptReview(attempt.id);
     let activeReview: C.ProposalReviewRevision | null = selection;
+    const generationPolicy = selection ? proposalsRepository.getGeneration(selection.generation_id).generation_policy : C.SYNTHESIS_POLICY;
     const recovery = (kind: 'proposals' | 'candidate' | 'render'): C.JobRecovery => ({ kind, subject: {}, action: kind === 'render' ? 'retry_render' : 'review_proposals', ...(activeReview ? { review_id: activeReview.id, generation_id: activeReview.generation_id } : {}) });
     const guard = () => { signal.throwIfAborted(); if (!r.isAttemptCurrent(fence)) throw new Error('Ownership lost'); };
     guard();
@@ -90,7 +91,7 @@ export class JobPreparation {
       if (prior.job_id !== attempt.job_id || prior.workspace_id !== attempt.workspace_id) throw new Error('Checkpoint job mismatch');
       if (prior.input_snapshot_id === input.id) old = r.listCheckpoints(prior.id);
     }
-    const stage = async <T>(name: C.PreparationStage, schema: z.ZodType<T, z.ZodTypeDef, unknown>, execute: () => Promise<T>): Promise<T> => {
+    const stage = async <T>(name: C.PreparationStage, schema: z.ZodType<T, unknown>, execute: () => Promise<T>): Promise<T> => {
       guard(); r.recordAttemptProgress(fence, { stage: name });
       if (selection && name === 'proposals') prefix = false;
       const cp = prefix ? old.find(c => c.completed_stage === name) : undefined;
@@ -108,27 +109,28 @@ export class JobPreparation {
       r.database.db.transaction(() => {
         guard();
         const id = randomUUID();
-        const bytes = JSON.stringify({ schema_version: 1, generation_policy: C.SYNTHESIS_POLICY, stage: name, input_fingerprint: input.fingerprint, data });
+        const bytes = JSON.stringify({ schema_version: 1, generation_policy: generationPolicy, stage: name, input_fingerprint: input.fingerprint, data });
         const ref = { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/checkpoint.json`, fingerprint: fingerprint(bytes) };
         r.database.files.writeBundle('artifacts', attempt.job_id, id, { 'checkpoint.json': bytes });
         r.saveCheckpoint({ schema_version: 1, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, completed_stage: name, input_fingerprint: input.fingerprint, output_fingerprint: ref.fingerprint, output_references: [ref], completed_at: new Date().toISOString() }, fence);
       }).immediate();
       return data;
     };
-    const model = async <T>(name: C.TailoringStep, prompt: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): Promise<T> => {
+    const model = async <T>(name: C.TailoringStep, prompt: string, schema: z.ZodType<T, unknown>): Promise<T> => {
       for (let retry = 0; ; retry++) {
         guard(); consent();
         r.recordAttemptProgress(fence, { model_calls: 1, repair_attempts: retry ? 1 : 0 });
         if (member) batches.reserve(member, `${attempt.id}:${name}:${retry}`, 'model');
         let raw: unknown;
-        const system = selection && proposalsRepository.getGeneration(selection.generation_id).generation_policy !== C.SYNTHESIS_POLICY ? C.buildSystemPrompt(skill.skill, name) : C.buildSynthesisSystemPrompt(skill.skill, name);
-        try { raw = await abortable(runner.run({ system, prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal); }
+        const system = C.isSynthesisPolicy(generationPolicy) ? C.buildSynthesisSystemPrompt(skill.skill, name, generationPolicy) : C.buildSystemPrompt(skill.skill, name);
+        const wireSchema = name === 'proposals' && generationPolicy !== C.SYNTHESIS_POLICY ? C.LEGACY_PROPOSALS_JSON_SCHEMA : C.STEP_JSON_SCHEMAS[name];
+        try { raw = await abortable(runner.run({ system, prompt, schema: wireSchema, signal, transportRetryCount: 0, onProgress: () => {} }), signal); }
         catch (error) {
           guard();
           if (!member || !isTransientPreparationFailure(error instanceof Error ? error.message : String(error))) throw error;
           batches.reserve(member, `${attempt.id}:${name}:transient`, 'retry');
           r.recordAttemptProgress(fence, { model_calls: 1 });
-          raw = await abortable(runner.run({ system, prompt, schema: C.STEP_JSON_SCHEMAS[name], signal, transportRetryCount: 0, onProgress: () => {} }), signal);
+          raw = await abortable(runner.run({ system, prompt, schema: wireSchema, signal, transportRetryCount: 0, onProgress: () => {} }), signal);
         }
         guard(); const parsed = schema.safeParse(raw);
         if (parsed.success) return parsed.data;
@@ -162,10 +164,10 @@ export class JobPreparation {
       });
       const knowledgeText = JSON.stringify(learned.map(u => u.change));
       const safeKnowledge = runner.locality === 'cloud' ? C.redactText(knowledgeText, rules).redactedText : knowledgeText;
-      const value = await model('proposals', C.buildProposalsPrompt(analysis, alignment, base, all, opts) + `\n\n${C.SYNTHESIS_INSTRUCTIONS}\nSelected page budget: ${input.policy.page_budget}.\nExplicit saved preferences (style only) and project answers (reuse only matching work and compatible claims):\n${safeKnowledge}`, C.ProposalSetSchema);
+      const value = await model('proposals', C.buildProposalsPrompt(analysis, alignment, base, all, opts) + `\n\n${C.SYNTHESIS_INSTRUCTIONS}\nSelected page budget: ${input.policy.page_budget}.\nExplicit saved preferences (style only) and project answers (reuse only matching work and compatible claims):\n${safeKnowledge}`, C.FreshProposalSetSchema);
       guard();
       const raw = JSON.stringify(value); const id = randomUUID();
-      const normalized = C.normalizeGenerationProposals(value.proposals);
+      const normalized = C.normalizeGenerationProposals(value.proposals, C.SYNTHESIS_POLICY);
       const structural = member ? repairAutomaticStructure(base, normalized) : { proposals: normalized, changes: [] };
       if (member && structural.changes.length) batches.reserve(member, `${attempt.id}:structure`, 'repair');
       const generation = proposalsRepository.saveGeneration({ schema_version: 1, generation_policy: C.SYNTHESIS_POLICY, id, workspace_id: attempt.workspace_id, job_id: attempt.job_id, attempt_id: attempt.id, input_snapshot_id: input.id, input_fingerprint: input.fingerprint, raw_output: { id: `${r.database.files.bundlePath('artifacts', attempt.job_id, id)}/raw-output.json`, fingerprint: fingerprint(raw) }, proposals: { proposals: normalized }, created_at: new Date().toISOString() }, fence, raw);

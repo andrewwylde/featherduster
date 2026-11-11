@@ -22,6 +22,7 @@ import { JobDetailsEditor } from './JobDetailsEditor.js';
 import { JobInputReview } from './JobInputReview.js';
 import { JobProposalReview } from './JobProposalReview.js';
 import { JobIntake } from './JobIntake.js';
+import { JobCaptureDetails } from './JobCaptureDetails.js';
 import { JobAnswers } from './JobAnswers.js';
 import { JobMaterialReview } from './JobMaterialReview.js';
 import { JobFitReview } from './JobFitReview.js';
@@ -212,7 +213,7 @@ export function JobDetail({
   // A failed URL capture fixed by pasted text reads as a saved job until preparation starts.
   const recoveredCapture = job ? hasRecoveredCapture(job) : false;
   const state = job ? displayPreparationState(job) : undefined;
-  const stateReason = recoveredCapture ? null : describeStateReason(job?.state_reason);
+  const stateReason = recoveredCapture ? null : describeStateReason(job?.state_reason, job?.capture_attempts);
   const hasReview = data?.proposal_review?.availability === 'available';
   useEffect(() => {
     if (!hasReview) { setFactsData(null); return; }
@@ -469,6 +470,7 @@ export function JobDetail({
               </div>
 
               <JobDetailsEditor key={job.id} job={job} posting={data.posting} onSaved={() => void refresh()} />
+              <JobCaptureDetails attempts={data.posting?.capture_attempts ?? job.capture_attempts} />
               {data.posting ? (
                 <div className="space-y-3">
                   <div className="rounded-lg bg-slate-50 dark:bg-slate-900/60 p-3 text-xs text-slate-600 dark:text-slate-400 space-y-1 border border-slate-200/60 dark:border-slate-800">

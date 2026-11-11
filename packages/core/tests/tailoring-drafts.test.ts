@@ -22,6 +22,20 @@ const common = { schemaVersion: 1, id: 'e8837c41-00ca-4939-9d1f-c1d1b01ba891', l
 const run = () => DraftRecordSchema.parse({ ...common, kind: 'run', runSlug: 'example', base: { resumeId: 'base', spec: DEFAULT_STARTER_RESUME, fingerprint: 'hash' }, payload: { analysis, proposalTextById: {}, artifactTokens: {} }, appliedContent: { analysis } });
 
 describe('tailoring recovery contracts', () => {
+  it('retains bounded typed claim-coverage diagnostics without admitting unknown fields', () => {
+    const check = { severity: 'block', kind: 'claim_binding', message: 'Uncovered wording', gaps: [{ span: [0, 4], text: 'Text' }], target: { scope: 'generated_patch', text: 'Text', text_fingerprint: 'hash', span: [0, 4], revision: 1 } };
+    const value = (issue: unknown) => ({ proposals: [{ id: 'p', type: 'summary.rewrite', target: {}, checks: [issue] }] });
+    expect(core.DraftProposalsSchema.parse(value(check)).proposals[0].checks).toEqual([check]);
+    for (const bad of [
+      { ...check, unknown: true },
+      { ...check, gaps: [{ span: [4, 0], text: 'Text' }] },
+      { ...check, gaps: [{ span: [0, 262145], text: 'Text' }] },
+      { ...check, gaps: [{ span: [0, 4], text: 'Text', unknown: true }] },
+      { ...check, gaps: Array(10001).fill(check.gaps[0]) },
+      { ...check, target: { ...check.target, scope: 'unknown' } },
+      { ...check, target: { ...check.target, revision: -1 } },
+    ]) expect(core.DraftProposalsSchema.safeParse(value(bad)).success).toBe(false);
+  });
   it('preserves incomplete setup without workflow validation', () => {
     expect(SetupPayloadSchema.parse(setup)).toEqual(setup);
     expect(DraftRecordSchema.parse({ ...common, kind: 'setup', base: null, payload: setup }).payload).toEqual(setup);

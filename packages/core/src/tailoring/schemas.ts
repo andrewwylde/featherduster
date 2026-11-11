@@ -148,6 +148,16 @@ export const ProposalSetSchema = z.object({
   proposals: z.array(ProposalSchema),
 });
 export type ProposalSet = z.infer<typeof ProposalSetSchema>;
+/** Fresh runner admission only. Stored legacy proposal records remain readable. */
+export const FreshProposalSetSchema = ProposalSetSchema.superRefine((set, ctx) => {
+  set.proposals.forEach((p, index) => {
+    if (p.override !== undefined) ctx.addIssue({ code: 'custom', path: ['proposals', index, 'override'], message: 'Generated output cannot grant an override.' });
+    if (!['skills.prune', 'skills.reorder'].includes(p.type)) return;
+    for (const field of ['before_skills', 'result_skills', 'allow_empty_group'] as const) {
+      if (p[field] === undefined) ctx.addIssue({ code: 'custom', path: ['proposals', index, field], message: `Fresh skills operations require ${field}.` });
+    }
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Gate 3: Interview defensibility brief
@@ -210,6 +220,8 @@ export type StepStatus = z.infer<typeof StepStatusSchema>;
 
 export const StepRecordSchema = z.object({
   status: StepStatusSchema.default('pending'),
+  /** Server-captured proposal admission policy; absent on historical runs. */
+  generation_policy: z.string().min(1).optional(),
   completed_at: z.string().nullable().default(null),
   input_hash: z.string().nullable().default(null),
   error: z.string().nullable().default(null),
@@ -218,7 +230,7 @@ export const StepRecordSchema = z.object({
 export type StepRecord = z.infer<typeof StepRecordSchema>;
 
 export const RunManifestSchema = z.object({
-  draft_id: z.string().uuid().optional(),
+  draft_id: z.string().guid().optional(),
   slug: z.string().min(1),
   title: z.string().default(''),
   created: z.string(),
@@ -304,6 +316,9 @@ export const PROPOSALS_JSON_SCHEMA: JsonSchema = obj({
       after: str,
       order: intArr,
       skills: strArr,
+      before_skills: strArr,
+      result_skills: strArr,
+      allow_empty_group: { type: 'boolean' },
       citations: strArr,
       requirement_ids: strArr,
       rationale: str,
@@ -312,6 +327,15 @@ export const PROPOSALS_JSON_SCHEMA: JsonSchema = obj({
     }),
   },
 });
+
+/** Preserved for continuation/adapters explicitly bound to an older generation. */
+export const LEGACY_PROPOSALS_JSON_SCHEMA: JsonSchema = structuredClone(PROPOSALS_JSON_SCHEMA);
+{
+  const proposal = (LEGACY_PROPOSALS_JSON_SCHEMA.properties as { proposals: { items: { properties: Record<string, JsonSchema>; required: string[] } } }).proposals.items;
+  for (const field of ['before_skills', 'result_skills', 'allow_empty_group']) {
+    delete proposal.properties[field]; proposal.required = proposal.required.filter(name => name !== field);
+  }
+}
 
 export const BRIEF_JSON_SCHEMA: JsonSchema = obj({
   anchor_stories: {

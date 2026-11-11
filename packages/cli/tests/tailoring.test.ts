@@ -72,6 +72,7 @@ const PROPOSALS = {
     {
       id: 'p4', type: 'skills.reorder', target: { ...blankTarget, skill_group_index: 0 },
       before: '', after: '', order: [], skills: ['Go', 'TypeScript'], citations: [], requirement_ids: [], rationale: 'Go first.',
+      before_skills: ['TypeScript', 'Go'], result_skills: ['Go', 'TypeScript'], allow_empty_group: false,
     },
   ],
 };
@@ -131,7 +132,7 @@ describe('Tailoring runs API', () => {
   async function runAndApprove(slug: string, step: string) {
     expect((await call('POST', `/api/tailoring/${slug}/steps/${step}/run`)).status).toBe(202);
     const run = await settled(slug, step);
-    expect(run.manifest.steps[step].status).toBe('done');
+    expect(run.manifest.steps[step].status, run.manifest.steps[step].error).toBe('done');
     return run;
   }
 
