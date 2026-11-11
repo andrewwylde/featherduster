@@ -113,7 +113,7 @@ export const DraftCompletionSchema = z.object({
 }).strict();
 export type DraftCompletion = z.infer<typeof DraftCompletionSchema>;
 const common = {
-  schemaVersion: z.literal(1), id: z.string().uuid(), lifecycle: DraftLifecycleSchema,
+  schemaVersion: z.literal(1), id: z.string().guid(), lifecycle: DraftLifecycleSchema,
   revision: z.number().int().nonnegative().safe(), createdAt: timestamp, editedAt: timestamp, savedAt: timestamp,
   runSlug: id.optional(), parentCompletionId: id.optional(), context: DraftContextSchema.default({}),
   appliedContent: DraftAppliedContentSchema.default({}), completion: DraftCompletionSchema.optional(),

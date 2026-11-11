@@ -7,7 +7,7 @@ import { fingerprint } from './files.js';
 
 const edit = z.object({ path: z.string(), before: z.string(), after: z.string().min(1) }).strict();
 export const SelectedUpdatesSchema = z.object({ expected_corpus_revision: z.number().int().nonnegative(), idempotency_key: z.string().min(1),
-  jobs: z.array(z.object({ job_id: z.string().uuid(), fingerprint: z.string(), edits: z.array(edit).min(1) }).strict()).min(1).max(30),
+  jobs: z.array(z.object({ job_id: z.string().guid(), fingerprint: z.string(), edits: z.array(edit).min(1) }).strict()).min(1).max(30),
 }).strict();
 
 /** Derives affected jobs from persisted answers and captured work identities, never employer-name similarity. */

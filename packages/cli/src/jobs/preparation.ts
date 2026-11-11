@@ -90,7 +90,7 @@ export class JobPreparation {
       if (prior.job_id !== attempt.job_id || prior.workspace_id !== attempt.workspace_id) throw new Error('Checkpoint job mismatch');
       if (prior.input_snapshot_id === input.id) old = r.listCheckpoints(prior.id);
     }
-    const stage = async <T>(name: C.PreparationStage, schema: z.ZodType<T, z.ZodTypeDef, unknown>, execute: () => Promise<T>): Promise<T> => {
+    const stage = async <T>(name: C.PreparationStage, schema: z.ZodType<T, unknown>, execute: () => Promise<T>): Promise<T> => {
       guard(); r.recordAttemptProgress(fence, { stage: name });
       if (selection && name === 'proposals') prefix = false;
       const cp = prefix ? old.find(c => c.completed_stage === name) : undefined;
@@ -115,7 +115,7 @@ export class JobPreparation {
       }).immediate();
       return data;
     };
-    const model = async <T>(name: C.TailoringStep, prompt: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>): Promise<T> => {
+    const model = async <T>(name: C.TailoringStep, prompt: string, schema: z.ZodType<T, unknown>): Promise<T> => {
       for (let retry = 0; ; retry++) {
         guard(); consent();
         r.recordAttemptProgress(fence, { model_calls: 1, repair_attempts: retry ? 1 : 0 });

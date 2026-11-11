@@ -66,7 +66,7 @@ export class JobFit {
     const skill = loadTailoringSkill(r.database.files.workspace);
     const all = evidence.getAll();
     const opts = { locality: runner.locality, rules, skillSupport: knowledge.materialized?.support ?? [], evidenceIds: all.map(e => e.id) };
-    const model = async <T>(step: 'analysis' | 'alignment', prompt: string, schema: z.ZodType<T, z.ZodTypeDef, unknown>) => {
+    const model = async <T>(step: 'analysis' | 'alignment', prompt: string, schema: z.ZodType<T, unknown>) => {
       guard(); consent(); r.recordAttemptProgress(fence, { stage: step, model_calls: 1 });
       const raw = await abortable(runner.run({ system: C.buildSystemPrompt(skill.skill, step), prompt, schema: C.STEP_JSON_SCHEMAS[step], signal, transportRetryCount: 0, onProgress: () => {} }), signal);
       guard(); return schema.parse(raw);

@@ -40,8 +40,8 @@ const inputManifest = z.object({
   resume_fingerprint: z.string().optional(),
 }).strict();
 const artifactManifest = z.object({
-  schema_version: z.literal(1), artifact: C.ArtifactVersionSchema.innerType().omit({ version_fingerprint: true }),
-  draft_id: z.string().uuid(), draft_revision: z.number().int().nonnegative(), previews: z.array(C.ImmutableReferenceSchema),
+  schema_version: z.literal(1), artifact: z.object(C.ArtifactVersionSchema.shape).strict().omit({ version_fingerprint: true }),
+  draft_id: z.string().guid(), draft_revision: z.number().int().nonnegative(), previews: z.array(C.ImmutableReferenceSchema),
   changes_summary: C.ImmutableReferenceSchema.optional(),
   base_corrections: C.ImmutableReferenceSchema.optional(),
 }).strict();
@@ -237,7 +237,7 @@ publishManualCandidate(request: Parameters<JobsRepository['assertManualPublicati
       const r = this.repository; const attempt = r.getAttempt(attemptId);
       if (r.getExecutionInput(attempt.input_snapshot_id).schema_version !== 1) return { analysis: null, alignment: null, brief_markdown: null };
       const input = this.getInputSnapshot(attempt.input_snapshot_id);
-      const read = <T>(stage: C.PreparationStage, schema: z.ZodType<T, z.ZodTypeDef, unknown>): T | null => {
+      const read = <T>(stage: C.PreparationStage, schema: z.ZodType<T, unknown>): T | null => {
         const cp = r.listCheckpoints(attemptId).find(c => c.completed_stage === stage);
         if (!cp) return null;
         if (cp.job_id !== attempt.job_id || cp.input_fingerprint !== input.fingerprint || cp.output_references.length !== 1) throw new Error('Checkpoint binding mismatch');

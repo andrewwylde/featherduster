@@ -14,7 +14,7 @@ export const ClaimSchema = z.object({ id: text, subject: SubjectSchema, text: ex
   start: z.number().int().nonnegative(), end: z.number().int().positive(), fact: FactSchema,
   qualifier_text: z.array(text),
 }).strict().refine(c => c.end > c.start && c.end - c.start === c.text.length, 'Invalid claim span');
-export const ClarificationSchema = z.object({ schema_version: z.literal(1), id: z.string().uuid(),
+export const ClarificationSchema = z.object({ schema_version: z.literal(1), id: z.string().guid(),
   job_id: z.string().min(1), input_snapshot_id: z.string().min(1), revision: z.number().int().nonnegative(),
   kind: z.enum(['confirmation', 'correction']), fact: FactSchema, claim_ids: z.array(text).min(1),
   question: text, assertion: exactAnswer, actor: text, recorded_at: z.string().datetime(),
@@ -22,7 +22,7 @@ export const ClarificationSchema = z.object({ schema_version: z.literal(1), id: 
   supporting_quotes: z.array(SourceQuoteSchema).optional(),
   confirmed: z.boolean().optional(),
   confirmed_claims: z.array(text).optional(),
-  supersedes: z.string().uuid().nullable(), corrected_assertion: exactAnswer.optional(),
+  supersedes: z.string().guid().nullable(), corrected_assertion: exactAnswer.optional(),
   effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   support_basis: z.enum(['captured_evidence', 'human_confirmation', 'both']).optional(),
 }).strict().superRefine((v, ctx) => {
@@ -45,8 +45,8 @@ export const ClaimResultSchema = z.object({ claim: ClaimSchema, state: SemanticS
 });
 export const PassageResultSchema = z.object({ subject: SubjectSchema,
   claims: z.array(ClaimResultSchema).min(1), complete: z.literal(true) }).strict();
-export const SemanticResultSchema = z.object({ schema_version: z.literal(1), id: z.string().uuid(),
-  job_id: z.string().uuid(), input_snapshot_id: z.string().uuid(), input_fingerprint: text,
+export const SemanticResultSchema = z.object({ schema_version: z.literal(1), id: z.string().guid(),
+  job_id: z.string().guid(), input_snapshot_id: z.string().guid(), input_fingerprint: text,
   candidate_fingerprint: text, cache_key: text, head_revision: z.number().int().nonnegative(),
   passages: z.array(PassageResultSchema).min(1), configuration_key: text, policy_version: text,
   evidence_set_fingerprint: text, clarification_fingerprints: z.array(text), provenance: z.literal('model'),

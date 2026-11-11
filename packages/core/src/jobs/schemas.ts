@@ -4,7 +4,7 @@ import { ResumeSpecSchema } from '../schemas/resume.js';
 import { AlignmentRowSchema, ProposalSetSchema, TAILORING_STEPS, ValidationIssueSchema } from '../tailoring/schemas.js';
 
 const text = z.string().trim().min(1);
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const count = z.number().int().nonnegative();
 const timestamp = z.string().datetime({ offset: true });
 const version = { schema_version: z.literal(1) };

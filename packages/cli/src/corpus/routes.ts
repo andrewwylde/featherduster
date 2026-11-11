@@ -13,14 +13,14 @@ export function mountCorpusRoutes(app: Hono, service: () => CorpusService): void
     }
   };
   app.get('/api/corpus', handle(c => {
-    const context = z.object({ employer: z.string().optional(), project: z.string().optional(), role: z.string().optional(), job_id: z.string().uuid().optional() }).strict().parse(c.req.query());
+    const context = z.object({ employer: z.string().optional(), project: z.string().optional(), role: z.string().optional(), job_id: z.string().guid().optional() }).strict().parse(c.req.query());
     const { evidence, ...view } = service().read(context);
     return { ...view, evidence: evidence.getAll() };
   }));
   app.post('/api/corpus/preview', handle(async c => service().preview(CorpusRequestSchema.parse(await c.req.json()))));
   app.post('/api/corpus/updates', handle(async c => service().remember(CorpusRequestSchema.parse(await c.req.json()))));
   app.post('/api/corpus/updates/:id/withdraw', handle(async c => {
-    const id = z.string().uuid().parse(c.req.param('id'));
+    const id = z.string().guid().parse(c.req.param('id'));
     const body = CorpusRequestSchema.parse(await c.req.json());
     if (body.change.kind !== 'withdrawal' || body.change.update_id !== id) throw new RepositoryError('invalid_relationship', 'Withdrawal identity mismatch');
     return service().withdraw(body);

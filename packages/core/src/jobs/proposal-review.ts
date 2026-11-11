@@ -10,7 +10,7 @@ import { ProposalSchema, ValidationIssueSchema, type Proposal, type ValidationIs
 import { ImmutableReferenceSchema } from './schemas.js';
 
 const text = z.string().min(1);
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const revision = z.number().int().nonnegative();
 const binding = { schema_version: z.literal(1), workspace_id: text, job_id: uuid, input_snapshot_id: uuid, input_fingerprint: text };
 const strictProposal = ProposalSchema.extend({ target: ProposalSchema.shape.target.strict(), checks: z.array(ValidationIssueSchema.strict()) }).strict();

@@ -29,6 +29,17 @@ function seed(repo: JobsRepository, overrides: Partial<Job> = {}) {
   const input: InputSnapshot = { schema_version: 1, id: randomUUID(), workspace_id: j.workspace_id, job_id: j.id, created_at: time, fingerprint: 'input', posting: { id: posting.id, fingerprint: posting.content_fingerprint }, base_resume: ref, selected_evidence: [], privacy_rules: ref, template: ref, runner_configuration: ref, policy: { schema_version: 1, mode: 'manual', output_format: 'latex', page_budget: 1, max_model_calls: 5, timeout_ms: 1000, max_repair_attempts: 1, model_retry_count: 0 }, policy_fingerprint: 'policy' };
   repo.saveInputSnapshot(input); return { j, posting, input };
 }
+it('reopens legacy UUID-shaped IDs without applying newer RFC variant restrictions', () => {
+  // Zod 3 accepted this GUID-shaped identifier; Zod 4 uuid() rejects its
+  // variant bits. Existing records must retain their original identity.
+  const legacyId = '11111111-1111-1111-1111-111111111111';
+  const first = open();
+  const saved = first.repo.createJob(job(first.handle.workspaceId, { id: legacyId, preparation_state: 'saved' }), 'legacy-id').result;
+  first.handle.close();
+  const reopened = open(first.dir);
+  expect(reopened.repo.getJob(legacyId)).toEqual(saved);
+  expect(() => reopened.repo.createJob(job(reopened.handle.workspaceId, { id: 'not-a-guid' }), 'invalid-id')).toThrow();
+});
 function claim(repo: JobsRepository, data: ReturnType<typeof seed>, mode: 'manual' | 'automatic' = 'manual', key = randomUUID()) {
   return repo.claimJob({ job_id: data.j.id, input_snapshot_id: data.input.id, mode, stop_generation: repo.getControl().stop_generation, lease_ms: 1000, idempotency_key: key });
 }

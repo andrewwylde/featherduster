@@ -14,8 +14,8 @@ export const DraftIssueSchema = z.object({
 export type DraftIssue = z.infer<typeof DraftIssueSchema>;
 export const DraftBindingSchema = z.object({
   candidate_fingerprint: z.string().min(1), context_fingerprint: z.string().min(1),
-  input_snapshot_id: z.string().uuid(), input_fingerprint: z.string().min(1),
-  parent_artifact_id: z.string().uuid(), parent_artifact_fingerprint: z.string().min(1),
+  input_snapshot_id: z.string().guid(), input_fingerprint: z.string().min(1),
+  parent_artifact_id: z.string().guid(), parent_artifact_fingerprint: z.string().min(1),
 }).strict();
 export type DraftBinding = z.infer<typeof DraftBindingSchema>;
 export const CheckJobDraftRequestSchema = z.object({ candidate: DraftResumeSpecSchema }).strict();

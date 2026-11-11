@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { EvidenceEntrySchema, ConfidenceLevelSchema, MetricEntrySchema, InternalReferenceSchema } from '../schemas/evidence.js';
 import { ClarificationSchema } from '../jobs/semantic-evidence.js';
 
-const id = z.string().uuid();
+const id = z.string().guid();
 const hash = z.string().regex(/^[0-9a-f]{64}$/);
 const text = z.string().trim().min(1);
 const revision = z.number().finite().int().nonnegative();

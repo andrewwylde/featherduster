@@ -16,8 +16,8 @@ import { applyProposals, mergeEqual, DraftRunArtifactsSchema, type MergeChoice }
 import { resolveResume } from '../../resumes/variants.js';
 
 export const DraftSeedSchema = z.discriminatedUnion('kind', [
-  z.object({ id: z.string().uuid(), kind: z.literal('setup'), payload: SetupPayloadSchema, context: DraftContextSchema.optional() }).strict(),
-  z.object({ id: z.string().uuid(), kind: z.literal('manual'), payload: ManualDraftPayloadSchema, context: DraftContextSchema.optional() }).strict(),
+  z.object({ id: z.string().guid(), kind: z.literal('setup'), payload: SetupPayloadSchema, context: DraftContextSchema.optional() }).strict(),
+  z.object({ id: z.string().guid(), kind: z.literal('manual'), payload: ManualDraftPayloadSchema, context: DraftContextSchema.optional() }).strict(),
 ]);
 export type DraftSeed = z.infer<typeof DraftSeedSchema>;
 export interface DraftServiceDependencies {
@@ -210,7 +210,7 @@ export class DraftService {
     const root = path.join(this.dependencies.workspaceDir, 'tailoring-drafts', 'operations');
     if (!fs.existsSync(root)) return result;
     for (const owner of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!owner.isDirectory() || !z.string().uuid().safeParse(owner.name).success) continue;
+      if (!owner.isDirectory() || !z.string().guid().safeParse(owner.name).success) continue;
       for (const file of fs.readdirSync(path.join(root, owner.name))) {
         if (!file.endsWith('.json')) continue;
         const id = file.slice(0, -5);
@@ -477,7 +477,7 @@ export class DraftService {
     const draft = this.get(id);
     if (canonicalJson(draft.token) !== canonicalJson(expected)) throw new DraftRepositoryError(409, 'stale_revision', 'Completed version changed');
     if (draft.record.lifecycle !== 'completed' || !draft.record.completion) throw new DraftRepositoryError(409, 'invalid_lifecycle', 'Continue requires a completed version');
-    const snapshotPath = `tailoring-drafts/completions/${z.string().uuid().parse(draft.record.completion.outputId)}.json`;
+    const snapshotPath = `tailoring-drafts/completions/${z.string().guid().parse(draft.record.completion.outputId)}.json`;
     const bytes = fs.readFileSync(path.join(this.dependencies.workspaceDir, snapshotPath), 'utf8');
     const snapshot = DraftRecordSchema.parse(JSON.parse(bytes));
     if (snapshot.id !== id || snapshot.lifecycle !== 'completed' || canonicalJson(snapshot.completion) !== canonicalJson(draft.record.completion)) throw new DraftRepositoryError(409, 'invalid_snapshot', 'Completed snapshot identity differs');
@@ -530,7 +530,7 @@ export class DraftService {
   /** A recovery snapshot is content, never authority to inherit a workflow approval. */
   fork(id: string, expected: RevisionToken, operationId: string, sourceSnapshot: unknown) {
     const source = DraftRecordSchema.parse(sourceSnapshot);
-    if (source.id !== z.string().uuid().parse(id).toLowerCase()) throw new DraftRepositoryError(400, 'invalid_source', 'Recovery draft identity differs');
+    if (source.id !== z.string().guid().parse(id).toLowerCase()) throw new DraftRepositoryError(400, 'invalid_source', 'Recovery draft identity differs');
     const request = JSON.parse(JSON.stringify({ id, expected, sourceSnapshot: source }));
     const prior = this.operations.lookup(operationId);
     if (prior) {

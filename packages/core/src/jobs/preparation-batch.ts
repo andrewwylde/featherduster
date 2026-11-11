@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { FactSchema, SourceQuoteSchema } from './semantic-evidence.js';
 import { SemanticTargetSchema } from './semantic-transport.js';
 import { sameFact } from './semantic-policy.js';
-const key = z.string().min(1), uuid = z.string().uuid(), revision = z.number().int().nonnegative();
+const key = z.string().min(1), uuid = z.string().guid(), revision = z.number().int().nonnegative();
 export const CreatePreparationBatchSchema = z.object({
   members: z.array(z.object({ job_id: uuid, expected_revision: revision }).strict()).min(1).max(100)
     .refine(members => new Set(members.map(m => m.job_id)).size === members.length, 'Select each job once'),

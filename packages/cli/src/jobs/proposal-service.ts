@@ -10,7 +10,7 @@ import { ProposalRepository } from './proposal-repository.js';
 import type { JobsService } from './service.js';
 import type { SemanticService } from './semantic-service.js';
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const revision = z.number().int().nonnegative();
 const text = z.string().min(1);
 const canonical = (value: unknown): string => JSON.stringify(value, (_, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);

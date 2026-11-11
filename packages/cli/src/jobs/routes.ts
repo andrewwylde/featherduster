@@ -14,7 +14,7 @@ import type { IntakePreview } from './intake.js';
 import { RepositoryError } from './repository.js';
 import { jobDetail, publicJobsResult, type JobsRuntime } from './runtime.js';
 
-const uuid = z.string().uuid();
+const uuid = z.string().guid();
 const revision = z.number().int().nonnegative();
 const key = z.string().trim().min(1);
 const manualDetails = JobSchema.pick({ company: true, role: true, notes: true, context_url: true }).partial().strict();
@@ -94,7 +94,7 @@ export function mountJobsRoutes(app: Hono, getRuntime: () => JobsRuntime) {
   }));
   app.put('/api/jobs/:id/answers', handle(async (c, r) => {
     const id = uuid.parse(c.req.param('id'));
-    const body = ScopedAnswerSchema.innerType().pick({ key: true, question: true, scope: true, status: true, value: true }).extend({ expected_revision: revision }).strict().parse(await c.req.json());
+    const body = z.object(ScopedAnswerSchema.shape).pick({ key: true, question: true, scope: true, status: true, value: true }).extend({ expected_revision: revision }).strict().parse(await c.req.json());
     return r.repository.database.db.transaction(() => {
       const job = r.repository.getJob(id);
       if (job.revision !== body.expected_revision) throw new RepositoryError('revision_conflict', 'Stale job revision; reload before saving');

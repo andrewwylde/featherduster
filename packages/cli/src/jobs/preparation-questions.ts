@@ -63,7 +63,7 @@ export class PreparationQuestions {
     });
   }
   decide(batchId: string, raw: unknown) {
-    const request = z.object({ job_id: z.string().uuid(), expected_job_revision: z.number().int().nonnegative(), review_id: z.string().uuid(),
+    const request = z.object({ job_id: z.string().guid(), expected_job_revision: z.number().int().nonnegative(), review_id: z.string().guid(),
       expected_review_revision: z.number().int().nonnegative(), input_fingerprint: z.string().min(1), proposal_id: z.string().min(1),
       action: z.enum(['omit', 'retain', 'later']), idempotency_key: z.string().min(1) }).strict().parse(raw);
     const jobs = this.batches.jobs;

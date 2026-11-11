@@ -218,7 +218,7 @@ export const StepRecordSchema = z.object({
 export type StepRecord = z.infer<typeof StepRecordSchema>;
 
 export const RunManifestSchema = z.object({
-  draft_id: z.string().uuid().optional(),
+  draft_id: z.string().guid().optional(),
   slug: z.string().min(1),
   title: z.string().default(''),
   created: z.string(),
